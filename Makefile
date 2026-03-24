@@ -1,18 +1,20 @@
 BINARY  := neomd
 CMD     := ./cmd/neomd
 INSTALL := $(HOME)/.local/bin
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: build run install clean test vet fmt lint tidy
+.PHONY: build run install clean test vet fmt tidy release help
 
-## build: compile the binary into ./neomd
+## build: compile ./neomd (version from git tag)
 build:
-	go build -o $(BINARY) $(CMD)
+	go build $(LDFLAGS) -o $(BINARY) $(CMD)
 
-## run: build and run (pass ARGS="--config /path/to/config.toml" to override)
+## run: build and run
 run: build
 	./$(BINARY) $(ARGS)
 
-## install: install the binary to ~/.local/bin
+## install: install to ~/.local/bin
 install: build
 	install -Dm755 $(BINARY) $(INSTALL)/$(BINARY)
 	@echo "Installed to $(INSTALL)/$(BINARY)"
@@ -33,10 +35,17 @@ fmt:
 tidy:
 	go mod tidy
 
-## clean: remove the compiled binary
+## clean: remove compiled binary
 clean:
 	rm -f $(BINARY)
 
-## help: print this help
+## release: tag and push a new release (usage: make release VERSION=v0.1.0)
+release:
+	@test -n "$(VERSION)" || (echo "Usage: make release VERSION=v0.1.0" && exit 1)
+	git tag -a $(VERSION) -m "Release $(VERSION)"
+	git push origin $(VERSION)
+	@echo "Tagged $(VERSION) — GitHub Actions will build and publish the release."
+
+## help: print this list
 help:
 	@grep -E '^## ' Makefile | sed 's/^## //'
