@@ -1,0 +1,15 @@
+# Binary
+neomd
+
+# Go build cache
+*.test
+*.out
+
+# Config with real credentials (use config.toml.example instead)
+config.toml
+
+# Editor temp files (compose buffers)
+neomd-*.md
+
+# OS
+.DS_Store
