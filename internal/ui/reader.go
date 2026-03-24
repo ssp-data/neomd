@@ -20,7 +20,7 @@ func newReader(width, height int) viewport.Model {
 func loadEmailIntoReader(vp *viewport.Model, email *imap.Email, body, theme string, width int) error {
 	header := renderEmailHeader(email, width)
 
-	rendered, err := render.ToANSI(body, theme)
+	rendered, err := render.ToANSI(body, theme, width)
 	if err != nil {
 		rendered = body // fall back to raw markdown
 	}

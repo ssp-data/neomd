@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	htmlmd "github.com/JohannesKaufmann/html-to-markdown"
 	imap "github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
@@ -364,17 +365,112 @@ func parsePlainText(raw []byte) string {
 		}
 	}
 
-	if plainText != "" {
-		return plainText
-	}
+	// Prefer HTML: newsletters and modern emails have rich HTML while the
+	// text/plain part is typically a stripped dump with raw redirect URLs.
+	// Fall back to plain text for plain-text-only emails (e.g. direct replies).
 	if htmlText != "" {
-		return stripHTML(htmlText)
+		return htmlToMarkdown(htmlText)
+	}
+	if plainText != "" {
+		return normalizePlainText(plainText)
 	}
 	return "(no body)"
 }
 
-// stripHTML removes HTML tags, leaving readable plain text.
-func stripHTML(h string) string {
+// htmlToMarkdown converts an HTML email body to Markdown so glamour can render
+// it with proper formatting: bold, italic, links, headings, lists, and image
+// placeholders (![alt](url) → [Image: alt] in the terminal).
+func htmlToMarkdown(h string) string {
+	// Remove <wbr> tags and join newlines inside href/src attribute values.
+	// Newsletter services (Substack, Mailchimp) insert line breaks inside URLs
+	// for HTML rendering; html-to-markdown preserves them, breaking link syntax.
+	h = regexp.MustCompile(`<wbr\s*/?>|&ZeroWidthSpace;`).ReplaceAllString(h, "")
+	// Collapse whitespace (including newlines) inside href="..." and src="..."
+	reAttr := regexp.MustCompile(`(?s)((?:href|src)=")(.*?)(")`)
+	h = reAttr.ReplaceAllStringFunc(h, func(m string) string {
+		parts := reAttr.FindStringSubmatch(m)
+		if len(parts) != 4 {
+			return m
+		}
+		clean := regexp.MustCompile(`\s+`).ReplaceAllString(parts[2], "")
+		return parts[1] + clean + parts[3]
+	})
+
+	converter := htmlmd.NewConverter("", true, nil)
+	result, err := converter.ConvertString(h)
+	if err != nil {
+		return stripHTMLFallback(h)
+	}
+	return cleanMarkdown(strings.TrimSpace(result))
+}
+
+// cleanMarkdown post-processes html-to-markdown output to remove newsletter
+// noise: invisible Unicode spacers, tracking pixels, bare URL lines, and
+// excessive blank lines.
+func cleanMarkdown(s string) string {
+	// 1. Strip invisible Unicode characters used as email preheader spacers:
+	//    U+034F COMBINING GRAPHEME JOINER, U+00AD SOFT HYPHEN,
+	//    U+200B ZERO WIDTH SPACE, U+200C/D ZWNJ/ZWJ, U+FEFF BOM
+	reInvis := regexp.MustCompile(`[\x{034F}\x{00AD}\x{200B}\x{200C}\x{200D}\x{FEFF}]+`)
+	s = reInvis.ReplaceAllString(s, "")
+
+	// 2. Remove empty image tags (tracking pixels): ![](...) or ![  ](...)
+	reEmptyImg := regexp.MustCompile(`!\[\s*\]\([^)]*\)`)
+	s = reEmptyImg.ReplaceAllString(s, "")
+
+	// 3. Remove empty link anchors left behind when image-only links are cleaned:
+	//    [](url) or [  ](url)
+	reEmptyLink := regexp.MustCompile(`\[\s*\]\([^)]*\)`)
+	s = reEmptyLink.ReplaceAllString(s, "")
+
+	// 4. Remove lines that are only a bare URL (no surrounding text).
+	//    These come from <a href="url"><img/></a> after the image is stripped,
+	//    or from Substack's share/subscribe buttons whose text was an image.
+	reBareURL := regexp.MustCompile(`(?m)^https?://\S+$`)
+	s = reBareURL.ReplaceAllString(s, "")
+
+	// 5. Remove lines that are only whitespace — including U+00A0 (&nbsp;) which
+	//    &nbsp; gets decoded to and is NOT matched by \s in Go's regexp.
+	reWhitespaceOnly := regexp.MustCompile("(?m)^[ \t\u00A0\u202F\u2003\u2009]+$")
+	s = reWhitespaceOnly.ReplaceAllString(s, "")
+
+	// 6. Collapse 3+ consecutive blank lines to 2
+	reExcessBlank := regexp.MustCompile(`\n{4,}`)
+	s = reExcessBlank.ReplaceAllString(s, "\n\n\n")
+
+	return strings.TrimSpace(s)
+}
+
+// normalizePlainText prepares a plain-text email body for glamour rendering.
+// Glamour treats single \n as paragraph continuation (Markdown spec), so bare
+// line breaks in plain-text emails collapse into run-on text. We add two
+// trailing spaces before each single newline, which Markdown treats as a hard
+// line break, preserving the original layout.
+func normalizePlainText(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	// Add hard-break markers before single newlines (not before blank lines).
+	var b strings.Builder
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		b.WriteString(line)
+		if i < len(lines)-1 {
+			next := lines[i+1]
+			if next == "" {
+				// Blank line: keep as paragraph separator (no trailing spaces needed)
+				b.WriteByte('\n')
+			} else {
+				// Single newline: add trailing double-space for Markdown hard break
+				b.WriteString("  \n")
+			}
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// stripHTMLFallback is the last-resort plain-text extractor when the
+// html-to-markdown converter fails.
+func stripHTMLFallback(h string) string {
 	reBlock := regexp.MustCompile(`(?is)<(style|script)[^>]*>.*?</(style|script)>`)
 	h = reBlock.ReplaceAllString(h, "")
 	reNewline := regexp.MustCompile(`(?i)</(p|div|br|li|tr|h[1-6]|blockquote)>`)

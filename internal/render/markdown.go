@@ -6,17 +6,20 @@ import (
 )
 
 // ToANSI renders markdown as ANSI-styled terminal output for the reader view.
-// theme should be "dark", "light", or "auto".
-func ToANSI(markdown, theme string) (string, error) {
+// theme should be "dark", "light", or "auto". width is the terminal column
+// count; pass 0 to use the default (80).
+func ToANSI(markdown, theme string, width int) (string, error) {
 	if theme == "" {
 		theme = "dark"
 	}
+	if width <= 0 {
+		width = 80
+	}
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStylePath(theme),
-		glamour.WithWordWrap(100),
+		glamour.WithWordWrap(width),
 	)
 	if err != nil {
-		// Fall back to notty (no styling)
 		return glamour.Render(markdown, "notty")
 	}
 	return r.Render(markdown)
