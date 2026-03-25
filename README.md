@@ -368,7 +368,7 @@ make help     print this list
 
 ---
 
-This TUI is fully [vibe coded](https://www.ssp.sh/brain/vibe-coding), I only omitted my strong *taste* for my favorite tools and astetics. Find the full history at [Twitter](https://xcancel.com/sspaeti/status/2036539855182627169#m) - inspired by seeing [Email.md](https://www.emailmd.dev/) on HackerNews.
+This TUI is mostly [vibe coded](https://www.ssp.sh/brain/vibe-coding), but I used my experience with neomutt, TUIs and workflow of handling emails with GTD with HEY Screener, and added some (hopefully) *taste* using my favorite tools and astetics. Find the full history at [Twitter](https://xcancel.com/sspaeti/status/2036539855182627169#m) - inspired by seeing [Email.md](https://www.emailmd.dev/) on HackerNews.
 
 If you [rather read the prompt](https://www.ssp.sh/brain/id-rather-read-the-prompt), check out my [initial prompt](_prompts/prompt.md) and its generated [plan](_prompts/prompt-plan.md) by Claude Code.
 
