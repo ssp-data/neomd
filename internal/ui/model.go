@@ -74,6 +74,7 @@ type (
 	editorDoneMsg     struct {
 		to, subject, body string
 		err               error
+		aborted           bool // true when file was unchanged (ZQ / :q!)
 	}
 )
 
@@ -846,6 +847,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = stateInbox
 			return m, nil
 		}
+		if msg.aborted {
+			m.status = "Aborted (no changes saved)."
+			m.state = stateInbox
+			return m, nil
+		}
 		if strings.TrimSpace(msg.body) == "" {
 			m.status = "Cancelled (empty body)."
 			m.state = stateInbox
@@ -1404,7 +1410,7 @@ func (m Model) updateCompose(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 	to := m.compose.to.Value()
 	subject := m.compose.subject.Value()
-	prelude := editor.Prelude(to, subject)
+	prelude := editor.Prelude(to, subject, m.cfg.UI.Signature)
 
 	// Write temp file
 	f, err := os.CreateTemp("", "neomd-*.md")
@@ -1432,6 +1438,9 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 		raw, readErr := os.ReadFile(tmpPath)
 		if readErr != nil {
 			return editorDoneMsg{err: readErr}
+		}
+		if string(raw) == prelude {
+			return editorDoneMsg{aborted: true}
 		}
 		return editorDoneMsg{to: to, subject: subject, body: string(raw)}
 	})
@@ -1470,6 +1479,9 @@ func (m Model) launchReplyCmd() (tea.Model, tea.Cmd) {
 		raw, readErr := os.ReadFile(tmpPath)
 		if readErr != nil {
 			return editorDoneMsg{err: readErr}
+		}
+		if string(raw) == prelude {
+			return editorDoneMsg{aborted: true}
 		}
 		return editorDoneMsg{to: to, subject: subject, body: string(raw)}
 	})

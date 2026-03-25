@@ -74,8 +74,13 @@ func View(content string) (*exec.Cmd, string, error) {
 }
 
 // Prelude builds the comment header shown at the top of a new compose buffer.
-func Prelude(to, subject string) string {
-	return fmt.Sprintf("<!-- To: %s -->\n<!-- Subject: %s -->\n\n", to, subject)
+// If signature is non-empty it is appended after a blank line separator.
+func Prelude(to, subject, signature string) string {
+	s := fmt.Sprintf("<!-- To: %s -->\n<!-- Subject: %s -->\n\n", to, subject)
+	if signature != "" {
+		s += "\n\n--  \n" + signature + "\n"
+	}
+	return s
 }
 
 // ReplyPrelude builds a quote block for replies.

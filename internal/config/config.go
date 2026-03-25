@@ -49,6 +49,7 @@ type FoldersConfig struct {
 type UIConfig struct {
 	Theme      string `toml:"theme"`       // dark | light | auto
 	InboxCount int    `toml:"inbox_count"` // number of messages to fetch
+	Signature  string `toml:"signature"`   // appended to new compose buffers (markdown)
 }
 
 // Config is the root neomd configuration.
