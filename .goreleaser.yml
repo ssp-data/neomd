@@ -5,6 +5,7 @@ project_name: neomd
 before:
   hooks:
     - go mod tidy
+    - go run ./cmd/docs
 
 builds:
   - main: ./cmd/neomd

@@ -41,6 +41,7 @@ clean:
 
 ## release: tag and push a new release (usage: make release VERSION=v0.1.0)
 release:
+	docs
 	@test -n "$(VERSION)" || (echo "Usage: make release VERSION=v0.1.0" && exit 1)
 	git tag -a $(VERSION) -m "Release $(VERSION)"
 	git push origin $(VERSION)

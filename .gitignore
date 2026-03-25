@@ -1,5 +1,5 @@
-# Binary
-neomd
+# Binary (root-level compiled binary only, not cmd/neomd/ source dir)
+/neomd
 
 # Go build cache
 *.test
