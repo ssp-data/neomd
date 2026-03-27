@@ -107,8 +107,8 @@ waiting      = "Waiting"
 scheduled    = "Scheduled"
 someday      = "Someday"
 spam         = "spam" #check capitalization of your pre-existing Spam folder, sometimes might be `Spam` with `S`
-# tab_order controls the left-to-right tab sequence; omit to use the default order above. e.g.:
-#tab_order = ["inbox", "to_screen", "feed", "papertrail", "waiting", "someday", "scheduled", "sent", "archive", "screened_out", "drafts", "trash"]
+# tab_order controls the left-to-right tab sequence; omit to use the built-in default order. e.g.:
+# tab_order = ["inbox", "to_screen", "feed", "papertrail", "waiting", "someday", "scheduled", "sent", "archive", "screened_out", "drafts", "trash"]
 
 [ui]
 theme                = "dark"   # dark | light | auto
@@ -174,6 +174,7 @@ Press `?` inside neomd to open the interactive help overlay. Start typing to fil
 | `go` | go to ScreenedOut |
 | `gw` | go to Waiting |
 | `gm` | go to Someday |
+| `gd` | go to Drafts (read-only; save-to-draft not yet implemented) |
 | `gS` | go to Spam (not in tab rotation) |
 
 

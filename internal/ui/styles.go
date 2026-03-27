@@ -99,6 +99,11 @@ var (
 
 	styleSuccess = lipgloss.NewStyle().
 			Foreground(colorSuccess)
+
+	styleOffTab = lipgloss.NewStyle().
+			Foreground(colorMuted).
+			Italic(true).
+			Padding(0, 1)
 )
 
 // folderTabs renders the folder switcher bar.

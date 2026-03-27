@@ -31,6 +31,7 @@ var HelpSections = []HelpSection{
 		{"go", "go to ScreenedOut"},
 		{"gw", "go to Waiting"},
 		{"gm", "go to Someday"},
+		{"gd", "go to Drafts (read-only; save-to-draft not yet implemented)"},
 		{"gS", "go to Spam (not in tab rotation)"},
 	}},
 	{"Screener  (marked or cursor, any folder)", [][2]string{

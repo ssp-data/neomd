@@ -108,6 +108,7 @@ type Model struct {
 	// Folder switcher
 	folders       []string
 	activeFolderI int
+	offTabFolder  string // non-empty when viewing a folder not in the tab bar (e.g. "Spam", "Drafts")
 
 	// Inbox
 	inbox   list.Model
@@ -1247,11 +1248,13 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// ── Navigation ──────────────────────────────────────────────────
 	case "tab", "L":
 		m.activeFolderI = (m.activeFolderI + 1) % len(m.folders)
+		m.offTabFolder = ""
 		m.loading = true
 		return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
 
 	case "shift+tab", "H":
 		m.activeFolderI = (m.activeFolderI - 1 + len(m.folders)) % len(m.folders)
+		m.offTabFolder = ""
 		m.loading = true
 		return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
 
@@ -1418,6 +1421,7 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.activeFolderI = idx
+				m.offTabFolder = ""
 				m.loading = true
 				return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
 			}
@@ -1434,8 +1438,15 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 		}
 		if key == "S" { // gS — go to Spam (not in tab rotation)
 			m.loading = true
+			m.offTabFolder = "Spam"
 			m.status = "Spam folder — press R to reload, tab to leave"
 			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Spam))
+		}
+		if key == "d" { // gd — go to Drafts (not in tab rotation)
+			m.loading = true
+			m.offTabFolder = "Drafts"
+			m.status = "Drafts folder — press R to reload, tab to leave"
+			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Drafts))
 		}
 		folderMap := map[string]string{
 			"i": "Inbox",
@@ -1448,15 +1459,15 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			"w": "Waiting",
 			"m": "Someday",
 			"o": "ScreenedOut",
-			"d": "Drafts",
 		}
 		if name, ok := folderMap[key]; ok {
 			for i, f := range m.folders {
 				if f == name {
-					if i == m.activeFolderI {
+					if i == m.activeFolderI && m.offTabFolder == "" {
 						return m, nil
 					}
 					m.activeFolderI = i
+					m.offTabFolder = ""
 					m.loading = true
 					return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
 				}
@@ -1830,7 +1841,14 @@ func (m Model) viewInbox() string {
 	var b strings.Builder
 
 	// Account indicator (only shown when more than one account configured)
-	header := folderTabs(m.folders, m.folders[m.activeFolderI], m.folderCounts)
+	activeTab := m.folders[m.activeFolderI]
+	if m.offTabFolder != "" {
+		activeTab = "" // deselect all tabs; off-tab folder shown separately
+	}
+	header := folderTabs(m.folders, activeTab, m.folderCounts)
+	if m.offTabFolder != "" {
+		header += styleSeparator.Render(" │ ") + styleHeader.Render(m.offTabFolder)
+	}
 	if len(m.accounts) > 1 {
 		acct := styleDate.Render("  " + m.activeAccount().Name + " ·")
 		header = acct + "  " + header
