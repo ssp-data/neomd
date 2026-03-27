@@ -94,7 +94,6 @@ papertrail   = "~/.dotfiles/neomd/.lists/papertrail.txt"
 spam         = "~/.dotfiles/neomd/.lists/spam.txt"
 
 [folders]
-# reorder folders below to also change order shown in tabs in neomd
 inbox        = "INBOX"
 sent         = "Sent"
 trash        = "Trash"
@@ -108,6 +107,8 @@ waiting      = "Waiting"
 scheduled    = "Scheduled"
 someday      = "Someday"
 spam         = "spam" #check capitalization of your pre-existing Spam folder, sometimes might be `Spam` with `S`
+# tab_order controls the left-to-right tab sequence; omit to use the default order above. e.g.:
+#tab_order = ["inbox", "to_screen", "feed", "papertrail", "waiting", "someday", "scheduled", "sent", "archive", "screened_out", "drafts", "trash"]
 
 [ui]
 theme                = "dark"   # dark | light | auto
