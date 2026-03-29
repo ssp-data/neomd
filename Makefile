@@ -4,7 +4,7 @@ INSTALL := $(HOME)/.local/bin
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: build run install clean test vet fmt tidy release docs help
+.PHONY: build run install clean test send-test vet fmt tidy release docs help
 
 ## build: compile ./neomd (version from git tag)
 build: docs
@@ -22,6 +22,10 @@ install: build
 ## test: run all tests
 test:
 	go test ./...
+
+## send-test: send a test email to sspaeti@hey.com (override: make send-test TO=other@example.com)
+send-test:
+	go run ./cmd/sendtest $(TO)
 
 ## vet: run go vet
 vet:

@@ -8,6 +8,9 @@
 # Config with real credentials (use config.toml.example instead)
 config.toml
 
+# Local dev overrides (test recipients, etc.) — never commit
+.env
+
 # Editor temp files (compose buffers)
 neomd-*.md
 
