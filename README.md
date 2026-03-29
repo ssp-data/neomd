@@ -154,6 +154,7 @@ The `signature` field in `[ui]` is appended automatically when opening a new com
 
 Use TOML triple-quoted strings (`"""`) to preserve line breaks. The signature appears at the end of the buffer — you can edit or delete it before saving.
 
+
 ## Keybindings
 
 Press `?` inside neomd to open the interactive help overlay. Start typing to filter shortcuts.
@@ -382,6 +383,8 @@ Press `:` to open the command line. Tab cycles through completions; Enter runs t
 
 The TUI reader shows emails as plain Markdown — images appear as `[Image: alt]` placeholders, keeping the reading experience clean and fast. To see images, press `O` to open the email as HTML in your `$BROWSER` (images load from remote URLs as normal). For newsletters, `ctrl+o` opens the canonical web version directly (extracted from the `List-Post` header or the plain-text preamble), which is usually the better reading experience anyway. `o` opens in `w3m` for a quick terminal preview without leaving the keyboard.
 
+
+
 ## How Sending Works
 
 neomd sends every email as `multipart/alternative`:
@@ -390,6 +393,34 @@ neomd sends every email as `multipart/alternative`:
 - **`text/html`** — rendered by [goldmark](https://github.com/yuin/goldmark) with a clean CSS wrapper
 
 This means recipients using Gmail, Apple Mail, Outlook, etc. see properly formatted links, bold, headers, and code blocks — while you write nothing but Markdown.
+
+### Attachments
+
+Attachments are now supported and tighly integrated into neovim.
+
+With `<leader>a` in a `neomd-*.md` buffer opens **yazi** in a floating terminal - you can select files are inserted as `[attach] /path/to/file` lines (visible in markdown, not hidden HTML comments)
+
+Neomd strips them before sending and adds them as MIME attachments.
+
+E.g. 
+```markdown
+
+e.g. an image:
+[attach] /home/sspaeti/git/email/neomd/images/overview-email-feed.png
+
+
+Or a PDF (will be attached at the end, not inline):
+[attach] /home/sspaeti/Downloads/send-letter.pdf
+```
+
+Will be rendered to:
+
+![neomd](images/attachments-example.webp)
+
+### Pre-send Navigation
+When we save an email in Neovim, before we send we can remove or add attachments or save to draft. That navigation looks like this:
+
+![neomd](images/presend-navigation.png)
 
 ## Make Targets
 
