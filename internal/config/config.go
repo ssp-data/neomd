@@ -10,6 +10,16 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// SenderConfig holds a named "From" alias used only for sending.
+// Unlike AccountConfig it requires no IMAP connection — only the From header
+// changes. Set Account to the name of an [[accounts]] entry whose SMTP
+// credentials to use; leave empty to use the active account's SMTP.
+type SenderConfig struct {
+	Name    string `toml:"name"`
+	From    string `toml:"from"`    // "Display Name <email@example.com>"
+	Account string `toml:"account"` // optional: account name whose SMTP to use
+}
+
 // AccountConfig holds IMAP/SMTP connection settings.
 type AccountConfig struct {
 	Name     string `toml:"name"`
@@ -112,6 +122,10 @@ type Config struct {
 	// For a single account the legacy [account] block is also accepted.
 	Accounts []AccountConfig `toml:"accounts"`
 	Account  AccountConfig   `toml:"account"` // legacy single-account fallback
+
+	// Senders is a list of extra "From" aliases (use [[senders]] in config.toml).
+	// These share the active account's SMTP connection — no IMAP or credentials needed.
+	Senders []SenderConfig `toml:"senders"`
 
 	Screener ScreenerConfig `toml:"screener"`
 	Folders  FoldersConfig  `toml:"folders"`

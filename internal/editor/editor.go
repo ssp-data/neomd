@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
+	"strings"
 )
+
+var neomdHeaderRe = regexp.MustCompile(`^# \[neomd: (\w+): (.*)\]$`)
 
 // Compose writes prelude to a temp .md file, opens $EDITOR, waits for it
 // to close, reads and returns the file contents.
@@ -73,14 +77,14 @@ func View(content string) (*exec.Cmd, string, error) {
 	return cmd, tmpPath, nil
 }
 
-// Prelude builds the comment header shown at the top of a new compose buffer.
+// Prelude builds the header shown at the top of a new compose buffer.
 // cc may be empty. If signature is non-empty it is appended after a blank line separator.
 func Prelude(to, cc, subject, signature string) string {
-	s := fmt.Sprintf("<!-- To: %s -->\n", to)
+	s := fmt.Sprintf("# [neomd: to: %s]\n", to)
 	if cc != "" {
-		s += fmt.Sprintf("<!-- CC: %s -->\n", cc)
+		s += fmt.Sprintf("# [neomd: cc: %s]\n", cc)
 	}
-	s += fmt.Sprintf("<!-- Subject: %s -->\n\n", subject)
+	s += fmt.Sprintf("# [neomd: subject: %s]\n\n", subject)
 	if signature != "" {
 		s += "\n\n--  \n" + signature + "\n"
 	}
@@ -89,13 +93,39 @@ func Prelude(to, cc, subject, signature string) string {
 
 // ReplyPrelude builds a quote block for replies. cc may be empty.
 func ReplyPrelude(to, cc, subject, originalFrom, originalBody string) string {
-	s := fmt.Sprintf("<!-- To: %s -->\n", to)
+	s := fmt.Sprintf("# [neomd: to: %s]\n", to)
 	if cc != "" {
-		s += fmt.Sprintf("<!-- CC: %s -->\n", cc)
+		s += fmt.Sprintf("# [neomd: cc: %s]\n", cc)
 	}
-	s += fmt.Sprintf("<!-- Subject: Re: %s -->\n\n---\n\n> **%s** wrote:\n>\n%s\n\n---\n\n",
+	s += fmt.Sprintf("# [neomd: subject: Re: %s]\n\n---\n\n> **%s** wrote:\n>\n%s\n\n---\n\n",
 		subject, originalFrom, quoteLines(originalBody))
 	return s
+}
+
+// ParseHeaders scans raw editor content for # [neomd: key: value] lines and
+// returns the extracted to, cc, bcc, subject values and the remaining body
+// (with header lines stripped). Any field not found is returned as "".
+func ParseHeaders(raw string) (to, cc, bcc, subject, body string) {
+	lines := splitLines(raw)
+	var kept []string
+	for _, line := range lines {
+		if m := neomdHeaderRe.FindStringSubmatch(strings.TrimRight(line, "\r")); m != nil {
+			switch strings.ToLower(m[1]) {
+			case "to":
+				to = strings.TrimSpace(m[2])
+			case "cc":
+				cc = strings.TrimSpace(m[2])
+			case "bcc":
+				bcc = strings.TrimSpace(m[2])
+			case "subject":
+				subject = strings.TrimSpace(m[2])
+			}
+			continue
+		}
+		kept = append(kept, line)
+	}
+	body = strings.Join(kept, "\n")
+	return
 }
 
 func quoteLines(body string) string {

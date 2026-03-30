@@ -36,8 +36,8 @@ Or in Gmail:
 This is the markdown sent:
 
 ```markdown
-<!-- To: email@domain.com -->
-<!-- Subject: this is an email from neomd! -->
+# [neomd: to: email@domain.com]
+# [neomd: subject: this is an email from neomd!]
 
 This email is from Neomd. Great I can add links such as [this](https://ssp.sh) with plain Markdown.
 
@@ -59,9 +59,11 @@ Compose emails in your editor, read them rendered with [glamour](https://github.
 
 - **Write in Markdown, send beautifully** — compose in `$EDITOR` (defaults to `nvim`), send as `multipart/alternative`: raw Markdown as plain text + goldmark-rendered HTML so recipients get clickable links, bold, headers, inline code, and code blocks
 - **Pre-send review** — after closing the editor, review To/Subject/body before sending; attach files, save to Drafts, or re-open the editor — no accidental sends
-- **Attachments** — attach files from the pre-send screen via yazi (`a`); images appear inline in the email body, other files as attachments; also attach from within neovim via `<leader>a`
+- **Attachments** — attach files from the pre-send screen via yazi (`a`); images appear inline in the email body, other files as attachments; also attach from within neovim via `<leader>a`; the reader lists all attachments (including inline images) and `1`–`9` downloads and opens them
 - **CC, BCC, Reply-all** — optional Cc/Bcc fields (toggle with `ctrl+b`); `R` in the reader replies to sender + all CC recipients
 - **Drafts** — `d` in pre-send saves to Drafts (IMAP APPEND); `E` in the reader re-opens a draft as an editable compose
+- **Multiple From addresses** — define SMTP-only `[[senders]]` aliases (e.g. `s@ssp.sh` through an existing account); cycle with `ctrl+f` in compose and pre-send; sent copies always land in the Sent folder
+- **Undo** — `u` reverses the last move or delete (`x`, `A`, `M*`) using the UIDPLUS destination UID
 - **Glamour reading** — incoming emails rendered as styled Markdown in the terminal
 - **HEY-style screener** — unknown senders land in `ToScreen`; press `I/O/F/P` to approve, block, mark as Feed, or mark as PaperTrail; reuses your existing `screened_in.txt` lists from neomutt
 - **Folder tabs** — Inbox, ToScreen, Feed, PaperTrail, Archive, Waiting, Someday, Scheduled, Sent, Trash, ScreenedOut
@@ -101,6 +103,12 @@ from     = "Me <me@example.com>"
 
 # Multiple accounts supported — add more [[accounts]] blocks
 # Switch between them with `ctrl+a` in the inbox
+
+# Optional: SMTP-only aliases — cycle with ctrl+f in compose/pre-send
+# [[senders]]
+# name    = "Work alias"
+# from    = "info@example.com"
+# account = "Personal"   # must match the name = field of an [[accounts]] block
 
 [screener]
 # reuse your existing neomutt allowlist files
@@ -230,6 +238,7 @@ Press `?` inside neomd to open the interactive help overlay. Start typing to fil
 |-----|--------|
 | `m` | mark / unmark email + advance cursor |
 | `U` | clear all marks |
+| `u` | undo last move or delete (reverses x, A, M* — not screener actions) |
 
 
 ### Leader Key Mappings (space prefix)
@@ -264,11 +273,13 @@ Press `?` inside neomd to open the interactive help overlay. Start typing to fil
 | `shift+R` | reply-all — reply to sender + all CC recipients  (from reader) |
 | `c` | compose new email |
 | `ctrl+b  (compose)` | toggle Cc+Bcc fields (both hidden by default) |
+| `ctrl+f  (compose/pre-send)` | cycle From address through all accounts + [[senders]] aliases |
 | `a  (pre-send)` | attach file via yazi file picker (or $NEOMD_FILE_PICKER) |
 | `D  (pre-send)` | remove last attachment |
 | `d  (pre-send)` | save to Drafts folder (IMAP APPEND with \Draft flag) |
 | `e  (pre-send)` | re-open editor to edit body |
 | `enter  (pre-send)` | confirm and send |
+| `1-9  (reader)` | download attachment N to ~/Downloads and open with xdg-open |
 | `e  (reader)` | open in $EDITOR read-only — search, copy, vim motions |
 | `E  (reader)` | continue draft — re-open as editable compose (Drafts folder) |
 | `o  (reader)` | open in w3m (terminal browser) |
@@ -381,7 +392,9 @@ Press `:` to open the command line. Tab cycles through completions; Enter runs t
 
 ## Images
 
-The TUI reader shows emails as plain Markdown — images appear as `[Image: alt]` placeholders, keeping the reading experience clean and fast. To see images, press `O` to open the email as HTML in your `$BROWSER` (images load from remote URLs as normal). For newsletters, `ctrl+o` opens the canonical web version directly (extracted from the `List-Post` header or the plain-text preamble), which is usually the better reading experience anyway. `o` opens in `w3m` for a quick terminal preview without leaving the keyboard.
+The TUI reader shows emails as plain Markdown — remote images appear as `[Image: alt]` placeholders, keeping the reading experience clean and fast. To see images, press `O` to open the email as HTML in your `$BROWSER` (images load from remote URLs as normal). For newsletters, `ctrl+o` opens the canonical web version directly (extracted from the `List-Post` header or the plain-text preamble), which is usually the better reading experience anyway. `o` opens in `w3m` for a quick terminal preview without leaving the keyboard.
+
+**Inline / attached images** (e.g. screenshots pasted into an email) are listed in the reader header alongside other attachments: `Attach:  [1] screenshot.png  [2] report.pdf`. Press `1`–`9` to download the file to `~/Downloads/` and open it with `xdg-open`.
 
 
 
@@ -397,6 +410,19 @@ This means recipients using Gmail, Apple Mail, Outlook, etc. see properly format
 When attachments are present the MIME structure is upgraded automatically:
 - **Images** → `multipart/related` with `Content-ID` — displayed inline in the email body
 - **Other files** (PDF, zip, …) → `multipart/mixed` — shown as downloadable attachments
+
+### Multiple From Addresses
+
+Add `[[senders]]` blocks to config to define extra identities that share an existing account's SMTP credentials:
+
+```toml
+[[senders]]
+name    = "Work alias"
+from    = "info@example.com"
+account = "Personal"   # must match the name = field of an [[accounts]] block
+```
+
+In compose and pre-send, press `ctrl+f` to cycle through all configured accounts followed by all senders. The displayed `From:` field updates live. Sent copies always go to the active account's Sent folder regardless of which From is selected.
 
 ### CC, BCC, and Reply-all
 

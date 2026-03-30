@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-30
+
+- **Multiple From addresses / SMTP aliases** — add `[[senders]]` blocks to config to define extra From identities (e.g. `s@ssp.sh` as an alias through an existing account's SMTP); cycle through all accounts + senders with `ctrl+f` in both compose and pre-send screens; the `account =` field matches by account `name =` (not email address)
+- **Sent folder** — after sending, neomd APPENDs a copy to the configured Sent IMAP folder with `\Seen` flag; the same raw MIME bytes used for SMTP delivery are reused for the APPEND (no double-build)
+- **Attachment column in inbox** — `@` appears in a dedicated column next to the date when an email has attachments (detected from IMAP BODYSTRUCTURE including inline images)
+- **Attachment downloads in reader** — the email header now lists all attachments as `[1] report.pdf  [2] photo.png`; press `1`–`9` to download attachment N to `~/Downloads/` and open it with `xdg-open`; filenames are deduplicated automatically
+- **Inline images as downloads** — images embedded inline in emails (`Content-Disposition: inline`, e.g. PNG screenshots) are now shown alongside regular attachments in the reader header and downloadable with `1`–`9`; previously only `Content-Disposition: attachment` parts were listed
+- **Undo move / delete** — `u` reverses the last single or batch move/delete (`x`, `A`, `M*`); uses the UIDPLUS destination UID so undo still works even when the server reassigns UIDs on MOVE; screener actions (`I`, `O`, `F`, `P`, `$`) are intentionally excluded because they also modify `.txt` list files
+- **Subject (and headers) re-parsed from editor** — editing `# [neomd: subject: ...]`, `# [neomd: to: ...]`, etc. in neovim now correctly updates those fields; previously the values were captured in a closure before the editor opened and changes were silently discarded; all three editor entry points (new compose, reply, continue draft) now call `editor.ParseHeaders` on the saved file content
+- **`ctrl+f` for cycling From** — changed from `f` (which conflicts with typing in text fields) to `ctrl+f`; works in both the compose form and the pre-send review screen
+
 ## 2026-03-29
 
 - **CC field** — compose and reply forms now include an optional Cc field (Tab/Enter to skip); CC recipients receive the email and appear in the `Cc:` header

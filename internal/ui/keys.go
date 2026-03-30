@@ -57,6 +57,7 @@ var HelpSections = []HelpSection{
 	{"Multi-select", [][2]string{
 		{"m", "mark / unmark email + advance cursor"},
 		{"U", "clear all marks"},
+		{"u", "undo last move or delete (reverses x, A, M* — not screener actions)"},
 	}},
 	{"Leader Key Mappings (space prefix)", [][2]string{
 		{"<space>1 … <space>9", "jump to folder tab by number (Inbox=1, ToScreen=2, …)"},
@@ -79,11 +80,13 @@ var HelpSections = []HelpSection{
 		{"shift+R", "reply-all — reply to sender + all CC recipients  (from reader)"},
 		{"c", "compose new email"},
 		{"ctrl+b  (compose)", "toggle Cc+Bcc fields (both hidden by default)"},
+		{"ctrl+f  (compose/pre-send)", "cycle From address through all accounts + [[senders]] aliases"},
 		{"a  (pre-send)", "attach file via yazi file picker (or $NEOMD_FILE_PICKER)"},
 		{"D  (pre-send)", "remove last attachment"},
 		{"d  (pre-send)", "save to Drafts folder (IMAP APPEND with \\Draft flag)"},
 		{"e  (pre-send)", "re-open editor to edit body"},
 		{"enter  (pre-send)", "confirm and send"},
+		{"1-9  (reader)", "download attachment N to ~/Downloads and open with xdg-open"},
 		{"e  (reader)", "open in $EDITOR read-only — search, copy, vim motions"},
 		{"E  (reader)", "continue draft — re-open as editable compose (Drafts folder)"},
 		{"o  (reader)", "open in w3m (terminal browser)"},

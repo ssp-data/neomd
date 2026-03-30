@@ -23,17 +23,25 @@ import (
 )
 
 // Email is a fully parsed email message.
+// Attachment holds a decoded email attachment (file or inline binary part).
+type Attachment struct {
+	Filename    string // from Content-Disposition filename or Content-Type name param
+	ContentType string // e.g. "application/pdf"
+	Data        []byte
+}
+
 type Email struct {
-	UID     uint32
-	From    string
-	To      string
-	CC      string // comma-separated CC addresses (may be empty)
-	ReplyTo string // Reply-To address if present (may be empty)
-	Subject string
-	Date    time.Time
-	Seen    bool
-	Folder  string
-	Size    uint32 // RFC822 size in bytes
+	UID           uint32
+	From          string
+	To            string
+	CC            string // comma-separated CC addresses (may be empty)
+	ReplyTo       string // Reply-To address if present (may be empty)
+	Subject       string
+	Date          time.Time
+	Seen          bool
+	Folder        string
+	Size          uint32 // RFC822 size in bytes
+	HasAttachment bool   // true if BODYSTRUCTURE contains an attachment part
 }
 
 // Config holds connection parameters.
@@ -185,10 +193,11 @@ func (c *Client) FetchHeaders(ctx context.Context, folder string, n int) ([]Emai
 		}
 
 		msgs, err := conn.Fetch(fetchSet, &imap.FetchOptions{
-			UID:        true,
-			Flags:      true,
-			Envelope:   true,
-			RFC822Size: true,
+			UID:           true,
+			Flags:         true,
+			Envelope:      true,
+			RFC822Size:    true,
+			BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
 		}).Collect()
 		if err != nil {
 			return fmt.Errorf("FETCH headers: %w", err)
@@ -236,6 +245,7 @@ func (c *Client) FetchHeaders(ctx context.Context, folder string, n int) ([]Emai
 				}
 			}
 			e.Size = uint32(m.RFC822Size)
+			e.HasAttachment = hasAttachment(m.BodyStructure)
 			emails = append(emails, e)
 		}
 		return nil
@@ -295,6 +305,32 @@ func (c *Client) FetchUnseenCounts(ctx context.Context, folders map[string]strin
 	return counts, err
 }
 
+// hasAttachment reports whether a BODYSTRUCTURE tree contains at least one
+// part with Content-Disposition: attachment. Extended bodystructure must have
+// been requested (FetchItemBodyStructure{Extended: true}) for Disposition to
+// be populated; returns false if bs is nil.
+func hasAttachment(bs imap.BodyStructure) bool {
+	if bs == nil {
+		return false
+	}
+	switch v := bs.(type) {
+	case *imap.BodyStructureSinglePart:
+		d := v.Disposition() // method call; returns nil if Extended is nil
+		if d != nil && strings.EqualFold(d.Value, "attachment") {
+			return true
+		}
+		// Inline images (Content-Disposition: inline or missing) also count
+		return strings.EqualFold(v.Type, "image")
+	case *imap.BodyStructureMultiPart:
+		for _, child := range v.Children {
+			if hasAttachment(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // FetchHeadersByUID fetches envelope headers for a specific slice of UIDs.
 // Callers should pass small batches (≤200) to avoid oversized IMAP requests.
 func (c *Client) FetchHeadersByUID(ctx context.Context, folder string, uids []uint32) ([]Email, error) {
@@ -348,14 +384,13 @@ func (c *Client) FetchHeadersByUID(ctx context.Context, folder string, uids []ui
 }
 
 // FetchBody fetches the body of a single message.
-// Returns (markdownBody, rawHTML, webURL, error).
-// rawHTML is the original HTML part (empty for plain-text emails).
-// webURL is the canonical "view online" URL (empty if not found).
-func (c *Client) FetchBody(ctx context.Context, folder string, uid uint32) (string, string, string, error) {
+// Returns (markdownBody, rawHTML, webURL, attachments, error).
+func (c *Client) FetchBody(ctx context.Context, folder string, uid uint32) (string, string, string, []Attachment, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	var markdown, rawHTML, webURL string
+	var attachments []Attachment
 	err := c.withConn(ctx, func(conn *imapclient.Client) error {
 		if err := c.selectMailbox(folder); err != nil {
 			return err
@@ -376,52 +411,61 @@ func (c *Client) FetchBody(ctx context.Context, folder string, uid uint32) (stri
 		}
 
 		if len(msgs[0].BodySection) > 0 {
-			markdown, rawHTML, webURL = parseBody(msgs[0].BodySection[0].Bytes)
+			markdown, rawHTML, webURL, attachments = parseBody(msgs[0].BodySection[0].Bytes)
 		}
 		return nil
 	})
-	return markdown, rawHTML, webURL, err
+	return markdown, rawHTML, webURL, attachments, err
 }
 
 // MoveMessage moves uid from src to dst using the IMAP MOVE command (RFC 6851).
-// Falls back to COPY + STORE \Deleted + UID EXPUNGE on servers without MOVE.
-// Uses UID EXPUNGE (not plain EXPUNGE) in the fallback to avoid accidentally
-// expunging messages marked \Deleted by other concurrent clients.
-func (c *Client) MoveMessage(ctx context.Context, src string, uid uint32, dst string) error {
+// Returns the UID assigned at the destination (may differ from src UID on some
+// servers). Falls back to the original uid if the server does not report UIDPLUS
+// COPYUID data. Callers that need the dest UID for undo should capture it.
+func (c *Client) MoveMessage(ctx context.Context, src string, uid uint32, dst string) (destUID uint32, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return c.withConn(ctx, func(conn *imapclient.Client) error {
+	destUID = uid // default: assume same UID
+	err = c.withConn(ctx, func(conn *imapclient.Client) error {
 		if err := c.selectMailbox(src); err != nil {
 			return err
 		}
 		var uidSet imap.UIDSet
 		uidSet.AddNum(imap.UID(uid))
-		_, err := conn.Move(uidSet, dst).Wait()
-		if err != nil {
-			// If the server says the destination doesn't exist, create it and retry.
+		data, moveErr := conn.Move(uidSet, dst).Wait()
+		if moveErr != nil {
 			var imapErr *imap.Error
-		if errors.As(err, &imapErr) && imapErr.Code == imap.ResponseCodeTryCreate {
-			if cerr := conn.Create(dst, nil).Wait(); cerr != nil {
-				return fmt.Errorf("CREATE %s: %w", dst, cerr)
+			if errors.As(moveErr, &imapErr) && imapErr.Code == imap.ResponseCodeTryCreate {
+				if cerr := conn.Create(dst, nil).Wait(); cerr != nil {
+					return fmt.Errorf("CREATE %s: %w", dst, cerr)
+				}
+				_ = conn.Subscribe(dst).Wait()
+				c.selectedMailbox = ""
+				if err := c.selectMailbox(src); err != nil {
+					return err
+				}
+				var err2 error
+				data, err2 = conn.Move(uidSet, dst).Wait()
+				if err2 != nil {
+					return fmt.Errorf("MOVE %d → %s (after CREATE): %w", uid, dst, err2)
+				}
+			} else {
+				return fmt.Errorf("MOVE %d → %s: %w", uid, dst, moveErr)
 			}
-			// Subscribe so the folder appears in webmail and other clients.
-			_ = conn.Subscribe(dst).Wait()
-			// Re-select src after CREATE (server may have deselected it)
-			c.selectedMailbox = ""
-			if err := c.selectMailbox(src); err != nil {
-				return err
-			}
-			if _, err = conn.Move(uidSet, dst).Wait(); err != nil {
-				return fmt.Errorf("MOVE %d → %s (after CREATE): %w", uid, dst, err)
-			}
-		} else {
-			return fmt.Errorf("MOVE %d → %s: %w", uid, dst, err)
 		}
+		// Extract destination UID from UIDPLUS COPYUID response when available.
+		if data != nil && data.DestUIDs != nil {
+			if us, ok := data.DestUIDs.(imap.UIDSet); ok {
+				if nums, ok2 := us.Nums(); ok2 && len(nums) > 0 {
+					destUID = uint32(nums[0])
+				}
+			}
 		}
-		c.selectedMailbox = "" // mailbox state changes after move
+		c.selectedMailbox = ""
 		return nil
 	})
+	return destUID, err
 }
 
 // EnsureFolders creates and subscribes any folders in the list that do not
@@ -523,6 +567,31 @@ func (c *Client) MarkUnseen(ctx context.Context, folder string, uid uint32) erro
 	})
 }
 
+// SaveSent APPENDs a raw MIME message to the given folder with the \Seen flag.
+// Call this after a successful SMTP send to keep a copy in the Sent mailbox.
+func (c *Client) SaveSent(ctx context.Context, folder string, raw []byte) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return c.withConn(ctx, func(conn *imapclient.Client) error {
+		opts := &imap.AppendOptions{
+			Flags: []imap.Flag{imap.FlagSeen},
+			Time:  time.Now(),
+		}
+		cmd := conn.Append(folder, int64(len(raw)), opts)
+		if _, err := cmd.Write(raw); err != nil {
+			return fmt.Errorf("APPEND write: %w", err)
+		}
+		if err := cmd.Close(); err != nil {
+			return fmt.Errorf("APPEND close: %w", err)
+		}
+		if _, err := cmd.Wait(); err != nil {
+			return fmt.Errorf("APPEND wait: %w", err)
+		}
+		return nil
+	})
+}
+
 // SaveDraft APPENDs a raw MIME message to the given folder with the \Draft flag.
 // The folder must already exist (use EnsureFolders if needed).
 func (c *Client) SaveDraft(ctx context.Context, folder string, raw []byte) error {
@@ -554,10 +623,10 @@ func (c *Client) SaveDraft(ctx context.Context, folder string, raw []byte) error
 //   - rawHTML:      original HTML part verbatim (empty for plain-text emails)
 //   - webURL:       "view online" URL extracted from List-Post header or plain-text
 //     preamble (e.g. Substack's "View this post on the web at https://…")
-func parseBody(raw []byte) (markdown, rawHTML, webURL string) {
+func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Attachment) {
 	e, err := message.Read(bytes.NewReader(raw))
 	if err != nil && !message.IsUnknownCharset(err) {
-		return string(raw), "", ""
+		return string(raw), "", "", nil
 	}
 
 	// List-Post header contains the canonical article URL on most newsletters:
@@ -574,6 +643,7 @@ func parseBody(raw []byte) (markdown, rawHTML, webURL string) {
 
 	mr := mail.NewReader(e)
 	var plainText, htmlText string
+	cidToName := make(map[string]string) // Content-ID → filename for inline images
 
 	for {
 		p, err := mr.NextPart()
@@ -592,22 +662,61 @@ func parseBody(raw []byte) (markdown, rawHTML, webURL string) {
 		var ct string
 		switch h := p.Header.(type) {
 		case *mail.InlineHeader:
-			ct, _, _ = h.ContentType()
+			var params map[string]string
+			ct, params, _ = h.ContentType()
+			if ct != "text/plain" && ct != "text/html" {
+				// Inline binary part (e.g. image/png) — treat as download
+				filename := params["name"]
+				if filename == "" {
+					if parts := strings.SplitN(ct, "/", 2); len(parts) == 2 {
+						filename = "attachment." + parts[1]
+					} else {
+						filename = "attachment.bin"
+					}
+				}
+				// Map Content-ID → filename so we can inject alt text into the HTML
+				if cid := strings.Trim(h.Get("Content-ID"), "<>"); cid != "" {
+					cidToName[cid] = filename
+				}
+				data, _ := io.ReadAll(p.Body)
+				attachments = append(attachments, Attachment{
+					Filename:    filename,
+					ContentType: ct,
+					Data:        data,
+				})
+				continue
+			}
 		case *mail.AttachmentHeader:
 			ct, _, _ = h.ContentType()
+			filename, _ := h.Filename()
+			data, _ := io.ReadAll(p.Body)
+			if filename != "" {
+				attachments = append(attachments, Attachment{
+					Filename:    filename,
+					ContentType: ct,
+					Data:        data,
+				})
+			}
+			continue
 		}
 
-		body, _ := io.ReadAll(p.Body)
+		data, _ := io.ReadAll(p.Body)
 		switch ct {
 		case "text/plain":
 			if plainText == "" {
-				plainText = string(body)
+				plainText = string(data)
 			}
 		case "text/html":
 			if htmlText == "" {
-				htmlText = string(body)
+				htmlText = string(data)
 			}
 		}
+	}
+
+	// Inject alt attributes for CID images so cleanMarkdown keeps them as
+	// [Image: filename.png] placeholders instead of stripping them as empty.
+	if htmlText != "" && len(cidToName) > 0 {
+		htmlText = injectCIDAlt(htmlText, cidToName)
 	}
 
 	// If List-Post didn't give us a URL, try the plain-text preamble.
@@ -620,12 +729,12 @@ func parseBody(raw []byte) (markdown, rawHTML, webURL string) {
 	// text/plain part is typically a stripped dump with raw redirect URLs.
 	// Fall back to plain text for plain-text-only emails (e.g. direct replies).
 	if htmlText != "" {
-		return htmlToMarkdown(htmlText), htmlText, webURL
+		return htmlToMarkdown(htmlText), htmlText, webURL, attachments
 	}
 	if plainText != "" {
-		return normalizePlainText(plainText), "", webURL
+		return normalizePlainText(plainText), "", webURL, attachments
 	}
-	return "(no body)", "", webURL
+	return "(no body)", "", webURL, attachments
 }
 
 // extractPlainTextWebURL looks for a "View … on the web at https://…" line
@@ -640,6 +749,43 @@ func extractPlainTextWebURL(text string) string {
 		return strings.TrimRight(m[1], ".,;)")
 	}
 	return ""
+}
+
+// cidImgRe matches <img ...src="cid:XYZ"...> tags (with or without alt).
+var cidImgRe = regexp.MustCompile(`(?i)<img\b([^>]*?)src="cid:([^"]+)"([^>]*?)>`)
+
+// emptyAltRe matches alt="" or alt='' (empty alt attribute).
+var emptyAltRe = regexp.MustCompile(`(?i)\s*alt=["']\s*["']`)
+
+// injectCIDAlt adds alt="filename" to <img src="cid:..."> tags that lack an alt
+// attribute or have an empty alt="", so that html-to-markdown produces
+// ![filename](cid:...) instead of ![](cid:...) which cleanMarkdown would strip.
+func injectCIDAlt(html string, cidToName map[string]string) string {
+	return cidImgRe.ReplaceAllStringFunc(html, func(m string) string {
+		parts := cidImgRe.FindStringSubmatch(m)
+		if parts == nil {
+			return m
+		}
+		cid := parts[2]
+		name := "image"
+		if n, ok := cidToName[cid]; ok {
+			name = n
+		}
+		full := parts[0]
+		attrs := parts[1] + parts[3]
+		lAttrs := strings.ToLower(attrs)
+		if strings.Contains(lAttrs, "alt=") {
+			// Replace empty alt="" with alt="filename"
+			if emptyAltRe.MatchString(full) {
+				return emptyAltRe.ReplaceAllString(full, ` alt="`+name+`"`)
+			}
+			// Non-empty alt already present — keep it
+			return m
+		}
+		// No alt at all — inject one
+		before, after := parts[1], parts[3]
+		return `<img` + before + `alt="` + name + `" src="cid:` + cid + `"` + after + `>`
+	})
 }
 
 // htmlToMarkdown converts an HTML email body to Markdown so glamour can render

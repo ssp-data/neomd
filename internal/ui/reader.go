@@ -9,6 +9,7 @@ import (
 	"github.com/sspaeti/neomd/internal/render"
 )
 
+
 // newReader creates a viewport for reading emails.
 func newReader(width, height int) viewport.Model {
 	vp := viewport.New(width, height)
@@ -17,8 +18,8 @@ func newReader(width, height int) viewport.Model {
 }
 
 // loadEmailIntoReader renders the email and sets the viewport content.
-func loadEmailIntoReader(vp *viewport.Model, email *imap.Email, body, theme string, width int) error {
-	header := renderEmailHeader(email, width)
+func loadEmailIntoReader(vp *viewport.Model, email *imap.Email, body string, attachments []imap.Attachment, theme string, width int) error {
+	header := renderEmailHeader(email, attachments, width)
 
 	rendered, err := render.ToANSI(body, theme, width)
 	if err != nil {
@@ -30,7 +31,7 @@ func loadEmailIntoReader(vp *viewport.Model, email *imap.Email, body, theme stri
 	return nil
 }
 
-func renderEmailHeader(e *imap.Email, width int) string {
+func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, width int) string {
 	if e == nil {
 		return ""
 	}
@@ -42,15 +43,23 @@ func renderEmailHeader(e *imap.Email, width int) string {
 		styleDate.Render("Date:    ") + fmtDate(e.Date),
 	}
 
+	if len(attachments) > 0 {
+		var parts []string
+		for i, a := range attachments {
+			parts = append(parts, fmt.Sprintf("[%d] %s", i+1, a.Filename))
+		}
+		lines = append(lines, styleHelp.Render("Attach:  ")+strings.Join(parts, "  "))
+	}
+
 	content := strings.Join(lines, "\n")
-	_ = width // box will size itself
+	_ = width
 
 	return styleEmailMeta.Render(content) + "\n"
 }
 
 // readerHelp returns the one-line help string for the reader view.
 func readerHelp() string {
-	keys := []string{"j/k scroll", "space/d page", "h/q back", "r reply", "e nvim", "o w3m", "O browser", "ctrl+o web", "? help"}
+	keys := []string{"j/k scroll", "space/d page", "h/q back", "r reply", "e nvim", "o w3m", "O browser", "ctrl+o web", "1-9 attachment", "? help"}
 	return styleHelp.Render("  " + strings.Join(keys, " · "))
 }
 
@@ -65,14 +74,18 @@ func inboxHelp(folder string) string {
 }
 
 // composeHelp returns the one-line help string for the compose view.
-func composeHelp(step int) string {
+func composeHelp(step int, hasSenders bool) string {
+	fromHint := ""
+	if hasSenders {
+		fromHint = " · ctrl+f cycle from"
+	}
 	switch step {
 	case 0: // stepTo
-		return styleHelp.Render("  tab/enter next · ctrl+b toggle Cc/Bcc · ctrl+t attach · esc cancel")
+		return styleHelp.Render("  tab/enter next · ctrl+b toggle Cc/Bcc · ctrl+t attach" + fromHint + " · esc cancel")
 	case 1, 2: // stepCC, stepBCC
-		return styleHelp.Render("  tab/enter next (optional) · ctrl+b hide Cc/Bcc · ctrl+t attach · esc cancel")
+		return styleHelp.Render("  tab/enter next (optional) · ctrl+b hide Cc/Bcc · ctrl+t attach" + fromHint + " · esc cancel")
 	default: // stepSubject
-		return styleHelp.Render("  enter open editor · ctrl+t attach · D remove last attachment · esc cancel")
+		return styleHelp.Render("  enter open editor · ctrl+t attach · D remove last" + fromHint + " · esc cancel")
 	}
 }
 

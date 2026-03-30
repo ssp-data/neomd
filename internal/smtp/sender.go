@@ -68,6 +68,20 @@ func Send(cfg Config, to, cc, bcc, subject, markdownBody string, attachments []s
 	}
 }
 
+// SendRaw delivers a pre-built raw MIME message (e.g. from BuildMessage).
+// toAddrs must include all RCPT TO recipients (To + CC + BCC combined).
+// This lets the caller build the message once and reuse it (e.g. to save to Sent).
+func SendRaw(cfg Config, toAddrs []string, raw []byte) error {
+	fromAddr := extractAddr(cfg.From)
+	addr := cfg.Host + ":" + cfg.Port
+	switch cfg.Port {
+	case "465":
+		return sendTLS(addr, cfg.Host, cfg.User, cfg.Password, fromAddr, toAddrs, raw)
+	default:
+		return sendSTARTTLS(addr, cfg.Host, cfg.User, cfg.Password, fromAddr, toAddrs, raw)
+	}
+}
+
 // sendSTARTTLS sends via STARTTLS upgrade (port 587).
 func sendSTARTTLS(addr, host, user, password, from string, to []string, msg []byte) error {
 	auth := smtp.PlainAuth("", user, password, host)

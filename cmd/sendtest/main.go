@@ -22,6 +22,9 @@ E.g. **bold** or _italic_.
 
 this is a text before a h3.
 
+here's an image in-line:
+[attach] /home/sspaeti/git/email/neomd/images/overview-email-feed.png
+
 ### H3 header
 
 Code block here:

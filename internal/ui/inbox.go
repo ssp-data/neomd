@@ -35,10 +35,11 @@ func (d emailDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 // Column widths
 const (
-	colNumWidth  = 4  // "  1 "
-	colFlagWidth = 2  // "N " or "  "
-	colDateWidth = 7  // "Feb 03 "
-	colSizeWidth = 7  // "(38.2K)"
+	colNumWidth    = 4 // "  1 "
+	colFlagWidth   = 2 // "N " or "  "
+	colDateWidth   = 7 // "Feb 03 "
+	colAttachWidth = 2 // "@ " or "  "
+	colSizeWidth   = 7 // "(38.2K)"
 )
 
 func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
@@ -68,9 +69,13 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		flag = "N "
 	}
 	dateStr := fmtDate(e.email.Date) + " "
+	attachStr := "  "
+	if e.email.HasAttachment {
+		attachStr = "@ "
+	}
 	sizeStr := fmtSize(e.email.Size)
 
-	fixed := colNumWidth + colFlagWidth + colDateWidth + colSizeWidth + 2 // 2 spaces padding
+	fixed := colNumWidth + colFlagWidth + colDateWidth + colAttachWidth + colSizeWidth + 2 // 2 spaces padding
 	fromMax := 20
 	subjectMax := width - fixed - fromMax - 2
 	if subjectMax < 8 {
@@ -81,8 +86,8 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	subject := truncate(e.email.Subject, subjectMax)
 
 	if isSelected {
-		row := fmt.Sprintf("%s%s%s%-*s  %-*s  %s",
-			num, flag, dateStr,
+		row := fmt.Sprintf("%s%s%s%s%-*s  %-*s  %s",
+			num, flag, dateStr, attachStr,
 			fromMax, from,
 			subjectMax, subject,
 			sizeStr,
@@ -103,6 +108,7 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		flagS = lipgloss.NewStyle().Foreground(colorMuted).Render(flag)
 	}
 	dateS := lipgloss.NewStyle().Foreground(colorDateCol).Render(dateStr)
+	attachS := lipgloss.NewStyle().Foreground(colorDateCol).Render(attachStr)
 
 	fromStyle := lipgloss.NewStyle().Foreground(colorAuthorRead)
 	subStyle := lipgloss.NewStyle().Foreground(colorSubjectRead)
@@ -114,7 +120,7 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	subS := subStyle.Render(fmt.Sprintf("%-*s", subjectMax, subject))
 	sizeS := lipgloss.NewStyle().Foreground(colorSizeCol).Render(sizeStr)
 
-	fmt.Fprint(w, numS+flagS+dateS+fromS+"  "+subS+"  "+sizeS)
+	fmt.Fprint(w, numS+flagS+dateS+attachS+fromS+"  "+subS+"  "+sizeS)
 }
 
 // cleanFrom strips the <addr> part when a display name is present.
