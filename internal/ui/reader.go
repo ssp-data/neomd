@@ -58,8 +58,13 @@ func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, width int) 
 }
 
 // readerHelp returns the one-line help string for the reader view.
-func readerHelp() string {
-	keys := []string{"j/k scroll", "space/d page", "h/q back", "r reply", "f fwd", "e nvim", "o w3m", "O browser", "ctrl+o web", "1-9 attachment", "? help"}
+// When isDraft is true, "E draft" is shown so the user knows they can re-open in compose.
+func readerHelp(isDraft bool) string {
+	keys := []string{"j/k scroll", "space/d page", "h/q back", "r reply", "f fwd", "e nvim"}
+	if isDraft {
+		keys = append(keys, "E draft")
+	}
+	keys = append(keys, "o w3m", "O browser", "ctrl+o web", "1-9 attachment", "? help")
 	return styleHelp.Render("  " + strings.Join(keys, " · "))
 }
 

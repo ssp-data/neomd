@@ -2043,8 +2043,9 @@ func (m Model) continueDraft() (tea.Model, tea.Cmd) {
 	}
 	m.compose.step = 3 // jump past header steps to subject-done state
 
-	// Build temp file with prelude + existing body
-	prelude := editor.Prelude(to, cc, subject, m.cfg.UI.Signature)
+	// Build temp file with prelude + existing body.
+	// No signature — the draft body already contains it from the first compose.
+	prelude := editor.Prelude(to, cc, subject, "")
 	body := m.openBody
 
 	f, err := os.CreateTemp("", "neomd-*.md")
@@ -2683,7 +2684,8 @@ func (m Model) viewReader() string {
 	} else {
 		b.WriteString(m.reader.View())
 	}
-	b.WriteString("\n" + readerHelp())
+	isDraft := m.openEmail != nil && m.openEmail.Folder == m.cfg.Folders.Drafts
+	b.WriteString("\n" + readerHelp(isDraft))
 	return b.String()
 }
 
