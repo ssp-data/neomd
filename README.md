@@ -78,7 +78,7 @@ Compose emails in your editor, read them rendered with [glamour](https://github.
 **Prerequisites:** [Go 1.22+](https://go.dev/doc/install) and `make`.
 
 ```sh
-git clone https://github.com/sspaeti/neomd
+git clone https://github.com/ssp-data/neomd
 cd neomd
 make install   # installs to ~/.local/bin/neomd
 ```
