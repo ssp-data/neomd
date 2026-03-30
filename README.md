@@ -392,38 +392,58 @@ neomd sends every email as `multipart/alternative`:
 - **`text/plain`** — the raw Markdown you wrote (readable as-is in any client)
 - **`text/html`** — rendered by [goldmark](https://github.com/yuin/goldmark) with a clean CSS wrapper
 
-This means recipients using Gmail, Apple Mail, Outlook, etc. see properly formatted links, bold, headers, and code blocks — while you write nothing but Markdown.
+This means recipients using Gmail, Apple Mail, Outlook, etc. see properly formatted links, bold, headers, inline code, and code blocks — while you write nothing but Markdown.
+
+When attachments are present the MIME structure is upgraded automatically:
+- **Images** → `multipart/related` with `Content-ID` — displayed inline in the email body
+- **Other files** (PDF, zip, …) → `multipart/mixed` — shown as downloadable attachments
+
+### CC, BCC, and Reply-all
+
+In the compose form, `ctrl+b` toggles the Cc and Bcc fields (hidden by default). Bcc recipients receive the email but are never written to message headers. From the reader, `r` replies to the sender and `R` replies to the sender plus all Cc recipients (your own address excluded, `Reply-To` respected).
 
 ### Attachments
 
-Attachments are now supported and tighly integrated into neovim.
+Attachments are tightly integrated with both the pre-send screen and neovim.
 
-> **Note: custom.lua in neovim needed for this**
-> You need to add [custom.lua]([https://github.com/sspaeti/dotfiles/blob/master/nvim/.config/nvim/lua/sspaeti/custom.lua) to your neovim config to be able to add the neomd attachmend with yazi (yazi need to be installed too). See link above to my custom.lua config.
+**From the pre-send screen** — press `a` to open yazi (auto-detected; override with `$NEOMD_FILE_PICKER`). Press `D` to remove the last attachment.
 
-With `<leader>a` in a `neomd-*.md` buffer opens **yazi** in a floating terminal - you can select files are inserted as `[attach] /path/to/file` lines (visible in markdown, not hidden HTML comments)
+**From within neovim** — press `<leader>a` in any `neomd-*.md` buffer to open yazi in a floating terminal. Selected files are inserted at the cursor as visible `[attach] /path/to/file` lines.
 
-Neomd strips them before sending and adds them as MIME attachments.
+> **Requires** [custom.lua](https://github.com/sspaeti/dotfiles/blob/master/nvim/.config/nvim/lua/sspaeti/custom.lua) added to your neovim config, and [yazi](https://github.com/sxyazi/yazi) installed.
 
-For example this markdown below:
+neomd strips `[attach]` lines before sending:
+- **Image files** (`.png`, `.jpg`, `.gif`, `.webp`, `.svg`) → embedded inline in the HTML body; recipients see the image at that position
+- **Other files** → appended as a regular MIME attachment
+
 ```markdown
+Here is a screenshot:
+[attach] /home/you/screenshots/overview.png
 
-e.g. an image:
-[attach] /home/sspaeti/git/email/neomd/images/overview-email-feed.png
-
-
-Or a PDF (will be attached at the end, not inline):
-[attach] /home/sspaeti/Downloads/send-letter.pdf
+And a PDF for reference:
+[attach] /home/you/docs/report.pdf
 ```
-
-Will be rendered to:
 
 ![neomd](images/attachments-example.webp)
 
-### Pre-send Navigation
-When we save an email in Neovim, before we send we can remove or add attachments or save to draft. That navigation looks like this:
+### Pre-send Review
+
+After saving and closing the editor, neomd shows a review screen before sending — add or remove attachments, save to Drafts, or re-open the editor without sending accidentally.
 
 ![neomd](images/presend-navigation.png)
+
+| Key | Action |
+|-----|--------|
+| `enter` | send |
+| `a` | attach file via yazi |
+| `D` | remove last attachment |
+| `d` | save to Drafts (IMAP APPEND with `\Draft` flag) |
+| `e` | re-open editor |
+| `esc` | cancel |
+
+### Drafts
+
+Press `d` in the pre-send screen to save to Drafts instead of sending. Navigate to Drafts with `gd`. To resume a saved draft, open it and press `E` — it re-opens in the editor with all fields pre-filled, and saving goes through the normal pre-send review.
 
 ## Make Targets
 
