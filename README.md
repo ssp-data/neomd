@@ -95,6 +95,8 @@ On first run, neomd:
 2. Creates `~/.config/neomd/lists/` for screener allowlists (or uses your custom paths from config)
 3. Creates any missing IMAP folders (ToScreen, Feed, PaperTrail, etc.) automatically
 
+Neomd also runs on Android (more for fun) — see [docs/android.md](docs/android.md).
+
 ## Configuration
 
 On first run, neomd creates `~/.config/neomd/config.toml` with placeholders:

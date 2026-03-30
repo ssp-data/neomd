@@ -60,9 +60,24 @@ fmt:
 tidy:
 	go mod tidy
 
+## android: cross-compile for Android ARM64 (run in Termux)
+android: check-go docs
+	CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build $(LDFLAGS) -o $(BINARY)-android $(CMD)
+	@echo ""
+	@echo "  Built $(BINARY)-android (ARM64)"
+	@echo ""
+	@echo "  Transfer to your Android device:"
+	@echo "    adb push $(BINARY)-android /sdcard/Download/"
+	@echo ""
+	@echo "  Then in Termux:"
+	@echo "    cp /sdcard/Download/$(BINARY)-android ~/$(BINARY)"
+	@echo "    chmod +x ~/$(BINARY)"
+	@echo "    ~/$(BINARY)"
+	@echo ""
+
 ## clean: remove compiled binary
 clean:
-	rm -f $(BINARY)
+	rm -f $(BINARY) $(BINARY)-android
 
 ## release: tag and push a new release (usage: make release VERSION=v0.1.0)
 release: docs
