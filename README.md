@@ -66,6 +66,7 @@ Compose emails in your editor, read them rendered with [glamour](https://github.
 - **Write in Markdown, send beautifully** — compose in `$EDITOR` (defaults to `nvim`), send as `multipart/alternative`: raw Markdown as plain text + goldmark-rendered HTML so recipients get clickable links, bold, headers, inline code, and code blocks
 - **Pre-send review** — after closing the editor, review To/Subject/body before sending; attach files, save to Drafts, or re-open the editor — no accidental sends
 - **Attachments** — attach files from the pre-send screen via yazi (`a`); images appear inline in the email body, other files as attachments; also attach from within neovim via `<leader>a`; the reader lists all attachments (including inline images) and `1`–`9` downloads and opens them
+- **Link opener** — links in emails are numbered `[1]`-`[0]` in the reader header; press `space+digit` to open in `$BROWSER`
 - **CC, BCC, Reply-all** — optional Cc/Bcc fields (toggle with `ctrl+b`); `R` in the reader replies to sender + all CC recipients
 - **Drafts** — `d` in pre-send saves to Drafts (IMAP APPEND); `E` in the reader re-opens a draft as an editable compose
 - **Multiple From addresses** — define SMTP-only `[[senders]]` aliases (e.g. `s@ssp.sh` through an existing account); cycle with `ctrl+f` in compose and pre-send; sent copies always land in the Sent folder
@@ -147,7 +148,8 @@ See [docs/screener.md](docs/screener.md) for the full workflow, classification t
 
 Compose in Markdown, send as `multipart/alternative` (plain text + HTML). Attachments, CC/BCC, multiple From addresses, drafts, and pre-send review are all supported.
 
-See [docs/sending.md](docs/sending.md) for details on MIME structure, attachments, pre-send review, drafts, and how images are handled in the reader.
+- See [docs/sending.md](docs/sending.md) for details on MIME structure, attachments, pre-send review, and drafts. 
+- See [docs/reading.md](docs/reading.md) for the reader: images, inline links, attachments, and navigation.
 
 ## Make Targets
 

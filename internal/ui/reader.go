@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -9,6 +10,40 @@ import (
 	"github.com/sspaeti/neomd/internal/render"
 )
 
+// emailLink holds an extracted link from the email body.
+type emailLink struct {
+	Text string
+	URL  string
+}
+
+// mdLinkRe matches [text](url) in markdown.
+var mdLinkRe = regexp.MustCompile(`\[([^\]]+)\]\((https?://[^)]+)\)`)
+
+// extractLinks pulls all [text](url) links from markdown, deduplicating by URL.
+func extractLinks(markdown string) []emailLink {
+	matches := mdLinkRe.FindAllStringSubmatch(markdown, -1)
+	seen := make(map[string]bool)
+	var links []emailLink
+	for _, m := range matches {
+		if len(m) < 3 {
+			continue
+		}
+		url := m[2]
+		if seen[url] {
+			continue
+		}
+		seen[url] = true
+		text := m[1]
+		if len(text) > 40 {
+			text = text[:37] + "..."
+		}
+		links = append(links, emailLink{Text: text, URL: url})
+	}
+	if len(links) > 10 {
+		links = links[:10]
+	}
+	return links
+}
 
 // newReader creates a viewport for reading emails.
 func newReader(width, height int) viewport.Model {
@@ -17,11 +52,42 @@ func newReader(width, height int) viewport.Model {
 	return vp
 }
 
+// numberLinks replaces [text](url) in markdown with [text [N]](url) so glamour
+// renders the link number inline where the link appears in the body.
+func numberLinks(body string, links []emailLink) string {
+	if len(links) == 0 {
+		return body
+	}
+	// Build URL → number map
+	urlToNum := make(map[string]int, len(links))
+	for i, l := range links {
+		n := i + 1
+		if n == 10 {
+			n = 0
+		}
+		urlToNum[l.URL] = n
+	}
+	return mdLinkRe.ReplaceAllStringFunc(body, func(m string) string {
+		parts := mdLinkRe.FindStringSubmatch(m)
+		if len(parts) < 3 {
+			return m
+		}
+		text, url := parts[1], parts[2]
+		if n, ok := urlToNum[url]; ok {
+			return fmt.Sprintf("[%s [%d]](%s)", text, n, url)
+		}
+		return m
+	})
+}
+
 // loadEmailIntoReader renders the email and sets the viewport content.
-func loadEmailIntoReader(vp *viewport.Model, email *imap.Email, body string, attachments []imap.Attachment, theme string, width int) error {
+func loadEmailIntoReader(vp *viewport.Model, email *imap.Email, body string, attachments []imap.Attachment, links []emailLink, theme string, width int) error {
 	header := renderEmailHeader(email, attachments, width)
 
-	rendered, err := render.ToANSI(body, theme, width)
+	// Inject link numbers inline before glamour rendering
+	numbered := numberLinks(body, links)
+
+	rendered, err := render.ToANSI(numbered, theme, width)
 	if err != nil {
 		rendered = body // fall back to raw markdown
 	}
@@ -59,12 +125,16 @@ func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, width int) 
 
 // readerHelp returns the one-line help string for the reader view.
 // When isDraft is true, "E draft" is shown so the user knows they can re-open in compose.
-func readerHelp(isDraft bool) string {
-	keys := []string{"j/k scroll", "space/d page", "h/q back", "r reply", "f fwd", "e nvim"}
+func readerHelp(isDraft bool, hasLinks bool) string {
+	keys := []string{"j/k scroll", "h/q back", "r reply", "f fwd", "e nvim"}
 	if isDraft {
 		keys = append(keys, "E draft")
 	}
-	keys = append(keys, "o w3m", "O browser", "ctrl+o web", "1-9 attachment", "? help")
+	keys = append(keys, "o w3m", "O browser", "ctrl+o web", "1-9 attach")
+	if hasLinks {
+		keys = append(keys, "space+1-9 links")
+	}
+	keys = append(keys, "? help")
 	return styleHelp.Render("  " + strings.Join(keys, " · "))
 }
 

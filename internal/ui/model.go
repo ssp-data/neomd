@@ -143,6 +143,8 @@ type Model struct {
 	openHTMLBody    string          // original HTML part; used by openInExternalViewer when available
 	openWebURL      string          // canonical "view online" URL for ctrl+o (may be empty)
 	openAttachments []imap.Attachment // attachments of the currently open email
+	openLinks       []emailLink       // extracted links from the email body
+	readerPending   string            // chord prefix in reader (space for link open)
 
 	// Compose / pre-send
 	compose      composeModel
@@ -920,7 +922,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingForward = false
 			return m.launchForwardCmd()
 		}
-		_ = loadEmailIntoReader(&m.reader, msg.email, msg.body, msg.attachments, m.cfg.UI.Theme, m.width)
+		m.openLinks = extractLinks(msg.body)
+		_ = loadEmailIntoReader(&m.reader, msg.email, msg.body, msg.attachments, m.openLinks, m.cfg.UI.Theme, m.width)
 		m.state = stateReading
 		return m, nil
 
@@ -1822,9 +1825,40 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
+	key := msg.String()
+
+	// Handle reader chords
+	if m.readerPending != "" {
+		pending := m.readerPending
+		m.readerPending = ""
+		switch pending {
+		case " ": // space + digit opens link
+			if len(key) == 1 && key >= "0" && key <= "9" {
+				var idx int
+				if key == "0" {
+					idx = 9
+				} else {
+					idx = int(key[0] - '1')
+				}
+				if idx < len(m.openLinks) {
+					return m, m.openLinkCmd(m.openLinks[idx].URL)
+				}
+				m.status = fmt.Sprintf("No link [%s].", key)
+				return m, nil
+			}
+			// Not a digit — fall through
+		case "g": // gg = top of email
+			if key == "g" {
+				m.reader.GotoTop()
+				return m, nil
+			}
+		}
+	}
+
+	switch key {
 	case "q", "esc", "h":
 		m.state = stateInbox
+		m.readerPending = ""
 		return m, nil
 	case "e":
 		return m.openInNeovim()
@@ -1853,10 +1887,35 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if idx < len(m.openAttachments) {
 			return m, m.downloadOpenAttachmentCmd(m.openAttachments[idx])
 		}
+	case " ":
+		if len(m.openLinks) > 0 {
+			m.readerPending = " "
+			m.status = "open link: space+1-9 (0=10th)"
+			return m, nil
+		}
+	case "g":
+		m.readerPending = "g"
+		return m, nil
+	case "G":
+		m.reader.GotoBottom()
+		return m, nil
 	}
 	var cmd tea.Cmd
 	m.reader, cmd = m.reader.Update(msg)
 	return m, cmd
+}
+
+// openLinkCmd opens a URL in $BROWSER (or xdg-open).
+func (m Model) openLinkCmd(url string) tea.Cmd {
+	browser := os.Getenv("BROWSER")
+	if browser == "" {
+		browser = "xdg-open"
+	}
+	return func() tea.Msg {
+		cmd := exec.Command(browser, url)
+		_ = cmd.Start()
+		return nil
+	}
 }
 
 // openInBrowser writes the email as HTML to a temp file and opens it in
@@ -2730,7 +2789,7 @@ func (m Model) viewReader() string {
 		b.WriteString(m.reader.View())
 	}
 	isDraft := m.openEmail != nil && m.openEmail.Folder == m.cfg.Folders.Drafts
-	b.WriteString("\n" + readerHelp(isDraft))
+	b.WriteString("\n" + readerHelp(isDraft, len(m.openLinks) > 0))
 	return b.String()
 }
 

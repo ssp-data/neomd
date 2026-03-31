@@ -5,6 +5,7 @@
 - **Filter preserves across actions** — the local `/` filter no longer clears when pressing `n` (toggle read), `m` (mark), `U` (clear marks), or sorting; filter stays active until `esc`
 - **Address autocomplete in compose** — To, Cc, and Bcc fields show autocomplete suggestions from screener lists (`screened_in.txt`, `feed.txt`, `papertrail.txt`); navigate with `ctrl+n`/`ctrl+p`/arrows, accept with `tab`; supports multi-address fields (autocomplete applies after the last comma)
 - **Everything view (`ge` or `:everything`)** — shows the 50 most recent emails across all folders in a temporary "Everything" tab, sorted by date descending; each subject prefixed with `[Folder]`; useful for finding emails that were screened out or moved to spam
+- **Link opener (`space+1-9` in reader)** — links are extracted from the email body, numbered `[1]`-`[0]` in the header; press `space` then a digit to open in `$BROWSER`; up to 10 links per email, deduplicated by URL
 - **Draft signature fix** — re-opening a draft (`E`) no longer appends a duplicate signature; the draft body already contains it from the first compose
 - **Draft reader footer** — `E draft` now appears in the reader footer when viewing an email from the Drafts folder
 - **Android support (`make android`)** — cross-compile for Android ARM64; runs in Termux; documented in `docs/android.md` with install instructions and useful shortcuts

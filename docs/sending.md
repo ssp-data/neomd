@@ -76,8 +76,4 @@ Press `p` to see exactly what the recipient will see — the email is rendered t
 
 Press `d` in the pre-send screen to save to Drafts instead of sending. Navigate to Drafts with `gd`. To resume a saved draft, open it and press `E` — it re-opens in the editor with all fields pre-filled, and saving goes through the normal pre-send review.
 
-## Images in the Reader
-
-The TUI reader shows emails as plain Markdown — remote images appear as `[Image: alt]` placeholders, keeping the reading experience clean and fast. To see images, press `O` to open the email as HTML in your `$BROWSER` (images load from remote URLs as normal). For newsletters, `ctrl+o` opens the canonical web version directly (extracted from the `List-Post` header or the plain-text preamble), which is usually the better reading experience anyway. `o` opens in `w3m` for a quick terminal preview without leaving the keyboard.
-
-**Inline / attached images** (e.g. screenshots pasted into an email) are listed in the reader header alongside other attachments: `Attach:  [1] screenshot.png  [2] report.pdf`. Press `1`–`9` to download the file to `~/Downloads/` and open it with `xdg-open`. Inline images also show `[Image: filename.png]` placeholders at their position in the body text.
+For reading emails — images, links, attachments, and navigation — see [reading.md](reading.md).

@@ -120,6 +120,7 @@ Press `?` inside neomd to open the interactive help overlay. Start typing to fil
 | `e  (pre-send)` | re-open editor to edit body |
 | `enter  (pre-send)` | confirm and send |
 | `1-9  (reader)` | download attachment N to ~/Downloads and open with xdg-open |
+| `space+1-9  (reader)` | open link N in $BROWSER (0 = 10th link) |
 | `e  (reader)` | open in $EDITOR read-only — search, copy, vim motions |
 | `E  (reader)` | continue draft — re-open as editable compose (Drafts folder) |
 | `o  (reader)` | open in w3m (terminal browser) |
