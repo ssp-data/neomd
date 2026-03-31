@@ -35,3 +35,47 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  aur:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "pkgver=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update PKGBUILD version and checksums
+        run: |
+          cd aur
+          PKGVER="${{ steps.version.outputs.pkgver }}"
+          TAG="v${PKGVER}"
+
+          # Update pkgver
+          sed -i "s/^pkgver=.*/pkgver=${PKGVER}/" PKGBUILD
+
+          # Download release tarballs and compute checksums
+          BASE_URL="https://github.com/ssp-data/neomd/releases/download/${TAG}"
+          curl -sL "${BASE_URL}/neomd_${PKGVER}_linux_amd64.tar.gz" -o amd64.tar.gz
+          curl -sL "${BASE_URL}/neomd_${PKGVER}_linux_arm64.tar.gz" -o arm64.tar.gz
+
+          SHA_AMD64=$(sha256sum amd64.tar.gz | cut -d' ' -f1)
+          SHA_ARM64=$(sha256sum arm64.tar.gz | cut -d' ' -f1)
+
+          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${SHA_AMD64}')/" PKGBUILD
+          sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${SHA_ARM64}')/" PKGBUILD
+
+          rm -f amd64.tar.gz arm64.tar.gz
+
+          cat PKGBUILD
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        with:
+          pkgname: neomd-bin
+          pkgbuild: aur/PKGBUILD
+          commit_username: Simon Späti
+          commit_email: simon@ssp.sh
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ steps.version.outputs.pkgver }}"
