@@ -29,7 +29,8 @@ func (e emailItem) Description() string { return e.email.From }
 
 // emailDelegate is a custom list.ItemDelegate that renders one email per row.
 type emailDelegate struct {
-	sentFolder string // when active folder matches, show To instead of From
+	sentFolder  string // when active folder matches, show To instead of From
+	draftFolder string // when active folder matches, show To instead of From
 }
 
 func (d emailDelegate) Height() int                              { return 1 }
@@ -94,6 +95,8 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	sender := e.email.From
 	if d.sentFolder != "" && e.email.Folder == d.sentFolder {
 		sender = "→ " + e.email.To // show recipient in Sent
+	} else if d.draftFolder != "" && e.email.Folder == d.draftFolder {
+		sender = "→ " + e.email.To // show recipient in Drafts
 	}
 	from := truncate(cleanFrom(sender), fromMax)
 	subject := truncate(e.email.Subject, subjectMax)
@@ -190,9 +193,9 @@ func truncate(s string, max int) string {
 }
 
 // newInboxList creates a bubbles/list configured for the email inbox.
-// sentFolder is the IMAP folder name for Sent mail — used to show To instead of From.
-func newInboxList(width, height int, sentFolder string) list.Model {
-	l := list.New(nil, emailDelegate{sentFolder: sentFolder}, width, height)
+// sentFolder/draftFolder are IMAP folder names — used to show To instead of From.
+func newInboxList(width, height int, sentFolder, draftFolder string) list.Model {
+	l := list.New(nil, emailDelegate{sentFolder: sentFolder, draftFolder: draftFolder}, width, height)
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)

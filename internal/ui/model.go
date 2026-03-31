@@ -840,7 +840,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			listH = 5
 		}
 		if m.inbox.Width() == 0 {
-			m.inbox = newInboxList(msg.Width, listH, m.cfg.Folders.Sent)
+			m.inbox = newInboxList(msg.Width, listH, m.cfg.Folders.Sent, m.cfg.Folders.Drafts)
 		} else {
 			m.inbox.SetSize(msg.Width, listH)
 		}
@@ -2273,6 +2273,18 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		// Save to Drafts without sending.
 		return m, m.saveDraftCmd(m.presendFrom(), ps.to, ps.cc, ps.subject, ps.body, m.attachments)
+	case "ctrl+b":
+		// Toggle CC/BCC fields — show input prompts to add/edit them.
+		m.compose.extraVisible = !m.compose.extraVisible
+		if m.compose.extraVisible {
+			// Pre-fill from pending data so the user can edit.
+			m.compose.cc.SetValue(ps.cc)
+			m.compose.bcc.SetValue(ps.bcc)
+			m.compose.step = stepCC
+			m.compose.cc.Focus()
+			m.state = stateCompose
+		}
+		return m, nil
 	case "p":
 		return m.previewInBrowser()
 	case "esc":
@@ -2723,7 +2735,7 @@ func (m Model) viewPresend() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(styleHelp.Render("  enter send · p preview · ctrl+f from · a attach · D remove last · d draft · e edit · esc cancel"))
+	b.WriteString(styleHelp.Render("  enter send · p preview · ctrl+f from · ctrl+b cc/bcc · a attach · D remove last · d draft · e edit · esc cancel"))
 	return b.String()
 }
 
