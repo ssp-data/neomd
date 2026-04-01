@@ -113,20 +113,48 @@ var (
 				Bold(true)
 )
 
-// folderTabs renders the folder switcher bar.
-func folderTabs(folders []string, active string, counts map[string]int) string {
-	var tabs []string
-	for _, f := range folders {
-		label := f
+// tabZone records the X range for a clickable folder tab.
+type tabZone struct {
+	xStart, xEnd int // character range [xStart, xEnd)
+	folderIndex  int
+}
+
+// folderTabs renders the folder switcher bar and returns click zones.
+func folderTabs(folders []string, active string, counts map[string]int) (string, []tabZone) {
+	// Compute raw label for each tab (before styling) to track character positions.
+	labels := make([]string, len(folders))
+	for i, f := range folders {
+		labels[i] = f
 		if n, ok := counts[f]; ok && n > 0 {
-			label = fmt.Sprintf("%s (%d)", f, n)
+			labels[i] = fmt.Sprintf("%s (%d)", f, n)
 		}
+	}
+
+	// styleHeader and styleFolder both add Padding(0,1) = 1 space each side.
+	const padLeft = 1
+	const padRight = 1
+	const sepWidth = 3 // " │ " rendered width
+
+	var zones []tabZone
+	var tabs []string
+	x := 0
+	for i, f := range folders {
+		label := labels[i]
+		start := x + padLeft
+		end := start + len(label)
+		zones = append(zones, tabZone{xStart: x, xEnd: end + padRight, folderIndex: i})
+
 		if f == active {
 			tabs = append(tabs, styleHeader.Render(label))
 		} else {
 			tabs = append(tabs, styleFolder.Render(label))
 		}
+		x = end + padRight
+		if i < len(folders)-1 {
+			x += sepWidth
+		}
 	}
+
 	sep := styleSeparator.Render(" │ ")
 	result := ""
 	for i, t := range tabs {
@@ -135,5 +163,5 @@ func folderTabs(folders []string, active string, counts map[string]int) string {
 		}
 		result += t
 	}
-	return result
+	return result, zones
 }

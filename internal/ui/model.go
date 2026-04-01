@@ -832,6 +832,29 @@ func (m Model) screenerCmd(e *imap.Email, action string) tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
+	case tea.MouseMsg:
+		if m.state == stateInbox && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && msg.Y == 0 {
+			// Click on tab bar — compute zones and match.
+			_, zones := folderTabs(m.folders, "", m.folderCounts)
+			offX := 0
+			if len(m.accounts) > 1 {
+				offX = len("  "+m.activeAccount().Name+" ·") + 2
+			}
+			clickX := msg.X - offX
+			for _, z := range zones {
+				if clickX >= z.xStart && clickX < z.xEnd {
+					if z.folderIndex == m.activeFolderI && m.offTabFolder == "" {
+						return m, nil // already on this tab
+					}
+					m.activeFolderI = z.folderIndex
+					m.offTabFolder = ""
+					m.loading = true
+					return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
+				}
+			}
+		}
+		// Fall through — let other components handle mouse events (scroll, etc.)
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -2747,7 +2770,7 @@ func (m Model) viewInbox() string {
 	if m.offTabFolder != "" {
 		activeTab = "" // deselect all tabs; off-tab folder shown separately
 	}
-	header := folderTabs(m.folders, activeTab, m.folderCounts)
+	header, _ := folderTabs(m.folders, activeTab, m.folderCounts)
 	if m.offTabFolder != "" {
 		header += styleSeparator.Render(" │ ") + styleHeader.Render(m.offTabFolder)
 	}
