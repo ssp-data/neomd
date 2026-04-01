@@ -1,7 +1,16 @@
 # Changelog
 
+## 2026-04-01
+- **Threaded inbox** — related emails are automatically grouped in the inbox list with a Twitter-style vertical connector line (`│`/`╰`); threads detected via `In-Reply-To`/`Message-ID` IMAP envelope headers with a reply-prefix subject fallback (only emails with `Re:`, `AW:`, `Fwd:` etc. are grouped by subject — recurring notifications/invoices stay separate); newest reply on top, root at bottom; threads sorted by most recent email so active conversations float to the top
+- **Clickable tabs** — folder tabs in the top bar are clickable with the mouse; click any tab to switch folders
+- **Spell check in pre-send (`s`)** — opens nvim with spell checking enabled (`en_us` + `de`), cursor jumps to the first misspelled word; use `]s`/`[s` to navigate errors, `z=` for suggestions, `zg` to add to dictionary; corrected body flows back to pre-send
+- **`:debug` / `:dbg` command** — writes a diagnostic report covering IMAP connectivity (ping test), account config (emails masked), folder mapping, screener list status, UI config, and current state; opens in the reader and saves to `/tmp/neomd/debug.log` for sharing; no sensitive data (passwords, full emails) included
+- **Drafts show recipient** — Drafts folder now shows `→ recipient` instead of From (same as Sent tab), since all drafts are from you
+- **`ctrl+b` in pre-send** — toggle CC/BCC fields from the pre-send review screen (previously only available during compose)
+- **`u` / `U` rebind** — `u` is now free for page-up (vim-style half-page scroll); `U` is undo last move/delete; `ctrl+u` clears all marks
+- **Temp files in `/tmp/neomd/`** — all temp files (compose, preview, spell check) now live in `/tmp/neomd/` subdirectory for easy recovery after crashes and less clutter
+
 ## 2026-03-31
-- **Threaded inbox** — related emails are automatically grouped in the inbox list with a Twitter-style vertical connector line (`│`/`╰`); threads detected via `In-Reply-To`/`Message-ID` IMAP envelope headers with a normalized-subject + participant overlap fallback; newest reply on top, root at bottom; threads sorted by most recent email so active conversations float to the top; thread connector colored subtly in the Kanagawa border color
 - fix showing recipient in SENT tab (instead of from)
 - **IMAP search across all folders (`space /` or `:search`)** — server-side IMAP SEARCH across all configured folders (Inbox, Sent, Archive, Feed, etc.); results displayed in a temporary "Search" tab with `[Folder]` prefix on each subject; supports query prefixes: `from:simon`, `subject:invoice`, `to:team@`, or plain text to search all three fields; press `esc` to close results
 - **Filter preserves across actions** — the local `/` filter no longer clears when pressing `n` (toggle read), `m` (mark), `U` (clear marks), or sorting; filter stays active until `esc`

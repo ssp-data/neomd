@@ -55,7 +55,7 @@ var HelpSections = []HelpSection{
 		{"Mw", "move to Waiting"},
 		{"Mm", "move to Someday"},
 	}},
-	{"Multi-select", [][2]string{
+	{"Multi-select & Undo", [][2]string{
 		{"m", "mark / unmark email + advance cursor"},
 		{"ctrl+u", "clear all marks"},
 		{"U", "undo last move or delete (reverses x, A, M* — not screener actions)"},
@@ -83,11 +83,12 @@ var HelpSections = []HelpSection{
 		{"shift+R", "reply-all — reply to sender + all CC recipients  (from reader)"},
 		{"f", "forward email  (from reader or inbox)"},
 		{"c", "compose new email"},
-		{"ctrl+b  (compose)", "toggle Cc+Bcc fields (both hidden by default)"},
+		{"ctrl+b  (compose/pre-send)", "toggle Cc+Bcc fields (both hidden by default)"},
 		{"ctrl+f  (compose/pre-send)", "cycle From address through all accounts + [[senders]] aliases"},
 		{"a  (pre-send)", "attach file via yazi file picker (or $NEOMD_FILE_PICKER)"},
 		{"D  (pre-send)", "remove last attachment"},
 		{"d  (pre-send)", "save to Drafts folder (IMAP APPEND with \\Draft flag)"},
+		{"s  (pre-send)", "spell check — open in nvim with spell on, jump to first error"},
 		{"p  (pre-send)", "preview email in $BROWSER (images rendered, same as recipient sees)"},
 		{"e  (pre-send)", "re-open editor to edit body"},
 		{"enter  (pre-send)", "confirm and send"},
@@ -113,6 +114,7 @@ var HelpSections = []HelpSection{
 		{":empty-trash  / :et", "permanently delete ALL emails in Trash (y/n)"},
 		{":create-folders  / :cf", "create missing IMAP folders from config (safe, idempotent)"},
 		{":go-spam  / :spam", "open Spam folder (not in tab rotation)"},
+		{":debug  / :dbg", "diagnostic report — IMAP ping, config, folders, state (saved to /tmp/neomd/debug.log)"},
 		{":quit  / :q", "quit neomd"},
 	}},
 	{"Composing", [][2]string{
