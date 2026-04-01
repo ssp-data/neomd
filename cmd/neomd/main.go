@@ -79,6 +79,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	ui.Version = version
 	model := ui.New(cfg, imapClients, sc)
 
 	p := tea.NewProgram(

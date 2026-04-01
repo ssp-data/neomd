@@ -95,6 +95,9 @@ type (
 	}
 )
 
+// Version is set by main.go at startup (from build-time ldflags).
+var Version = "dev"
+
 // neomdTempDir returns /tmp/neomd/, creating it if needed.
 // Using a dedicated subdirectory keeps temp files discoverable (e.g. recovering
 // a draft after a crash) and avoids cluttering /tmp/.
@@ -135,6 +138,7 @@ func (m Model) writeDebugReport() tea.Cmd {
 	return func() tea.Msg {
 		var b strings.Builder
 		b.WriteString("# neomd debug report\n\n")
+		b.WriteString(fmt.Sprintf("Version: %s\n", Version))
 		b.WriteString(fmt.Sprintf("Time: %s\n", time.Now().Format(time.RFC3339)))
 		b.WriteString(fmt.Sprintf("Config: %s\n\n", config.DefaultPath()))
 

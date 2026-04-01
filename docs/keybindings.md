@@ -68,7 +68,7 @@ Press `?` inside neomd to open the interactive help overlay. Start typing to fil
 | `Mm` | move to Someday |
 
 
-### Multi-select
+### Multi-select & Undo
 
 | Key | Action |
 |-----|--------|
@@ -111,11 +111,12 @@ Press `?` inside neomd to open the interactive help overlay. Start typing to fil
 | `shift+R` | reply-all — reply to sender + all CC recipients  (from reader) |
 | `f` | forward email  (from reader or inbox) |
 | `c` | compose new email |
-| `ctrl+b  (compose)` | toggle Cc+Bcc fields (both hidden by default) |
+| `ctrl+b  (compose/pre-send)` | toggle Cc+Bcc fields (both hidden by default) |
 | `ctrl+f  (compose/pre-send)` | cycle From address through all accounts + [[senders]] aliases |
 | `a  (pre-send)` | attach file via yazi file picker (or $NEOMD_FILE_PICKER) |
 | `D  (pre-send)` | remove last attachment |
 | `d  (pre-send)` | save to Drafts folder (IMAP APPEND with \Draft flag) |
+| `s  (pre-send)` | spell check — open in nvim with spell on, jump to first error |
 | `p  (pre-send)` | preview email in $BROWSER (images rendered, same as recipient sees) |
 | `e  (pre-send)` | re-open editor to edit body |
 | `enter  (pre-send)` | confirm and send |
@@ -145,6 +146,7 @@ Press `?` inside neomd to open the interactive help overlay. Start typing to fil
 | `:empty-trash  / :et` | permanently delete ALL emails in Trash (y/n) |
 | `:create-folders  / :cf` | create missing IMAP folders from config (safe, idempotent) |
 | `:go-spam  / :spam` | open Spam folder (not in tab rotation) |
+| `:debug  / :dbg` | diagnostic report — IMAP ping, config, folders, state (saved to /tmp/neomd/debug.log) |
 | `:quit  / :q` | quit neomd |
 
 
