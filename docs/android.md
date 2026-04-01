@@ -17,7 +17,7 @@ go build -o neomd ./cmd/neomd
 On first run, neomd creates `~/.config/neomd/config.toml`. Edit it with your IMAP/SMTP credentials:
 
 ```sh
-nano ~/.config/neomd/config.toml
+vim ~/.config/neomd/config.toml
 ```
 
 Then run `./neomd` again.
@@ -41,6 +41,28 @@ Overview email - feed:
 
 Reading an email:
 ![neomd](../images/android-reading.png)
+
+
+## Home Screen Shortcuts
+
+Install [Shortcut Maker](https://play.google.com/store/apps/details?id=rk.android.app.shortcutmaker) from the Play Store to launch neomd and update it as home screen app icons.
+
+Create the shortcut scripts in Termux:
+```sh
+mkdir -p ~/.shortcuts
+
+# Launch neomd
+echo '#!/data/data/com.termux/files/usr/bin/bash
+cd ~/neomd-git && ./neomd' > ~/.shortcuts/neomd
+chmod +x ~/.shortcuts/neomd
+
+# Update and rebuild neomd
+echo '#!/data/data/com.termux/files/usr/bin/bash
+cd ~/neomd-git && git pull && go build -o neomd ./cmd/neomd' > ~/.shortcuts/neomd-update
+chmod +x ~/.shortcuts/neomd-update
+```
+
+Then in Shortcut Maker → **Termux → Shortcut** → select `neomd` or `neomd-update` → add to your app drawer.
 
 ## Notes
 
