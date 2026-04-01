@@ -9,6 +9,8 @@
 - **`ctrl+b` in pre-send** — toggle CC/BCC fields from the pre-send review screen (previously only available during compose)
 - **`u` / `U` rebind** — `u` is now free for page-up (vim-style half-page scroll); `U` is undo last move/delete; `ctrl+u` clears all marks
 - **Temp files in `/tmp/neomd/`** — all temp files (compose, preview, spell check) now live in `/tmp/neomd/` subdirectory for easy recovery after crashes and less clutter
+- **Improved onboarding** — auto-screening is now paused when screener lists are empty (first run), preventing all emails from being moved to ToScreen; activates automatically once the user classifies their first sender; welcome screen rewritten with step-by-step getting-started guide explaining the screener workflow, batch operations (`m` + `I`), and config hints (`:debug`, `auto_screen_on_load`)
+- **`]` / `[` folder navigation** — bracket keys now switch to next/previous folder tab (alongside `L`/`H` and `tab`/`shift+tab`)
 
 ## 2026-03-31
 - fix showing recipient in SENT tab (instead of from)

@@ -138,6 +138,26 @@ Use an app-specific password (Gmail, Fastmail, Hostpoint, etc.) rather than your
 
 For the full configuration reference including multiple accounts, `[[senders]]` aliases, folder customization, signatures, and UI options, see [docs/configuration.md](docs/configuration.md).
 
+### Onboarding
+
+On first launch, **auto-screening is paused** because your screener lists are empty — neomd won't move anything until you've classified your first sender. Your Inbox loads normally so you can explore.
+
+**Getting started with the screener:**
+
+1. From your Inbox, pick an email and press `I` (screen **in**) to approve the sender, or `O` (screen **out**) to block them. This creates your first screener list entry.
+2. Once you've classified at least one sender, auto-screening activates on every Inbox load — new emails from known senders are sorted automatically.
+3. Unknown senders land in the `ToScreen` tab. Jump there with `gk` (or `Tab`, or click the tab) and classify them:
+   - `I` screen **in** — sender stays in Inbox forever
+   - `O` screen **out** — sender never reaches Inbox again
+   - `F` **feed** — newsletters go to the Feed tab
+   - `P` **papertrail** — receipts go to the PaperTrail tab
+4. Use `m` to mark multiple emails, then `I` to batch-approve them all at once.
+
+**The best part:** all classifications are saved permanently in your screener lists (`screened_in.txt`, `screened_out.txt`, etc.). An email address screened in will automatically go to your Inbox, and any email screened out will never be in your Inbox again.
+
+You choose who can land in your Inbox. Bye-bye spam. This is the beauty of [HEY-Screener](https://www.hey.com/features/the-screener/), and neomd implements the same concept.
+
+> **Tip:** To disable auto-screening entirely, set `auto_screen_on_load = false` in `[ui]` config. Run `:debug` inside neomd if something isn't working.
 ## Keybindings
 
 Press `?` inside neomd to open the interactive help overlay. Start typing to filter shortcuts.

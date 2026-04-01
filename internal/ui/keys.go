@@ -19,8 +19,8 @@ var HelpSections = []HelpSection{
 		{"?", "toggle help overlay (type to filter)"},
 	}},
 	{"Folders", [][2]string{
-		{"L / tab", "next folder tab"},
-		{"H / shift+tab", "previous folder tab"},
+		{"L / ] / tab", "next folder tab"},
+		{"H / [ / shift+tab", "previous folder tab"},
 		{"gi", "go to Inbox"},
 		{"ga", "go to Archive"},
 		{"gf", "go to Feed"},

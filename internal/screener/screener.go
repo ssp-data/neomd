@@ -84,6 +84,13 @@ func New(cfg Config) (*Screener, error) {
 	return s, nil
 }
 
+// IsEmpty returns true when all screener lists are empty (no senders classified yet).
+// This typically means neomd is running for the first time or lists were cleared.
+func (s *Screener) IsEmpty() bool {
+	return len(s.screenedIn) == 0 && len(s.screenedOut) == 0 &&
+		len(s.feed) == 0 && len(s.paperTrail) == 0 && len(s.spam) == 0
+}
+
 // AllAddresses returns a deduplicated slice of all known email addresses
 // from screened_in, feed, and papertrail lists. Useful for autocomplete.
 // Excludes screened_out and spam since you wouldn't want to email those.

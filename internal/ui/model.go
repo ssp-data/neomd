@@ -1056,9 +1056,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// In-memory classification is instant; already-screened senders won't
 		// appear in inbox again so this is idempotent.
 		// Controlled by ui.auto_screen_on_load (default true).
-		if msg.folder == m.cfg.Folders.Inbox && m.cfg.UI.AutoScreen() {
+		// Skip when all screener lists are empty — otherwise every email would
+		// be moved to ToScreen on first run, confusing new users.
+		if msg.folder == m.cfg.Folders.Inbox && m.cfg.UI.AutoScreen() && !m.screener.IsEmpty() {
 			if moves := m.previewAutoScreen(); len(moves) > 0 {
 				m.loading = true
+				m.status = fmt.Sprintf("Screening %d email(s)…", len(moves))
 				return m, tea.Batch(sortCmd, m.fetchFolderCountsCmd(), m.spinner.Tick, m.execAutoScreenCmd(moves))
 			}
 		}
@@ -1705,14 +1708,14 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.batchToggleSeenCmd(targets))
 
 	// ── Navigation ──────────────────────────────────────────────────
-	case "tab", "L":
+	case "tab", "L", "]":
 		m.activeFolderI = (m.activeFolderI + 1) % len(m.folders)
 		m.offTabFolder = ""
 		m.imapSearchResults = false
 		m.loading = true
 		return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
 
-	case "shift+tab", "H":
+	case "shift+tab", "H", "[":
 		m.activeFolderI = (m.activeFolderI - 1 + len(m.folders)) % len(m.folders)
 		m.offTabFolder = ""
 		m.imapSearchResults = false
@@ -3102,29 +3105,42 @@ func (m Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) viewWelcome() string {
+	boxWidth := 64
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorPrimary).
 		Padding(1, 3).
-		Width(60)
+		Width(boxWidth)
 
 	title := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
 	key := lipgloss.NewStyle().Foreground(colorAuthorUnread).Bold(true)
 	dim := lipgloss.NewStyle().Foreground(colorDateCol)
 
+	warn := lipgloss.NewStyle().Foreground(colorError)
+
 	content := title.Render("Welcome to neomd!") + "\n\n" +
-		"Your IMAP folders and screener lists have been\n" +
-		"set up automatically.\n\n" +
+		"Your IMAP folders have been created automatically.\n\n" +
 		title.Render("Quick start") + "\n" +
 		key.Render("  j/k") + "  navigate    " + key.Render("enter") + "  open email\n" +
 		key.Render("  c") + "    compose      " + key.Render("r") + "      reply\n" +
-		key.Render("  f") + "    forward      " + key.Render("R") + "      reply-all\n\n" +
-		title.Render("Screener") + " " + dim.Render("(from inbox or reader)") + "\n" +
-		key.Render("  I") + "  approve sender (stays in Inbox)\n" +
-		key.Render("  O") + "  block sender   (moves to ScreenedOut)\n" +
-		key.Render("  F") + "  mark as feed   (moves to Feed)\n" +
-		key.Render("  P") + "  mark as paper  (moves to PaperTrail)\n\n" +
-		dim.Render("Press ? anytime for all keybindings.") + "\n\n" +
+		key.Render("  f") + "    forward      " + key.Render("R") + "      reply-all\n" +
+		key.Render("  ]") + " / " + key.Render("[") + "  next/prev tab  " + key.Render("?") + "  all keys\n\n" +
+		title.Render("How the Screener works") + "\n" +
+		"Your screener lists are empty, so " + warn.Render("auto-screening") + "\n" +
+		warn.Render("is paused") + " until you classify your first senders.\n\n" +
+		title.Render("Getting started") + "\n" +
+		"1. Go to " + key.Render("ToScreen") + " tab (" + key.Render("gk") + " or " + key.Render("Tab") + " or click)\n" +
+		"2. Screen each sender:\n" +
+		key.Render("   I") + "  screen " + title.Render("in") + "   " + dim.Render("sender stays in Inbox forever") + "\n" +
+		key.Render("   O") + "  screen " + title.Render("out") + "  " + dim.Render("sender never reaches Inbox again") + "\n" +
+		key.Render("   F") + "  feed        " + dim.Render("newsletters go to Feed tab") + "\n" +
+		key.Render("   P") + "  papertrail  " + dim.Render("receipts go to PaperTrail tab") + "\n" +
+		"3. Use " + key.Render("m") + " to mark multiple, then " + key.Render("I") + " to batch-approve\n\n" +
+		dim.Render("Once classified, senders are remembered forever.") + "\n" +
+		dim.Render("New emails auto-sort on every load. You choose") + "\n" +
+		dim.Render("who lands in your inbox. Bye-bye spam.") + "\n\n" +
+		dim.Render("Disable auto-screen: auto_screen_on_load = false") + "\n" +
+		dim.Render("Diagnostics: :debug   All keys: ?") + "\n\n" +
 		dim.Render("Press any key to continue.")
 
 	rendered := box.Render(content)
@@ -3135,7 +3151,7 @@ func (m Model) viewWelcome() string {
 	if padTop < 0 {
 		padTop = 0
 	}
-	padLeft := (m.width - 60) / 2
+	padLeft := (m.width - boxWidth) / 2
 	if padLeft < 0 {
 		padLeft = 0
 	}
