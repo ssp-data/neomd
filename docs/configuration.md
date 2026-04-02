@@ -46,6 +46,7 @@ someday      = "Someday"
 spam         = "spam" #check capitalization of your pre-existing Spam folder, sometimes might be `Spam` with `S`
 # tab_order controls the left-to-right tab sequence; omit to use the built-in default order. e.g.:
 # tab_order = ["inbox", "to_screen", "feed", "papertrail", "waiting", "someday", "scheduled", "sent", "archive", "screened_out", "drafts", "trash"]
+# Gmail uses different folder names — see docs/gmail.md for the correct mapping.
 
 [ui]
 theme                = "dark"   # dark | light | auto
