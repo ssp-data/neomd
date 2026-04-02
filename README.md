@@ -15,7 +15,7 @@ With the [GTD approach](https://www.ssp.sh/brain/getting-things-done-gtd), using
 
 With the additional **Feed** and **Papertrail**, two additional features from HEY, you can read newsletters (just hit F) on them automatically in their separate tab, or move all your receipts into the Papertrail. Once you mark them as feed or papertrail, they will moved there automatically going forward. So you decide whether to read emails or news by jumping to different tabs.
 
->**Note on Speed**: Startup: fetches headers via IMAP (fetchFolderCmd) — this takes a network round-trip (maybe 0.5-2s depending on server/connection), after that everything is in-memory and the navigation is instant. Applying IMAP calls such as switching folders and opening emails are typically around 100-500ms on a good connection.
+>**Note on Speed**: Startup fetches headers via IMAP — this takes a network round-trip (0.5-2s depending on server), after that everything is in-memory and navigation is instant. IMAP calls (switching folders, opening emails) are typically ~50-150ms on dedicated providers like Hostpoint, Fastmail, or HEY. **Gmail's IMAP is significantly slower** (~200-500ms per command) due to its label-to-folder translation layer — expect 1-2s for folder switches. This is a Gmail limitation, not neomd. For the fastest experience, use a dedicated email provider.
 
 ## Screenshots
 

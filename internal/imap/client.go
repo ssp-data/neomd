@@ -126,19 +126,6 @@ func (c *Client) withConn(ctx context.Context, fn func(*imapclient.Client) error
 			_ = c.conn.Close()
 			c.conn = nil
 			c.selectedMailbox = ""
-			// Retry once after reconnect for transient network failures.
-			if reconnErr := c.connect(ctx); reconnErr != nil {
-				return err // return original error
-			}
-			if retryErr := fn(c.conn); retryErr != nil {
-				if isNetErr(retryErr) {
-					_ = c.conn.Close()
-					c.conn = nil
-					c.selectedMailbox = ""
-				}
-				return retryErr
-			}
-			return nil // retry succeeded
 		}
 		return err
 	}
