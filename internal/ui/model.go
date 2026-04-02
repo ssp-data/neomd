@@ -2752,6 +2752,12 @@ func (m Model) launchForwardCmd() (tea.Model, tea.Cmd) {
 func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.Cmd) {
 	e := m.openEmail
 
+	// Auto-select the From address that matches the email's To/CC field.
+	// E.g. if email was sent to simon@ssp.sh, reply from simon@ssp.sh.
+	if idx := m.matchFromIndex(e.To, e.CC); idx >= 0 {
+		m.presendFromI = idx
+	}
+
 	// Use Reply-To if present, else From
 	to := e.ReplyTo
 	if to == "" {
@@ -2825,6 +2831,25 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 		}
 		return editorDoneMsg{to: pto, cc: pcc, bcc: "", subject: psubject, body: string(raw)}
 	})
+}
+
+// matchFromIndex returns the presendFroms() index whose email address matches
+// one of the addresses in the email's To or CC fields. Returns -1 if no match.
+// This auto-selects the correct From when replying to an email sent to an alias.
+func (m Model) matchFromIndex(toField, ccField string) int {
+	froms := m.presendFroms()
+	recipients := make(map[string]bool)
+	for _, addr := range splitAddrs(toField + "," + ccField) {
+		if a := strings.ToLower(extractEmailAddr(addr)); a != "" {
+			recipients[a] = true
+		}
+	}
+	for i, from := range froms {
+		if recipients[strings.ToLower(extractEmailAddr(from))] {
+			return i
+		}
+	}
+	return -1
 }
 
 // extractEmailAddr returns the bare email address from "Name <addr>" or "addr".
