@@ -150,23 +150,26 @@ func DefaultPath() string {
 	return filepath.Join(home, ".config", "neomd", "config.toml")
 }
 
+// cacheDirName is derived from the config directory name (e.g. "neomd" or "neomd-demo").
+// Set during Load() so that different configs use separate cache directories.
+var cacheDirName = "neomd"
+
 // HistoryPath returns the path for the command history file.
 // Uses the OS cache directory (~/.cache/neomd/ on Linux) so it is never
 // picked up by dotfile version control but still persists across reboots.
 func HistoryPath() string {
 	if dir, err := os.UserCacheDir(); err == nil {
-		p := filepath.Join(dir, "neomd")
+		p := filepath.Join(dir, cacheDirName)
 		_ = os.MkdirAll(p, 0700)
 		return filepath.Join(p, "cmd_history")
 	}
-	// Fallback: system temp dir with a user-scoped name
 	return filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_cmd_history", os.Getuid()))
 }
 
 // welcomePath returns the path of the first-run marker file.
 func welcomePath() string {
 	if dir, err := os.UserCacheDir(); err == nil {
-		return filepath.Join(dir, "neomd", "welcome-shown")
+		return filepath.Join(dir, cacheDirName, "welcome-shown")
 	}
 	return filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_welcome", os.Getuid()))
 }
@@ -192,6 +195,10 @@ func Load(path string) (*Config, error) {
 	}
 	path = expandPath(path)
 
+	// Derive cache dir name from config directory (e.g. "neomd-demo" from
+	// ~/.config/neomd-demo/config.toml) so demo and production don't share cache.
+	cacheDirName = filepath.Base(filepath.Dir(path))
+
 	cfg := defaults()
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -211,14 +218,17 @@ func Load(path string) (*Config, error) {
 	cfg.Screener.PaperTrail = expandPath(cfg.Screener.PaperTrail)
 	cfg.Screener.Spam = expandPath(cfg.Screener.Spam)
 
-	// Ensure screener list directories exist so appending (I/O/F/P/$) works
-	// on a fresh install without manual mkdir.
+	// Ensure screener list directories and files exist so appending (I/O/F/P/$)
+	// works on a fresh install without manual mkdir or touching files.
 	for _, p := range []string{
 		cfg.Screener.ScreenedIn, cfg.Screener.ScreenedOut,
 		cfg.Screener.Feed, cfg.Screener.PaperTrail, cfg.Screener.Spam,
 	} {
 		if p != "" {
 			_ = os.MkdirAll(filepath.Dir(p), 0700)
+			if _, err := os.Stat(p); os.IsNotExist(err) {
+				_ = os.WriteFile(p, nil, 0600)
+			}
 		}
 	}
 

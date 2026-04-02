@@ -190,6 +190,7 @@ func (c *Client) FetchHeaders(ctx context.Context, folder string, n int) ([]Emai
 	}
 	var emails []Email
 	err := c.withConn(ctx, func(conn *imapclient.Client) error {
+		emails = nil // reset on retry to avoid duplicates
 		if err := c.selectMailbox(folder); err != nil {
 			return err
 		}
@@ -296,6 +297,7 @@ func (c *Client) SearchUIDs(ctx context.Context, folder string) ([]uint32, error
 	}
 	var uids []uint32
 	err := c.withConn(ctx, func(conn *imapclient.Client) error {
+		uids = nil // reset on retry
 		if err := c.selectMailbox(folder); err != nil {
 			return err
 		}
@@ -382,6 +384,7 @@ func (c *Client) SearchMessages(ctx context.Context, folder, query string) ([]Em
 
 	var uids []uint32
 	err := c.withConn(ctx, func(conn *imapclient.Client) error {
+		uids = nil // reset on retry
 		if err := c.selectMailbox(folder); err != nil {
 			return err
 		}
@@ -527,6 +530,7 @@ func (c *Client) FetchHeadersByUID(ctx context.Context, folder string, uids []ui
 	}
 	var emails []Email
 	err := c.withConn(ctx, func(conn *imapclient.Client) error {
+		emails = nil // reset on retry
 		if err := c.selectMailbox(folder); err != nil {
 			return err
 		}

@@ -4,7 +4,7 @@ INSTALL := $(HOME)/.local/bin
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: build run install clean test send-test vet fmt tidy release docs help check-go
+.PHONY: build run install clean test send-test vet fmt tidy release docs help check-go demo demo-reset
 
 ## check-go: verify Go is installed
 check-go:
@@ -37,8 +37,13 @@ install: build
 	@echo "Installed to $(INSTALL)/$(BINARY)"
 
 
-initialized-welcome-screen:
-	rm ~/.cache/neomd/welcome-shown
+## demo: run neomd with demo account (~/.config/neomd-demo/config.toml)
+demo: build
+	./$(BINARY) -config $(HOME)/.config/neomd-demo/config.toml
+
+## demo-reset: reset demo account to first-run state (welcome screen + empty screener lists)
+demo-reset:
+	./scripts/reset-demo.sh $(HOME)/.config/neomd-demo
 
 ## test: run all tests
 test:
