@@ -106,6 +106,8 @@ Or if on Arch Linux (AUR), you can use my [neomd-bin](https://aur.archlinux.org/
 yay -S neomd-bin
 ```
 
+> ⚠️ **Warning:** neomd moves, deletes, and modifies emails directly on your IMAP server. These operations are real and affect your mailbox across all devices. **Back up important emails before first use.** neomd is experimental software and I can't take responsibility for lost or misplaced emails. Consider testing with a secondary email account first.
+
 On first run, neomd:
 1. Creates `~/.config/neomd/config.toml` with placeholders — fill in your IMAP/SMTP credentials
 2. Creates `~/.config/neomd/lists/` for screener allowlists (or uses your custom paths from config)
