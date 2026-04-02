@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -49,7 +50,7 @@ type (
 		webURL      string // canonical "view online" URL (List-Post header or plain-text preamble)
 		attachments []imap.Attachment
 	}
-	sendDoneMsg       struct{ err error }
+	sendDoneMsg       struct{ err error; warning string }
 	screenDoneMsg     struct{ err error }
 	autoScreenDoneMsg   struct{ moved int; err error }
 	deepScreenReadyMsg  struct {
@@ -83,9 +84,11 @@ type (
 	// background sync (runs every bgSyncInterval while neomd is open)
 	bgSyncTickMsg     struct{}
 	bgInboxFetchedMsg struct{ emails []imap.Email }
-	bgScreenDoneMsg   struct{ moved int }
+	bgScreenDoneMsg   struct{ moved, total int }
 	// attachPickDoneMsg carries paths selected via the file picker (yazi etc.)
 	attachPickDoneMsg struct{ paths []string }
+	// bulkProgressMsg is sent during long-running batch operations to update the status bar.
+	bulkProgressMsg struct{ moved, total int; label string }
 	saveDraftDoneMsg         struct{ err error }
 	attachOpenDoneMsg        struct{ path string; err error }
 	editorDoneMsg     struct {
@@ -94,6 +97,38 @@ type (
 		aborted                    bool // true when file was unchanged (ZQ / :q!)
 	}
 )
+
+// bulkOp tracks progress of long-running batch operations.
+// Shared by pointer between the model (reader) and goroutines (writer).
+type bulkOp struct {
+	moved atomic.Int64
+	total int64
+	label string // "Screening", "Moving", etc.
+}
+
+const maxUndoStack = 20
+
+// bulkProgressThreshold: only show progress for batches larger than this.
+const bulkProgressThreshold = 10
+
+func newBulkOp(label string, total int) *bulkOp {
+	if total <= bulkProgressThreshold {
+		return nil // small batches don't need progress tracking
+	}
+	return &bulkOp{label: label, total: int64(total)}
+}
+
+func (b *bulkOp) String() string {
+	if b == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s: %d/%d…", b.label, b.moved.Load(), b.total)
+}
+
+// startBulk initializes a bulk progress tracker. Call before launching batch commands.
+func (m *Model) startBulk(label string, total int) {
+	m.bulkProgress = newBulkOp(label, total)
+}
 
 // Version is set by main.go at startup (from build-time ldflags).
 var Version = "dev"
@@ -287,6 +322,9 @@ type Model struct {
 	width   int
 	height  int
 	loading bool
+
+	// Bulk operation progress — shared pointer, written by goroutines, read by view.
+	bulkProgress *bulkOp
 
 	// Folder switcher
 	folders       []string
@@ -547,18 +585,17 @@ func (m Model) sendEmailCmd(smtpAcct config.AccountConfig, from, to, cc, bcc, su
 		// BCC is intentionally excluded from headers but included in RCPT TO.
 		raw, err := smtp.BuildMessage(from, to, cc, subject, body, attachments)
 		if err != nil {
-			return sendDoneMsg{fmt.Errorf("build message: %w", err)}
+			return sendDoneMsg{err: fmt.Errorf("build message: %w", err)}
 		}
 		toAddrs := collectRcptTo(to, cc, bcc)
 		if err := smtp.SendRaw(cfg, toAddrs, raw); err != nil {
-			return sendDoneMsg{err}
+			return sendDoneMsg{err: err}
 		}
-		// Save copy to Sent; non-fatal if it fails.
+		// Save copy to Sent; non-fatal if it fails, but warn user.
 		if saveErr := cli.SaveSent(nil, sentFolder, raw); saveErr != nil {
-			// Log to status on next tick — for now swallow so send still reports success.
-			_ = saveErr
+			return sendDoneMsg{warning: "Sent, but failed to save to Sent folder: " + saveErr.Error()}
 		}
-		return sendDoneMsg{nil}
+		return sendDoneMsg{}
 	}
 }
 
@@ -627,14 +664,18 @@ func (m Model) batchMoveCmd(emails []imap.Email, dst string) tea.Cmd {
 	for i, e := range emails {
 		moves[i] = mv{e.Folder, e.UID}
 	}
+	bp := m.bulkProgress
 	return func() tea.Msg {
 		undos := make([]undoMove, 0, len(moves))
 		for i, mv := range moves {
 			destUID, err := m.imapCli().MoveMessage(nil, mv.folder, mv.uid, dst)
 			if err != nil {
-				return batchDoneMsg{err: fmt.Errorf("stopped after %d/%d: %w", i, len(moves), err)}
+				return batchDoneMsg{err: fmt.Errorf("stopped after %d/%d: %w", i, len(moves), err), undo: undos}
 			}
 			undos = append(undos, undoMove{uid: destUID, fromFolder: mv.folder, toFolder: dst})
+			if bp != nil {
+				bp.moved.Add(1)
+			}
 		}
 		return batchDoneMsg{undo: undos}
 	}
@@ -676,8 +717,15 @@ func (m Model) batchScreenerCmd(emails []imap.Email, action string) tea.Cmd {
 		}
 		ops = append(ops, op{e.From, e.Folder, e.UID, dst})
 	}
+	bp := m.bulkProgress
 	return func() tea.Msg {
 		for i, o := range ops {
+			// Move first, classify after — if move fails, screener file stays unchanged.
+			if o.dst != "" && o.dst != o.srcFolder {
+				if _, err := m.imapCli().MoveMessage(nil, o.srcFolder, o.uid, o.dst); err != nil {
+					return batchDoneMsg{err: fmt.Errorf("stopped after %d/%d: %w", i, len(ops), err)}
+				}
+			}
 			var err error
 			switch action {
 			case "I":
@@ -694,10 +742,8 @@ func (m Model) batchScreenerCmd(emails []imap.Email, action string) tea.Cmd {
 			if err != nil {
 				return batchDoneMsg{err: fmt.Errorf("stopped after %d/%d: %w", i, len(ops), err)}
 			}
-			if o.dst != "" && o.dst != o.srcFolder {
-				if _, err := m.imapCli().MoveMessage(nil, o.srcFolder, o.uid, o.dst); err != nil {
-					return batchDoneMsg{err: fmt.Errorf("stopped after %d/%d: %w", i, len(ops), err)}
-				}
+			if bp != nil {
+				bp.moved.Add(1)
 			}
 		}
 		return batchDoneMsg{}
@@ -932,6 +978,7 @@ func (m Model) bgFetchInboxCmd() tea.Cmd {
 // bgExecAutoScreenCmd silently moves emails and returns bgScreenDoneMsg.
 func (m Model) bgExecAutoScreenCmd(moves []autoScreenMove) tea.Cmd {
 	src := m.cfg.Folders.Inbox
+	total := len(moves)
 	return func() tea.Msg {
 		moved := 0
 		for _, mv := range moves {
@@ -940,17 +987,21 @@ func (m Model) bgExecAutoScreenCmd(moves []autoScreenMove) tea.Cmd {
 			}
 			moved++
 		}
-		return bgScreenDoneMsg{moved: moved}
+		return bgScreenDoneMsg{moved: moved, total: total}
 	}
 }
 
 // execAutoScreenCmd performs the IMAP moves for a pre-approved list of moves.
 func (m Model) execAutoScreenCmd(moves []autoScreenMove) tea.Cmd {
 	src := m.cfg.Folders.Inbox
+	bp := m.bulkProgress
 	return func() tea.Msg {
 		for i, mv := range moves {
 			if _, err := m.imapCli().MoveMessage(nil, src, mv.email.UID, mv.dst); err != nil {
 				return autoScreenDoneMsg{moved: i, err: err}
+			}
+			if bp != nil {
+				bp.moved.Add(1)
 			}
 		}
 		return autoScreenDoneMsg{moved: len(moves)}
@@ -1063,7 +1114,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.folder == m.cfg.Folders.Inbox && m.cfg.UI.AutoScreen() && !m.screener.IsEmpty() {
 			if moves := m.previewAutoScreen(); len(moves) > 0 {
 				m.loading = true
-				m.status = fmt.Sprintf("Screening %d email(s)…", len(moves))
+				m.bulkProgress = newBulkOp("Screening", len(moves))
 				return m, tea.Batch(sortCmd, m.fetchFolderCountsCmd(), m.spinner.Tick, m.execAutoScreenCmd(moves))
 			}
 		}
@@ -1130,6 +1181,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.status = msg.err.Error()
 			m.isError = true
+		} else if msg.warning != "" {
+			m.status = msg.warning
+			m.isError = true // show in red so user notices
+			m.state = stateInbox
 		} else {
 			m.status = "Sent!"
 			m.isError = false
@@ -1195,14 +1250,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case batchDoneMsg:
 		m.loading = false
+		m.bulkProgress = nil
 		m.markedUIDs = make(map[uint32]bool)
 		if msg.err != nil {
+			// Include partial undo info so user can reverse already-moved emails.
+			if len(msg.undo) > 0 {
+				m.undoStack = append(m.undoStack, msg.undo)
+			if len(m.undoStack) > maxUndoStack {
+				m.undoStack = m.undoStack[len(m.undoStack)-maxUndoStack:]
+			}
+			}
 			m.status = msg.err.Error()
 			m.isError = true
 			return m, nil
 		}
 		if len(msg.undo) > 0 {
 			m.undoStack = append(m.undoStack, msg.undo)
+			if len(m.undoStack) > maxUndoStack {
+				m.undoStack = m.undoStack[len(m.undoStack)-maxUndoStack:]
+			}
 		}
 		m.status = "Done."
 		m.loading = true
@@ -1217,6 +1283,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if len(msg.undo) > 0 {
 			m.undoStack = append(m.undoStack, msg.undo)
+			if len(m.undoStack) > maxUndoStack {
+				m.undoStack = m.undoStack[len(m.undoStack)-maxUndoStack:]
+			}
 		}
 		m.status = "Moved."
 		m.isError = false
@@ -1315,8 +1384,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case autoScreenDoneMsg:
 		m.loading = false
+		m.bulkProgress = nil
 		if msg.err != nil {
-			m.status = msg.err.Error()
+			m.status = fmt.Sprintf("Screening stopped after %d: %s", msg.moved, msg.err)
 			m.isError = true
 			return m, nil
 		}
@@ -1338,6 +1408,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case bgScreenDoneMsg:
 		if msg.moved > 0 {
+			if msg.moved < msg.total {
+				m.status = fmt.Sprintf("Background sync: screened %d/%d — press R to retry", msg.moved, msg.total)
+				m.isError = true
+			}
 			// Refresh the visible folder so the user sees the clean result.
 			m.loading = true
 			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
@@ -1591,6 +1665,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading = true
+		m.bulkProgress = newBulkOp("Deleting", len(targets))
 		return m, tea.Batch(m.spinner.Tick, m.batchMoveCmd(targets, m.cfg.Folders.Trash))
 
 	case "X": // permanent delete (marked or cursor) — only in Trash
@@ -1631,6 +1706,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading = true
+		m.bulkProgress = newBulkOp("Screening", len(targets))
 		return m, tea.Batch(m.spinner.Tick, m.batchScreenerCmd(targets, key))
 
 	// A = archive (pure move, no screener update)
@@ -1640,6 +1716,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading = true
+		m.bulkProgress = newBulkOp("Archiving", len(targets))
 		return m, tea.Batch(m.spinner.Tick, m.batchMoveCmd(targets, m.cfg.Folders.Archive))
 
 	// ── Auto-screen dry-run (Inbox only) ────────────────────────────
@@ -1691,6 +1768,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		moves := m.pendingMoves
 		m.pendingMoves = nil
 		m.loading = true
+		m.bulkProgress = newBulkOp("Screening", len(moves))
 		return m, tea.Batch(m.spinner.Tick, m.execAutoScreenCmd(moves))
 
 	case "n":
@@ -1999,6 +2077,7 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 		}
 		if dst, ok := dstMap[key]; ok {
 			m.loading = true
+			m.bulkProgress = newBulkOp("Moving", len(targets))
 			return m, tea.Batch(m.spinner.Tick, m.batchMoveCmd(targets, dst))
 		}
 		m.status = fmt.Sprintf("unknown: M%s", key)
@@ -3059,7 +3138,11 @@ func (m Model) viewInbox() string {
 	b.WriteString(styleSeparator.Render(strings.Repeat("─", m.width)) + "\n")
 
 	if m.loading {
-		b.WriteString(fmt.Sprintf("  %s Loading…\n", m.spinner.View()))
+		loadingText := "Loading…"
+		if bp := m.bulkProgress; bp != nil && bp.total > 0 {
+			loadingText = bp.String()
+		}
+		b.WriteString(fmt.Sprintf("  %s %s\n", m.spinner.View(), loadingText))
 	} else if len(m.emails) == 0 {
 		b.WriteString(styleStatus.Render("  No messages.") + "\n")
 	} else {
