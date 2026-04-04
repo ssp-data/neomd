@@ -177,6 +177,10 @@ func (c *Client) Close() {
 	}
 }
 
+// TokenSource returns the OAuth2 token source for this client, or nil for
+// password-authenticated accounts.
+func (c *Client) TokenSource() func() (string, error) { return c.cfg.TokenSource }
+
 // Addr returns the IMAP server address (host:port).
 func (c *Client) Addr() string { return c.addr() }
 
