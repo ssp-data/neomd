@@ -23,12 +23,27 @@ type SenderConfig struct {
 // AccountConfig holds IMAP/SMTP connection settings.
 type AccountConfig struct {
 	Name     string `toml:"name"`
-	IMAP     string `toml:"imap"`     // host:port (993 = TLS, 143 = STARTTLS)
-	SMTP     string `toml:"smtp"`     // host:port (587 = STARTTLS, 465 = TLS)
+	IMAP     string `toml:"imap"` // host:port (993 = TLS, 143 = STARTTLS)
+	SMTP     string `toml:"smtp"` // host:port (587 = STARTTLS, 465 = TLS)
 	User     string `toml:"user"`
 	Password string `toml:"password"`
 	From     string `toml:"from"` // "Name <email@example.com>"
 	STARTTLS bool   `toml:"starttls"`
+
+	// OAuth2 fields — only used when auth_type = "oauth2".
+	AuthType           string   `toml:"auth_type"` // "plain" (default) | "oauth2"
+	OAuth2ClientID     string   `toml:"oauth2_client_id"`
+	OAuth2ClientSecret string   `toml:"oauth2_client_secret"`
+	OAuth2IssuerURL    string   `toml:"oauth2_issuer_url"` // OIDC discovery endpoint (e.g. "https://accounts.google.com")
+	OAuth2AuthURL      string   `toml:"oauth2_auth_url"`   // manual override; skips discovery
+	OAuth2TokenURL     string   `toml:"oauth2_token_url"`  // manual override; skips discovery
+	OAuth2Scopes       []string `toml:"oauth2_scopes"`
+	OAuth2RedirectPort int      `toml:"oauth2_redirect_port"` // local callback port; default 8085
+}
+
+// IsOAuth2 reports whether this account uses OAuth2 instead of password auth.
+func (a AccountConfig) IsOAuth2() bool {
+	return strings.EqualFold(a.AuthType, "oauth2")
 }
 
 // ScreenerConfig points to the allowlist/blocklist files.
@@ -101,12 +116,12 @@ func (f FoldersConfig) TabLabels() []string {
 
 // UIConfig holds display preferences.
 type UIConfig struct {
-	Theme                  string `toml:"theme"`                    // dark | light | auto
-	InboxCount             int    `toml:"inbox_count"`              // number of messages to fetch
-	Signature              string `toml:"signature"`                // appended to new compose buffers (markdown)
-	AutoScreenOnLoad       *bool  `toml:"auto_screen_on_load"`      // screen inbox on every load (default true)
-	BgSyncInterval         int    `toml:"bg_sync_interval"`         // background sync interval in minutes (0 = disabled, default 5)
-	BulkProgressThreshold  int    `toml:"bulk_progress_threshold"`  // show progress counter for batches larger than this (default 10)
+	Theme                 string `toml:"theme"`                   // dark | light | auto
+	InboxCount            int    `toml:"inbox_count"`             // number of messages to fetch
+	Signature             string `toml:"signature"`               // appended to new compose buffers (markdown)
+	AutoScreenOnLoad      *bool  `toml:"auto_screen_on_load"`     // screen inbox on every load (default true)
+	BgSyncInterval        int    `toml:"bg_sync_interval"`        // background sync interval in minutes (0 = disabled, default 5)
+	BulkProgressThreshold int    `toml:"bulk_progress_threshold"` // show progress counter for batches larger than this (default 10)
 }
 
 // BulkThreshold returns the configured bulk progress threshold (default 10).
@@ -335,4 +350,18 @@ func expandPath(path string) string {
 		return filepath.Join(home, path[2:])
 	}
 	return path
+}
+
+func TokenFilePath(accountName string) (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve config directory: %w", err)
+	}
+	safe := strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' || r == ':' {
+			return '_'
+		}
+		return r
+	}, accountName)
+	return filepath.Join(configDir, cacheDirName, "tokens", safe+".json"), nil
 }
