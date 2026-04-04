@@ -50,10 +50,16 @@ type (
 		webURL      string // canonical "view online" URL (List-Post header or plain-text preamble)
 		attachments []imap.Attachment
 	}
-	sendDoneMsg       struct{ err error; warning string }
+	sendDoneMsg struct {
+		err     error
+		warning string
+	}
 	screenDoneMsg     struct{ err error }
-	autoScreenDoneMsg   struct{ moved int; err error }
-	deepScreenReadyMsg  struct {
+	autoScreenDoneMsg struct {
+		moved int
+		err   error
+	}
+	deepScreenReadyMsg struct {
 		moves []autoScreenMove
 		total int
 	}
@@ -73,14 +79,30 @@ type (
 	// folderCountsMsg carries unseen counts for watched folder tabs.
 	folderCountsMsg struct{ counts map[string]int }
 	// deleteAllReadyMsg carries UIDs to permanently delete after y/n confirm.
-	deleteAllReadyMsg struct{ uids []uint32; folder string }
+	deleteAllReadyMsg struct {
+		uids   []uint32
+		folder string
+	}
 	// ensureFoldersDoneMsg reports which folders were created.
-	ensureFoldersDoneMsg struct{ created []string; err error }
-	moveDoneMsg       struct{ err error; undo []undoMove }
-	batchDoneMsg      struct{ err error; undo []undoMove }
+	ensureFoldersDoneMsg struct {
+		created []string
+		err     error
+	}
+	moveDoneMsg struct {
+		err  error
+		undo []undoMove
+	}
+	batchDoneMsg struct {
+		err  error
+		undo []undoMove
+	}
 	undoDoneMsg       struct{}
-	toggleSeenDoneMsg struct{ uid uint32; seen bool; err error }
-	errMsg            struct{ err error }
+	toggleSeenDoneMsg struct {
+		uid  uint32
+		seen bool
+		err  error
+	}
+	errMsg struct{ err error }
 	// background sync (runs every bgSyncInterval while neomd is open)
 	bgSyncTickMsg     struct{}
 	bgInboxFetchedMsg struct{ emails []imap.Email }
@@ -88,10 +110,16 @@ type (
 	// attachPickDoneMsg carries paths selected via the file picker (yazi etc.)
 	attachPickDoneMsg struct{ paths []string }
 	// bulkProgressMsg is sent during long-running batch operations to update the status bar.
-	bulkProgressMsg struct{ moved, total int; label string }
-	saveDraftDoneMsg         struct{ err error }
-	attachOpenDoneMsg        struct{ path string; err error }
-	editorDoneMsg     struct {
+	bulkProgressMsg struct {
+		moved, total int
+		label        string
+	}
+	saveDraftDoneMsg  struct{ err error }
+	attachOpenDoneMsg struct {
+		path string
+		err  error
+	}
+	editorDoneMsg struct {
 		to, cc, bcc, subject, body string
 		err                        error
 		aborted                    bool // true when file was unchanged (ZQ / :q!)
@@ -334,11 +362,11 @@ type Model struct {
 	spinner spinner.Model
 
 	// Reader
-	reader    viewport.Model
+	reader          viewport.Model
 	openEmail       *imap.Email
-	openBody        string          // markdown body used by the TUI reader
-	openHTMLBody    string          // original HTML part; used by openInExternalViewer when available
-	openWebURL      string          // canonical "view online" URL for ctrl+o (may be empty)
+	openBody        string            // markdown body used by the TUI reader
+	openHTMLBody    string            // original HTML part; used by openInExternalViewer when available
+	openWebURL      string            // canonical "view online" URL for ctrl+o (may be empty)
 	openAttachments []imap.Attachment // attachments of the currently open email
 	openLinks       []emailLink       // extracted links from the email body
 	readerPending   string            // chord prefix in reader (space for link open)
@@ -422,15 +450,15 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener) Mode
 	compose.knownAddrs = sc.AllAddresses()
 
 	return Model{
-		cfg:         cfg,
-		accounts:    cfg.ActiveAccounts(),
-		clients:     clients,
-		screener:    sc,
-		state:       stateInbox,
-		loading:     true,
-		folders:     cfg.Folders.TabLabels(),
-		cmdHistory:  loadCmdHistory(config.HistoryPath()),
-		cmdHistI:    -1,
+		cfg:        cfg,
+		accounts:   cfg.ActiveAccounts(),
+		clients:    clients,
+		screener:   sc,
+		state:      stateInbox,
+		loading:    true,
+		folders:    cfg.Folders.TabLabels(),
+		cmdHistory: loadCmdHistory(config.HistoryPath()),
+		cmdHistI:   -1,
 		// Note: Spam is intentionally excluded from tabs — use :go-spam to visit.
 		compose:     compose,
 		spinner:     sp,
@@ -438,6 +466,17 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener) Mode
 		sortField:   "date",
 		sortReverse: true, // newest first
 	}
+}
+
+// tokenSourceFor returns the OAuth2 token source for the account with the
+// given name, or nil if the account uses plain password authentication.
+func (m Model) tokenSourceFor(accountName string) func() (string, error) {
+	for i, acc := range m.accounts {
+		if acc.Name == accountName && i < len(m.clients) {
+			return m.clients[i].TokenSource()
+		}
+	}
+	return nil
 }
 
 // activeAccount returns the currently selected AccountConfig.
@@ -569,11 +608,12 @@ func (m Model) fetchBodyCmd(e *imap.Email) tea.Cmd {
 func (m Model) sendEmailCmd(smtpAcct config.AccountConfig, from, to, cc, bcc, subject, body string, attachments []string) tea.Cmd {
 	h, p := splitAddr(smtpAcct.SMTP)
 	cfg := smtp.Config{
-		Host:     h,
-		Port:     p,
-		User:     smtpAcct.User,
-		Password: smtpAcct.Password,
-		From:     from,
+		Host:        h,
+		Port:        p,
+		User:        smtpAcct.User,
+		Password:    smtpAcct.Password,
+		From:        from,
+		TokenSource: m.tokenSourceFor(smtpAcct.Name),
 	}
 	cli := m.imapCli()
 	sentFolder := m.cfg.Folders.Sent
@@ -656,7 +696,10 @@ func (m Model) targetEmails() []imap.Email {
 
 // batchMoveCmd moves a slice of emails to dst, emitting batchDoneMsg.
 func (m Model) batchMoveCmd(emails []imap.Email, dst string) tea.Cmd {
-	type mv struct{ folder string; uid uint32 }
+	type mv struct {
+		folder string
+		uid    uint32
+	}
 	moves := make([]mv, len(emails))
 	for i, e := range emails {
 		moves[i] = mv{e.Folder, e.UID}
@@ -696,7 +739,11 @@ func (m Model) undoMovesCmd(moves []undoMove) tea.Cmd {
 func (m Model) batchScreenerCmd(emails []imap.Email, action string) tea.Cmd {
 	sc := m.screener
 	cfg := m.cfg
-	type op struct{ from, srcFolder string; uid uint32; dst string }
+	type op struct {
+		from, srcFolder string
+		uid             uint32
+		dst             string
+	}
 	ops := make([]op, 0, len(emails))
 	for _, e := range emails {
 		var dst string
@@ -749,7 +796,10 @@ func (m Model) batchScreenerCmd(emails []imap.Email, action string) tea.Cmd {
 
 // markAllSeenCmd marks every currently loaded email in the folder as \Seen.
 func (m Model) markAllSeenCmd() tea.Cmd {
-	type op struct{ folder string; uid uint32 }
+	type op struct {
+		folder string
+		uid    uint32
+	}
 	var ops []op
 	for _, e := range m.emails {
 		if !e.Seen {
@@ -771,7 +821,11 @@ func (m Model) markAllSeenCmd() tea.Cmd {
 
 // batchToggleSeenCmd toggles \Seen on multiple emails, emitting batchDoneMsg.
 func (m Model) batchToggleSeenCmd(emails []imap.Email) tea.Cmd {
-	type op struct{ folder string; uid uint32; markSeen bool }
+	type op struct {
+		folder   string
+		uid      uint32
+		markSeen bool
+	}
 	ops := make([]op, len(emails))
 	for i, e := range emails {
 		ops[i] = op{e.Folder, e.UID, !e.Seen}
@@ -1253,9 +1307,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Include partial undo info so user can reverse already-moved emails.
 			if len(msg.undo) > 0 {
 				m.undoStack = append(m.undoStack, msg.undo)
-			if len(m.undoStack) > maxUndoStack {
-				m.undoStack = m.undoStack[len(m.undoStack)-maxUndoStack:]
-			}
+				if len(m.undoStack) > maxUndoStack {
+					m.undoStack = m.undoStack[len(m.undoStack)-maxUndoStack:]
+				}
 			}
 			m.status = msg.err.Error()
 			m.isError = true
@@ -1993,7 +2047,7 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if len(key) == 1 && key >= "1" && key <= "9" {
-			idx := int(key[0]-'1') // 0-based
+			idx := int(key[0] - '1') // 0-based
 			if idx < len(m.folders) {
 				if idx == m.activeFolderI {
 					return m, nil
@@ -2081,7 +2135,10 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("unknown: M%s", key)
 
 	case ",":
-		type sortSpec struct{ field string; rev bool }
+		type sortSpec struct {
+			field string
+			rev   bool
+		}
 		specs := map[string]sortSpec{
 			"m": {"date", true},
 			"M": {"date", false},
@@ -2171,7 +2228,7 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.launchForwardCmd()
 		}
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-		idx := int(msg.String()[0]-'1') // 0-based
+		idx := int(msg.String()[0] - '1') // 0-based
 		if idx < len(m.openAttachments) {
 			return m, m.downloadOpenAttachmentCmd(m.openAttachments[idx])
 		}
@@ -3019,9 +3076,10 @@ func stripPrelude(body string) string {
 
 // extractInlineAttachments scans body for [attach] /path lines inserted by the
 // neomd Lua helper in neovim (<leader>a).
-// - Image files (.png, .jpg, …) are converted to ![](path) markdown refs so
-//   goldmark renders them as <img> tags inline; the sender embeds them via CID.
-// - Non-image files are returned as file attachment paths (appended at bottom).
+//   - Image files (.png, .jpg, …) are converted to ![](path) markdown refs so
+//     goldmark renders them as <img> tags inline; the sender embeds them via CID.
+//   - Non-image files are returned as file attachment paths (appended at bottom).
+//
 // Returns (filePaths, cleanBody).
 func extractInlineAttachments(body string) (files []string, clean string) {
 	const prefix = "[attach] "
