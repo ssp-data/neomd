@@ -32,6 +32,37 @@ type Config struct {
 	User     string
 	Password string
 	From     string // "Name <email>"
+
+	// TokenSource is used for OAuth2 accounts instead of Password.
+	TokenSource func() (string, error)
+}
+
+func (c Config) auth(host string) (smtp.Auth, error) {
+	if c.TokenSource != nil {
+		token, err := c.TokenSource()
+		if err != nil {
+			return nil, fmt.Errorf("get OAuth2 token: %w", err)
+		}
+		return &xoauth2Auth{user: c.User, token: token}, nil
+	}
+	return smtp.PlainAuth("", c.User, c.Password, host), nil
+}
+
+type xoauth2Auth struct {
+	user  string
+	token string
+}
+
+func (a *xoauth2Auth) Start(_ *smtp.ServerInfo) (string, []byte, error) {
+	ir := fmt.Sprintf("user=%s\x01auth=Bearer %s\x01\x01", a.user, a.token)
+	return "XOAUTH2", []byte(ir), nil
+}
+
+func (a *xoauth2Auth) Next(_ []byte, more bool) ([]byte, error) {
+	if more {
+		return []byte{}, nil
+	}
+	return nil, nil
 }
 
 // Send composes and sends an email.
@@ -59,12 +90,16 @@ func Send(cfg Config, to, cc, bcc, subject, markdownBody string, attachments []s
 	}
 	fromAddr := extractAddr(cfg.From)
 
+	auth, err := cfg.auth(cfg.Host)
+	if err != nil {
+		return err
+	}
 	addr := cfg.Host + ":" + cfg.Port
 	switch cfg.Port {
 	case "465": // Implicit TLS (SMTPS)
-		return sendTLS(addr, cfg.Host, cfg.User, cfg.Password, fromAddr, toAddrs, raw)
+		return sendTLS(addr, cfg.Host, auth, fromAddr, toAddrs, raw)
 	default: // STARTTLS (587) or plain (25)
-		return sendSTARTTLS(addr, cfg.Host, cfg.User, cfg.Password, fromAddr, toAddrs, raw)
+		return sendSTARTTLS(addr, auth, fromAddr, toAddrs, raw)
 	}
 }
 
@@ -73,23 +108,26 @@ func Send(cfg Config, to, cc, bcc, subject, markdownBody string, attachments []s
 // This lets the caller build the message once and reuse it (e.g. to save to Sent).
 func SendRaw(cfg Config, toAddrs []string, raw []byte) error {
 	fromAddr := extractAddr(cfg.From)
+	auth, err := cfg.auth(cfg.Host)
+	if err != nil {
+		return err
+	}
 	addr := cfg.Host + ":" + cfg.Port
 	switch cfg.Port {
 	case "465":
-		return sendTLS(addr, cfg.Host, cfg.User, cfg.Password, fromAddr, toAddrs, raw)
+		return sendTLS(addr, cfg.Host, auth, fromAddr, toAddrs, raw)
 	default:
-		return sendSTARTTLS(addr, cfg.Host, cfg.User, cfg.Password, fromAddr, toAddrs, raw)
+		return sendSTARTTLS(addr, auth, fromAddr, toAddrs, raw)
 	}
 }
 
 // sendSTARTTLS sends via STARTTLS upgrade (port 587).
-func sendSTARTTLS(addr, host, user, password, from string, to []string, msg []byte) error {
-	auth := smtp.PlainAuth("", user, password, host)
+func sendSTARTTLS(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
 	return smtp.SendMail(addr, auth, from, to, msg)
 }
 
 // sendTLS sends via implicit TLS (port 465 / SMTPS).
-func sendTLS(addr, host, user, password, from string, to []string, msg []byte) error {
+func sendTLS(addr, host string, auth smtp.Auth, from string, to []string, msg []byte) error {
 	tlsCfg := &tls.Config{ServerName: host}
 	conn, err := tls.Dial("tcp", addr, tlsCfg)
 	if err != nil {
@@ -102,7 +140,6 @@ func sendTLS(addr, host, user, password, from string, to []string, msg []byte) e
 	}
 	defer c.Close()
 
-	auth := smtp.PlainAuth("", user, password, host)
 	if err := c.Auth(auth); err != nil {
 		return fmt.Errorf("SMTP auth: %w", err)
 	}

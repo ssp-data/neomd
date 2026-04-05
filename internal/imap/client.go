@@ -20,6 +20,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/mail"
+	"github.com/sspaeti/neomd/internal/oauth2"
 )
 
 // Email is a fully parsed email message.
@@ -48,12 +49,13 @@ type Email struct {
 
 // Config holds connection parameters.
 type Config struct {
-	Host     string // e.g. "imap.example.com"
-	Port     string // e.g. "993" or "143"
-	User     string
-	Password string
-	TLS      bool // implicit TLS (port 993)
-	STARTTLS bool // STARTTLS upgrade (port 143)
+	Host        string // e.g. "imap.example.com"
+	Port        string // e.g. "993" or "143"
+	User        string
+	Password    string
+	TLS         bool                   // implicit TLS (port 993)
+	STARTTLS    bool                   // STARTTLS upgrade (port 143)
+	TokenSource func() (string, error) // The token is used instead of the password for OAuth2 Accounts
 }
 
 // Client wraps an IMAP connection with reconnection management.
@@ -97,12 +99,33 @@ func (c *Client) connect(_ context.Context) error {
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", addr, err)
 	}
-	if err := conn.Login(c.cfg.User, c.cfg.Password).Wait(); err != nil {
+
+	if err := c.authenticate(conn); err != nil {
 		_ = conn.Close()
-		return fmt.Errorf("IMAP login: %w", err)
+		return err
 	}
 	c.conn = conn
 	c.selectedMailbox = ""
+	return nil
+}
+
+// Dedicated authenticate function. It manages authentication for both plain and OAuth2 if a TokenSource exists.
+func (c *Client) authenticate(conn *imapclient.Client) error {
+	if c.cfg.TokenSource == nil {
+		if err := conn.Login(c.cfg.User, c.cfg.Password).Wait(); err != nil {
+			return fmt.Errorf("IMAP login: %w", err)
+		}
+		return nil
+	}
+
+	token, err := c.cfg.TokenSource()
+	if err != nil {
+		return fmt.Errorf("get OAuth2 token: %w", err)
+	}
+	saslClient := oauth2.XOAuth2Client(c.cfg.User, token)
+	if err := conn.Authenticate(saslClient); err != nil {
+		return fmt.Errorf("IMAP XOAUTH2: %w", err)
+	}
 	return nil
 }
 
@@ -153,6 +176,10 @@ func (c *Client) Close() {
 		c.conn = nil
 	}
 }
+
+// TokenSource returns the OAuth2 token source for this client, or nil for
+// password-authenticated accounts.
+func (c *Client) TokenSource() func() (string, error) { return c.cfg.TokenSource }
 
 // Addr returns the IMAP server address (host:port).
 func (c *Client) Addr() string { return c.addr() }
@@ -930,7 +957,7 @@ func extractPlainTextWebURL(text string) string {
 // cidImgRe matches <img ...src="cid:XYZ"...> tags (with or without alt).
 var cidImgRe = regexp.MustCompile(`(?i)<img\b([^>]*?)src="cid:([^"]+)"([^>]*?)>`)
 
-// emptyAltRe matches alt="" or alt='' (empty alt attribute).
+// emptyAltRe matches alt="" or alt=” (empty alt attribute).
 var emptyAltRe = regexp.MustCompile(`(?i)\s*alt=["']\s*["']`)
 
 // injectCIDAlt adds alt="filename" to <img src="cid:..."> tags that lack an alt

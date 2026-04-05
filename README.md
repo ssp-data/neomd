@@ -138,7 +138,7 @@ spam         = "~/.config/neomd/lists/spam.txt"
 
 Use an app-specific password (Gmail, Fastmail, Hostpoint, etc.) rather than your main account password.
 
-For the full configuration reference including multiple accounts, `[[senders]]` aliases, folder customization, signatures, and UI options, see [docs/configuration.md](docs/configuration.md).
+For the full configuration reference including multiple accounts, OAuth2 authentication, `[[senders]]` aliases, folder customization, signatures, and UI options, see [docs/configuration.md](docs/configuration.md).
 
 ### Onboarding
 
