@@ -71,7 +71,7 @@ jobs:
           cat PKGBUILD
 
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        uses: KSXGitHub/github-actions-deploy-aur@v4
         with:
           pkgname: neomd-bin
           pkgbuild: aur/PKGBUILD
