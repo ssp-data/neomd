@@ -51,6 +51,12 @@ When you add many senders to `feed.txt` or `papertrail.txt` at once (e.g. after 
 
 `:screen-all` (alias `:sa`) scans every email in your Inbox — read and unread — and proposes moves for any sender that is now in a list. It does **not** touch emails already in Feed, PaperTrail, or other folders.
 
+## Screening happens once
+
+Emails are only auto-screened while they are in the **Inbox**. Once moved to ToScreen (or any other folder), they are not re-classified automatically. This keeps the logic simple and predictable.
+
+If emails end up in ToScreen incorrectly (e.g. screened by another device like [Termux with Android](android.md) with incomplete lists), use `:reset-toscreen` to move them back to Inbox where auto-screen will re-classify them.
+
 ## Colon commands
 
 Press `:` to open the command line. Tab cycles through completions; Enter runs the command.
