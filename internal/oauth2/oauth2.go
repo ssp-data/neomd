@@ -24,11 +24,67 @@ import (
 	"time"
 
 	"github.com/emersion/go-sasl"
+	"github.com/sspaeti/neomd/internal/keyring"
 	"golang.org/x/oauth2"
 )
 
 //go:embed static/oauth2_success.html
 var successHTML string
+
+// TokenStorage defines the interface for loading and saving OAuth2 tokens.
+// Implementations can use file storage, keyring, or other backends.
+type TokenStorage interface {
+	Load() (*oauth2.Token, error)
+	Save(*oauth2.Token) error
+}
+
+// TokenProvider manages OAuth2 token retrieval and persistence.
+// It wraps the oauth2.TokenSource and handles automatic saving of refreshed tokens.
+type TokenProvider struct {
+	source      oauth2.TokenSource
+	storage     TokenStorage
+	accountName string
+	lastToken   *oauth2.Token // track to avoid unnecessary saves
+}
+
+// GetToken returns a valid access token, refreshing if necessary.
+// It automatically saves the token if it was refreshed.
+func (tp *TokenProvider) GetToken() (string, error) {
+	t, err := tp.source.Token()
+	if err != nil {
+		return "", fmt.Errorf("account %s: get oauth2 token: %w", tp.accountName, err)
+	}
+
+	// Only save if token changed (was refreshed)
+	if tp.shouldSave(t) {
+		if err := tp.storage.Save(t); err != nil {
+			// Log but don't fail - we still have a valid token
+			// TODO: proper logging
+			_ = err
+		}
+		tp.lastToken = t
+	}
+
+	return t.AccessToken, nil
+}
+
+// shouldSave returns true if the token differs from the last saved one.
+func (tp *TokenProvider) shouldSave(t *oauth2.Token) bool {
+	if tp.lastToken == nil {
+		return true
+	}
+	return t.AccessToken != tp.lastToken.AccessToken ||
+		t.RefreshToken != tp.lastToken.RefreshToken ||
+		!t.Expiry.Equal(tp.lastToken.Expiry)
+}
+
+// AsFunc returns a function adapter for backward compatibility.
+// This allows TokenProvider to be used where func() (string, error) is expected.
+func (tp *TokenProvider) AsFunc() func() (string, error) {
+	return func() (string, error) {
+		return tp.GetToken()
+	}
+}
 
 // Config holds OAuth2 settings for a single account.
 // Either IssuerURL (OIDC discovery) or both AuthURL+TokenURL must be set.
@@ -41,7 +97,11 @@ type Config struct {
 	TokenURL     string // manual override (skips discovery)
 	Scopes       []string
 	RedirectPort int    // local callback port; defaults to 8085
-	TokenFile    string // path to persist the token JSON
+	TokenFile    string // path to persist the token JSON (fallback if keyring unavailable)
+
+	// AccountName is the account identifier used for keyring storage.
+	// OAuth2 tokens are stored in the keyring by default (preferred over TokenFile).
+	AccountName string
 
 	DiscoveryTimeout time.Duration // Timeout for the discovery OIDC HTTP request. Defaults to 10s
 	AuthFlowTimeout  time.Duration // Timeout for the AuthFlow to be completed. Defaults to 5m
@@ -66,6 +126,90 @@ func (c *Config) discoveryTimeout() time.Duration {
 // Default Authflow timeout: 5 minutes
 func (c *Config) authFlowTimeout() time.Duration {
 	return cmp.Or(c.AuthFlowTimeout, 5*time.Minute)
+}
+
+// tokenStorage implements TokenStorage for keyring (preferred) or file storage (fallback).
+// It tries the keyring first and falls back to file storage if the keyring is unavailable.
+type tokenStorage struct {
+	path           string
+	account        string
+	keyringOK      bool // true if keyring is available and working
+	keyringChecked bool // true if we've tried the keyring once
+}
+
+// Load retrieves the OAuth2 token from storage.
+// It tries the keyring first, and falls back to file storage if keyring is unavailable.
+func (ts *tokenStorage) Load() (*oauth2.Token, error) {
+	// Try keyring first (if we haven't checked or if it was working)
+	if !ts.keyringChecked || ts.keyringOK {
+		if ts.account != "" {
+			tok, err := keyring.GetOAuth2Token(ts.account)
+			if err == nil {
+				ts.keyringOK = true
+				ts.keyringChecked = true
+				return tok, nil
+			}
+			// If keyring has the error (other than NotFound), mark it as unavailable
+			if err != keyring.ErrNotFound {
+				ts.keyringOK = false
+				ts.keyringChecked = true
+				// Fall through to file storage
+			} else {
+				// ErrNotFound means keyring is working but no token stored
+				ts.keyringOK = true
+				ts.keyringChecked = true
+				return nil, err
+			}
+		}
+	}
+
+	// File storage fallback
+	if ts.path == "" {
+		return nil, fmt.Errorf("no token storage available (keyring unavailable and no token file path)")
+	}
+	data, err := os.ReadFile(ts.path)
+	if err != nil {
+		return nil, fmt.Errorf("read token file: %w", err)
+	}
+	var tok oauth2.Token
+	if err := json.Unmarshal(data, &tok); err != nil {
+		return nil, fmt.Errorf("parse token file: %w", err)
+	}
+	return &tok, nil
+}
+
+// Save stores the OAuth2 token to storage.
+// It tries the keyring first, and falls back to file storage if keyring is unavailable.
+func (ts *tokenStorage) Save(tok *oauth2.Token) error {
+	// Try keyring first if we haven't checked or if it was working
+	if !ts.keyringChecked || ts.keyringOK {
+		if ts.account != "" {
+			err := keyring.SetOAuth2Token(ts.account, tok)
+			if err == nil {
+				ts.keyringOK = true
+				ts.keyringChecked = true
+				return nil
+			}
+			// Keyring failed, mark as unavailable and fall back to file
+			ts.keyringOK = false
+			ts.keyringChecked = true
+			// Fall through to file storage
+		}
+	}
+
+	// File storage fallback
+	if ts.path == "" {
+		return fmt.Errorf("no token storage available (keyring unavailable and no token file path)")
+	}
+	if err := os.MkdirAll(filepath.Dir(ts.path), 0700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(ts.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return json.NewEncoder(f).Encode(tok)
 }
 
 // resolve returns the final AuthURL and TokenURL, discovering them from the
@@ -119,11 +263,11 @@ func discoverEndpoints(ctx context.Context, issuerURL string) (string, string, e
 	return doc.AuthorizationEndpoint, doc.TokenEndpoint, nil
 }
 
-// TokenSource returns a function that always provides a valid access token.
-// On the first call it loads the token from TokenFile; if none exists it runs
+// TokenSource returns a TokenProvider that always provides a valid access token.
+// On the first call it loads the token from storage; if none exists it runs
 // the full browser-based authorization code flow. Subsequent calls refresh the
-// token automatically when it is expired.
-func TokenSource(ctx context.Context, cfg Config) (func() (string, error), error) {
+// token automatically when it is expired, and only save to storage when the token changes.
+func TokenSource(ctx context.Context, cfg Config) (*TokenProvider, error) {
 	authURL, tokenURL, err := cfg.resolve(ctx, cfg.discoveryTimeout())
 	if err != nil {
 		return nil, err
@@ -140,7 +284,13 @@ func TokenSource(ctx context.Context, cfg Config) (func() (string, error), error
 		Scopes:      cfg.Scopes,
 	}
 
-	tok, err := loadToken(cfg.TokenFile)
+	// Create storage backend - prefers keyring, falls back to file if keyring unavailable
+	storage := &tokenStorage{
+		path:    cfg.TokenFile,
+		account: cfg.AccountName,
+	}
+
+	tok, err := storage.Load()
 	if err != nil {
 		flowCtx, flowCancel := context.WithTimeout(ctx, cfg.authFlowTimeout())
 		defer flowCancel()
@@ -149,20 +299,16 @@ func TokenSource(ctx context.Context, cfg Config) (func() (string, error), error
 		if err != nil {
 			return nil, fmt.Errorf("oauth2 auth flow: %w", err)
 		}
-		if err := saveToken(cfg.TokenFile, tok); err != nil {
+		if err := storage.Save(tok); err != nil {
 			return nil, fmt.Errorf("save oauth2 token: %w", err)
 		}
 	}
 
-	ts := oc.TokenSource(ctx, tok)
-
-	return func() (string, error) {
-		t, err := ts.Token()
-		if err != nil {
-			return "", err
-		}
-		_ = saveToken(cfg.TokenFile, t)
-		return t.AccessToken, nil
+	return &TokenProvider{
+		source:      oc.TokenSource(ctx, tok),
+		storage:     storage,
+		accountName: cfg.AccountName,
+		lastToken:   tok,
 	}, nil
 }
 
@@ -251,18 +397,6 @@ func openBrowser(url string) {
 	_ = exec.Command(cmd, args...).Start()
 }
 
-func saveToken(path string, tok *oauth2.Token) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return json.NewEncoder(f).Encode(tok)
-}
-
 // XOAuth2Client returns a sasl.Client that implements the XOAUTH2 mechanism.
 // Both Google and Microsoft Exchange Online support XOAUTH2; it is more
 // broadly compatible than the RFC 7628 OAUTHBEARER mechanism.
@@ -284,16 +418,4 @@ func (c *xoauth2Client) Start() (string, []byte, error) {
 // We return an empty response to cleanly abort the exchange.
 func (c *xoauth2Client) Next(_ []byte) ([]byte, error) {
 	return []byte{}, nil
-}
-
-func loadToken(path string) (*oauth2.Token, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read token file: %w", err)
-	}
-	var tok oauth2.Token
-	if err := json.Unmarshal(data, &tok); err != nil {
-		return nil, fmt.Errorf("parse token file: %w", err)
-	}
-	return &tok, nil
 }
