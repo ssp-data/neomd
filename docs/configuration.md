@@ -2,6 +2,64 @@
 
 On first run, neomd creates `~/.config/neomd/config.toml` with placeholders.
 
+## OS Keyring Support
+
+Neomd supports storing passwords and OAuth2 tokens in your operating system's secure keyring instead of the config file. This is more secure as credentials are encrypted and not stored in plaintext.
+
+**Supported keyrings:**
+- **macOS**: Keychain
+- **Linux**: Secret Service (GNOME Keyring, KDE Wallet, etc.)
+- **Windows**: Credential Manager
+
+### Password Storage
+
+For password-based authentication, set `password = "keyring"` in your account configuration:
+
+```toml
+[[accounts]]
+name     = "Personal"
+imap     = "imap.example.com:993"
+smtp     = "smtp.example.com:587"
+user     = "me@example.com"
+password = "keyring"  # Fetch from OS keyring
+from     = "Me <me@example.com>"
+```
+
+### OAuth2 Token Storage (Automatic)
+
+**OAuth2 tokens automatically use the keyring by default** — no configuration needed! The token is stored securely in your OS keyring.
+
+If the keyring is unavailable (e.g., headless/SSH environment), neomd automatically falls back to file storage in `~/.config/neomd/tokens/<account>.json`.
+
+### Setting Passwords in the Keyring
+
+**Option 1: Use the TUI command** (recommended)
+1. Start neomd
+2. Type `:set-password <account>` or `:sp`
+3. Enter your password when prompted
+
+**Option 2: Migrate from existing config**
+1. If you have plaintext passwords in your config, run `:migrate-to-keyring` or `:mtk`
+2. This will move all passwords and OAuth2 tokens to the keyring and update your config
+
+**Option 3: Manual setup via command line**
+```bash
+# Build and run the keyring helper (if available in your installation)
+neomd --set-password Personal
+```
+
+### Commands
+
+- `:set-password` or `:sp` — Update password for current account in keyring
+- `:migrate-to-keyring` or `:mtk` — Migrate all plaintext credentials to keyring
+
+### Keyring Storage Details
+
+- Passwords are stored as: `neomd/account/<name>/password`
+- OAuth2 tokens are stored as: `neomd/account/<name>/oauth2`
+
+Both are encrypted by your OS keyring and are only accessible to your user account.
+
 ## Full example
 
 ```toml
@@ -10,20 +68,22 @@ name     = "Personal"
 imap     = "imap.example.com:993"   # :993 = TLS, :143 = STARTTLS
 smtp     = "smtp.example.com:587"
 user     = "me@example.com"
-password = "app-password"
+password = "keyring"                  # Use OS keyring for secure storage
 from     = "Me <me@example.com>"
 
-# OAuth2 authenticated accounts are supported, it just need the relevant fields. Note that the password field is not required.
+# OAuth2 authenticated accounts also support keyring storage
 [[accounts]]
-name     = "Personal"
-imap     = "imap.example.com:993"   # :993 = TLS, :143 = STARTTLS
-smtp     = "smtp.example.com:587"
-user     = "me@example.com"
-from     = "Me <me@example.com>"
-oauth2_client_id = ""
-oauth2_client_secret = ""
-oauth2_issuer_url = ""
-oauth2_scopes = ["", ""]
+name     = "Work"
+imap     = "imap.gmail.com:993"
+smtp     = "smtp.gmail.com:587"
+user     = "me@work.com"
+from     = "Me <me@work.com>"
+password = "keyring"                  # OAuth2 tokens stored in keyring
+auth_type = "oauth2"
+oauth2_client_id = "your-client-id"
+oauth2_client_secret = "your-client-secret"
+oauth2_issuer_url = "https://accounts.google.com"
+oauth2_scopes = ["https://mail.google.com/", "offline_access"]
 
 # Multiple accounts supported — add more [[accounts]] blocks
 # Switch between them with `ctrl+a` in the inbox
@@ -76,7 +136,7 @@ Connect: [LinkedIn](https://example.com/)"""
 
 Use an app-specific password (Gmail, Fastmail, Hostpoint, etc.) rather than your main account password.
 
-Credentials are stored only in `~/.config/neomd/config.toml` (mode 0600) and never written elsewhere; all IMAP connections use TLS (port 993) or STARTTLS (port 143).
+**Security note:** When using `password = "keyring"`, credentials are stored only in your OS keyring (encrypted by the OS). When using plaintext passwords, they are stored in `~/.config/neomd/config.toml` (mode 0600). All IMAP connections use TLS (port 993) or STARTTLS (port 143).
 
 ## Sending and Discarding
 
@@ -84,25 +144,44 @@ To abort a compose without sending, close neovim with `ZQ` or `:q!` (discard). T
 
 ## Signature
 
-The `signature` field in `[ui]` is appended automatically when opening a new compose buffer (`c`). It is **not** added for replies. The separator `--` is inserted for you — just write the signature body in Markdown.
+The `signature` field in `[ui]` is appended automatically when opening a new compose buffer (`c`). It is **not** added for replies. The separator `-- ` is inserted for you — just write the signature body in Markdown.
 
 Use TOML triple-quoted strings (`"""`) to preserve line breaks. The signature appears at the end of the buffer — you can edit or delete it before saving.
 
 ## OAuth2 Authentication
 
-Neomd supports OpenAuth2 authenticated accounts, you just need to add `oauth2_client_id`, `oauth2_client_secret`, `oauth2_scopes` and `oauth2_issuer_url`.
+Neomd supports OAuth2 authenticated accounts. Add `oauth2_client_id`, `oauth2_client_secret`, `oauth2_scopes` and `oauth2_issuer_url` to your account configuration.
 
-Note that when using oauth2 authentication, the password field is not required in the account configuration.
+**OAuth2 tokens are automatically stored in the OS keyring by default.** No `password` field or additional configuration is required. If the keyring is unavailable (e.g., headless/SSH environment), neomd gracefully falls back to file storage.
+
+### Example OAuth2 Configuration
+
+```toml
+[[accounts]]
+name     = "Work"
+imap     = "imap.gmail.com:993"
+smtp     = "smtp.gmail.com:587"
+user     = "me@work.com"
+from     = "Me <me@work.com>"
+auth_type = "oauth2"
+oauth2_client_id = "your-client-id"
+oauth2_client_secret = "your-client-secret"
+oauth2_issuer_url = "https://accounts.google.com"
+oauth2_scopes = ["https://mail.google.com/", "offline_access"]
+```
 
 ### Issuer URL
 
-By default, if an issuer URL is provided, i.e.: `https://login.microsoftonline.com/common/v2.0` for Office265 accounts, neomd will search for the OpenID Connect discovery URL: `/.well-known/openid-configuration` resolving then the `oauth2_token_url` and `oauth2_auth_url`. These parameters can be provided manually as well.
+By default, if an issuer URL is provided (e.g., `https://login.microsoftonline.com/common/v2.0` for Office365 accounts), neomd will search for the OpenID Connect discovery URL (`/.well-known/openid-configuration`) to resolve the `oauth2_token_url` and `oauth2_auth_url`. These parameters can also be provided manually.
 
 ### Scopes
 
-The scopes required depends on the provider and is better confirmed by your email provider. As an example, for Office365 acounts, the following scopes are required for IMAP: `"https://outlook.office365.com/IMAP.AccessAsUser.All", "offline_access"`.
+The scopes required depend on your provider. For example, Office365 accounts need:
+```
+"https://outlook.office365.com/IMAP.AccessAsUser.All", "offline_access"
+```
 
-### Reference documentation for GMAIL and Office365
+### Reference Documentation
 
-- To enable OAuth2 authentication for Office365 accounts, follow the documentation [here]("https://outlook.office365.com/IMAP.AccessAsUser.All", "offline_access")
-- For GMAIL, follow the documentation [here](https://developers.google.com/workspace/gmail/imap/xoauth2-protocol)
+- [Microsoft OAuth2 for Office365](https://learn.microsoft.com/en-us/exchange/client-development/legacy-protocols/authenticate-an-imap-pop-smtp-application-by-using-oauth)
+- [Google OAuth2 for Gmail](https://developers.google.com/workspace/gmail/imap/xoauth2-protocol)

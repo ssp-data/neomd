@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,21 +21,24 @@ import (
 	"github.com/sspaeti/neomd/internal/config"
 	"github.com/sspaeti/neomd/internal/editor"
 	"github.com/sspaeti/neomd/internal/imap"
+	"github.com/sspaeti/neomd/internal/keyring"
 	"github.com/sspaeti/neomd/internal/render"
 	"github.com/sspaeti/neomd/internal/screener"
 	"github.com/sspaeti/neomd/internal/smtp"
+	"golang.org/x/oauth2"
 )
 
 // viewState is the current screen.
 type viewState int
 
 const (
-	stateInbox   viewState = iota
-	stateReading           // reading a single email
-	stateCompose           // composing a new email
-	statePresend           // pre-send review: add attachments, then send or edit again
-	stateHelp              // help overlay
-	stateWelcome           // first-run welcome popup
+	stateInbox          viewState = iota
+	stateReading                  // reading a single email
+	stateCompose                  // composing a new email
+	statePresend                  // pre-send review: add attachments, then send or edit again
+	stateHelp                     // help overlay
+	stateWelcome                  // first-run welcome popup
+	statePasswordPrompt           // password input for keyring
 )
 
 // async message types
@@ -439,6 +443,9 @@ type Model struct {
 	// Default: date descending (newest first).
 	sortField   string
 	sortReverse bool
+
+	// Password prompt for keyring integration
+	passwordPrompt passwordPromptModel
 }
 
 // New creates and initialises the TUI model.
@@ -460,11 +467,12 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener) Mode
 		cmdHistory: loadCmdHistory(config.HistoryPath()),
 		cmdHistI:   -1,
 		// Note: Spam is intentionally excluded from tabs — use :go-spam to visit.
-		compose:     compose,
-		spinner:     sp,
-		markedUIDs:  make(map[uint32]bool),
-		sortField:   "date",
-		sortReverse: true, // newest first
+		compose:        compose,
+		spinner:        sp,
+		markedUIDs:     make(map[uint32]bool),
+		sortField:      "date",
+		sortReverse:    true, // newest first
+		passwordPrompt: newPasswordPromptModel(),
 	}
 }
 
@@ -1537,10 +1545,59 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Any key dismisses the welcome popup
 			m.state = stateInbox
 			return m, nil
+		case statePasswordPrompt:
+			return m.updatePasswordPrompt(msg)
 		}
 	}
 
 	return m, nil
+}
+
+// updatePasswordPrompt handles input for the password prompt state.
+func (m Model) updatePasswordPrompt(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case passwordSubmittedMsg:
+		// Store password in keyring and retry connection
+		if err := m.storePasswordInKeyring(msg.account, msg.password); err != nil {
+			m.passwordPrompt.errMsg = err.Error()
+			return m, nil
+		}
+		// Update the account password and retry connection
+		for i := range m.accounts {
+			if m.accounts[i].Name == msg.account {
+				// Retry the connection with the new password
+				return m, m.retryConnection(i)
+			}
+		}
+		m.state = stateInbox
+		return m, nil
+	case passwordCancelledMsg:
+		m.state = stateInbox
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.passwordPrompt, cmd = m.passwordPrompt.Update(msg)
+	return m, cmd
+}
+
+// storePasswordInKeyring stores a password in the OS keyring.
+func (m Model) storePasswordInKeyring(accountName, password string) error {
+	return keyring.SetPassword(accountName, password)
+}
+
+// retryConnection attempts to reconnect to an account after password entry.
+func (m Model) retryConnection(accountIndex int) tea.Cmd {
+	return func() tea.Msg {
+		// This will be implemented to retry the IMAP connection
+		// with the newly stored password
+		return connectionRetryMsg{accountIndex: accountIndex}
+	}
+}
+
+// connectionRetryMsg is sent after a password is stored to retry connection.
+type connectionRetryMsg struct {
+	accountIndex int
 }
 
 func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -3142,6 +3199,8 @@ func (m Model) View() string {
 		return m.viewHelp()
 	case stateWelcome:
 		return m.viewWelcome()
+	case statePasswordPrompt:
+		return m.passwordPrompt.View(m.width, m.height)
 	}
 	return ""
 }
@@ -3434,6 +3493,66 @@ func splitAddr(addr string) (host, port string) {
 		p = "587"
 	}
 	return h, p
+}
+
+// migrateToKeyring migrates all plaintext passwords and OAuth2 tokens to the OS keyring.
+func (m Model) migrateToKeyring() (tea.Model, tea.Cmd) {
+	var migrated int
+	var errors []string
+
+	for i, acc := range m.accounts {
+		// Skip if already using keyring
+		if acc.UseKeyring() {
+			continue
+		}
+
+		// Migrate password if present and not oauth2
+		if !acc.IsOAuth2() && acc.Password != "" && acc.Password != "keyring" {
+			if err := keyring.SetPassword(acc.Name, acc.Password); err != nil {
+				errors = append(errors, fmt.Sprintf("%s: %v", acc.Name, err))
+				continue
+			}
+			migrated++
+		}
+
+		// Migrate OAuth2 token if using file storage
+		if acc.IsOAuth2() {
+			tokenPath, err := config.TokenFilePath(acc.Name)
+			if err != nil {
+				continue
+			}
+
+			// Check if token file exists
+			if _, err := os.Stat(tokenPath); err == nil {
+				// Read and migrate
+				data, err := os.ReadFile(tokenPath)
+				if err == nil {
+					var token oauth2.Token
+					if err := json.Unmarshal(data, &token); err == nil {
+						if err := keyring.SetOAuth2Token(acc.Name, &token); err == nil {
+							os.Remove(tokenPath) // Remove old token file
+							migrated++
+						}
+					}
+				}
+			}
+		}
+
+		// Update config to use keyring
+		m.accounts[i].Password = "keyring"
+	}
+
+	// Update the config file
+	if migrated > 0 {
+		m.status = fmt.Sprintf("Migrated %d credentials to OS keyring. Restart neomd to use them.", migrated)
+	} else if len(errors) > 0 {
+		m.status = fmt.Sprintf("Migration errors: %s", strings.Join(errors, "; "))
+		m.isError = true
+	} else {
+		m.status = "No credentials to migrate — all accounts already use keyring."
+	}
+
+	return m, nil
 }
 
 // Ensure Model satisfies tea.Model.

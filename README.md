@@ -217,7 +217,15 @@ neomd's responsiveness depends entirely on your IMAP server. Every folder switch
 | FETCH (200 emails) | 76ms |
 | MOVE (1 email) | 46ms |
 
-**Gmail** — folder switch: **~570ms total** (17x slower)
+**Outlook/Office365** — folder switch: **~269ms total** (8x slower than Hostpoint)
+| Operation | Time |
+|-----------|------|
+| SELECT | 45ms |
+| UID SEARCH | 22ms |
+| FETCH (10 emails) | 180ms |
+| MOVE (1 email) | 21ms |
+
+**Gmail** — folder switch: **~570ms total** (17x slower than Hostpoint)
 | Operation | Time |
 |-----------|------|
 | SELECT | 200ms |
@@ -231,7 +239,11 @@ Interestingly, Gmail benchmarks fast on a **fresh single connection** (`scripts/
 
 **Test your own provider:**
 ```bash
+# With password
 IMAP_HOST=imap.example.com IMAP_USER=me@example.com IMAP_PASS=secret ./scripts/imap-benchmark.sh
+
+# With OAuth2 (reads token from neomd config)
+CONFIG=~/.config/neomd/config.toml IMAP_USER=me@gmail.com ./scripts/imap-benchmark.sh
 ```
 
 ## Security

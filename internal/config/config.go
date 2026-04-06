@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/sspaeti/neomd/internal/keyring"
 )
 
 // SenderConfig holds a named "From" alias used only for sending.
@@ -45,6 +46,23 @@ type AccountConfig struct {
 // IsOAuth2 reports whether this account uses OAuth2 instead of password auth.
 func (a AccountConfig) IsOAuth2() bool {
 	return strings.EqualFold(a.AuthType, "oauth2")
+}
+
+// UseKeyring reports whether this account uses the OS keyring for password storage.
+// Returns true if password is set to the sentinel value "keyring".
+func (a AccountConfig) UseKeyring() bool {
+	return strings.EqualFold(a.Password, "keyring")
+}
+
+// ResolvedPassword returns the actual password for this account.
+// If UseKeyring() is true, it fetches from the OS keyring.
+// Otherwise, returns the password field directly.
+// Returns empty string and error if keyring lookup fails.
+func (a AccountConfig) ResolvedPassword() (string, error) {
+	if a.UseKeyring() {
+		return keyring.GetPassword(a.Name)
+	}
+	return a.Password, nil
 }
 
 // ScreenerConfig points to the allowlist/blocklist files.

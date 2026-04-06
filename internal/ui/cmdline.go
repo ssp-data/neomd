@@ -10,7 +10,7 @@ import (
 
 // neomdCmd is a registered colon-command (like vim's :command).
 type neomdCmd struct {
-	name    string // full name, e.g. "screen-all"
+	name    string   // full name, e.g. "screen-all"
 	aliases []string // short forms accepted, e.g. ["sa", "screen-a"]
 	desc    string
 	// run is called when the command is executed; m is the current model.
@@ -158,6 +158,25 @@ func init() {
 			desc:    "write diagnostic report to /tmp/neomd/debug.log and open it",
 			run: func(m *Model) (tea.Model, tea.Cmd) {
 				return m, m.writeDebugReport()
+			},
+		},
+		{
+			name:    "set-password",
+			aliases: []string{"sp", "passwd"},
+			desc:    "set or update password for current account in OS keyring",
+			run: func(m *Model) (tea.Model, tea.Cmd) {
+				acc := m.accounts[m.accountI]
+				m.passwordPrompt.setPrompt(acc.Name, promptManualSet, "")
+				m.state = statePasswordPrompt
+				return m, nil
+			},
+		},
+		{
+			name:    "migrate-to-keyring",
+			aliases: []string{"mtk", "migrate"},
+			desc:    "migrate plaintext passwords and tokens to OS keyring",
+			run: func(m *Model) (tea.Model, tea.Cmd) {
+				return m.migrateToKeyring()
 			},
 		},
 		{
