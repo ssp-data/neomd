@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sspaeti/neomd/internal/config"
 	goIMAP "github.com/sspaeti/neomd/internal/imap"
+	"github.com/sspaeti/neomd/internal/keyring"
 	"github.com/sspaeti/neomd/internal/oauth2"
 	"github.com/sspaeti/neomd/internal/screener"
 	"github.com/sspaeti/neomd/internal/ui"
@@ -51,16 +52,36 @@ func main() {
 
 	// Build one IMAP client per account.
 	imapClients := make([]*goIMAP.Client, 0, len(accounts))
+	needsPasswordSetup := false
+
 	for _, acc := range accounts {
 		h, p := splitAddr(acc.IMAP)
+
+		// Resolve password from keyring if needed
+		password := acc.Password
+		if acc.UseKeyring() {
+			var err error
+			password, err = keyring.GetPassword(acc.Name)
+			if err == keyring.ErrNotFound {
+				// Password not in keyring yet - we'll need to prompt in the UI
+				// For now, leave password empty to trigger auth failure
+				password = ""
+				needsPasswordSetup = true
+			} else if err != nil {
+				fmt.Fprintf(os.Stderr, "neomd: account %q: keyring error: %v\n", acc.Name, err)
+				os.Exit(1)
+			}
+		}
+
 		imapCfg := goIMAP.Config{
 			Host:     h,
 			Port:     p,
 			User:     acc.User,
-			Password: acc.Password,
+			Password: password,
 			TLS:      p == "993",
 			STARTTLS: p == "143",
 		}
+
 		if acc.IsOAuth2() {
 			if acc.OAuth2ClientID == "" {
 				fmt.Fprintf(os.Stderr, "neomd: account %q: oauth2_client_id is required\n", acc.Name)
@@ -70,12 +91,8 @@ func main() {
 				fmt.Fprintf(os.Stderr, "neomd: account %q: set oauth2_issuer_url or both oauth2_auth_url and oauth2_token_url\n", acc.Name)
 				os.Exit(1)
 			}
-			tokenFile, err := config.TokenFilePath(acc.Name)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "neomd: account %q: %v\n", acc.Name, err)
-				os.Exit(1)
-			}
-			ts, err := oauth2.TokenSource(ctx, oauth2.Config{
+
+			oauth2Cfg := oauth2.Config{
 				ClientID:     acc.OAuth2ClientID,
 				ClientSecret: acc.OAuth2ClientSecret,
 				IssuerURL:    acc.OAuth2IssuerURL,
@@ -83,19 +100,38 @@ func main() {
 				TokenURL:     acc.OAuth2TokenURL,
 				Scopes:       acc.OAuth2Scopes,
 				RedirectPort: acc.OAuth2RedirectPort,
-				TokenFile:    tokenFile,
-			})
+				AccountName:  acc.Name,
+			}
+
+			// Always set TokenFile as fallback (for headless/SSH environments where keyring is unavailable)
+			tokenFile, err := config.TokenFilePath(acc.Name)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "neomd: account %q: %v\n", acc.Name, err)
+				os.Exit(1)
+			}
+			oauth2Cfg.TokenFile = tokenFile
+
+			ts, err := oauth2.TokenSource(ctx, oauth2Cfg)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "neomd: account %q: oauth2: %v\n", acc.Name, err)
 				os.Exit(1)
 			}
-			imapCfg.TokenSource = ts
-		} else if acc.User == "" || acc.Password == "" {
-			fmt.Fprintf(os.Stderr, "neomd: account %q: user/password not set\n", acc.Name)
-			os.Exit(1)
+			imapCfg.TokenSource = ts.AsFunc()
+		} else if acc.User == "" || (password == "" && !acc.UseKeyring()) {
+			// For keyring users with no password yet, we'll prompt in the UI
+			if !acc.UseKeyring() || !needsPasswordSetup {
+				fmt.Fprintf(os.Stderr, "neomd: account %q: user/password not set\n", acc.Name)
+				os.Exit(1)
+			}
 		}
+
 		imapClients = append(imapClients, goIMAP.New(imapCfg))
 	}
+
+	if needsPasswordSetup {
+		fmt.Println("Note: One or more accounts need password setup. Use :set-password <account> after neomd starts.")
+	}
+
 	defer func() {
 		for _, c := range imapClients {
 			c.Close()
