@@ -123,6 +123,15 @@ type UIConfig struct {
 	AutoScreenOnLoad      *bool  `toml:"auto_screen_on_load"`     // screen inbox on every load (default true)
 	BgSyncInterval        int    `toml:"bg_sync_interval"`        // background sync interval in minutes (0 = disabled, default 5)
 	BulkProgressThreshold int    `toml:"bulk_progress_threshold"` // show progress counter for batches larger than this (default 10)
+	DraftBackupCount      int    `toml:"draft_backup_count"`      // rolling compose backups in ~/.cache/neomd/drafts/ (default 20, 0 = disabled)
+}
+
+// DraftBackups returns the max number of rolling draft backups (default 20, 0 = disabled).
+func (u UIConfig) DraftBackups() int {
+	if u.DraftBackupCount == 0 {
+		return 20
+	}
+	return u.DraftBackupCount
 }
 
 // BulkThreshold returns the configured bulk progress threshold (default 10).
@@ -195,6 +204,18 @@ func HistoryPath() string {
 		return filepath.Join(p, "cmd_history")
 	}
 	return filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_cmd_history", os.Getuid()))
+}
+
+// DraftsBackupDir returns ~/.cache/neomd/drafts/, creating it if needed.
+func DraftsBackupDir() string {
+	if dir, err := os.UserCacheDir(); err == nil {
+		p := filepath.Join(dir, cacheDirName, "drafts")
+		_ = os.MkdirAll(p, 0700)
+		return p
+	}
+	p := filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_drafts", os.Getuid()))
+	_ = os.MkdirAll(p, 0700)
+	return p
 }
 
 // welcomePath returns the path of the first-run marker file.

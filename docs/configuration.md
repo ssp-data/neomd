@@ -66,6 +66,7 @@ inbox_count          = 50
 auto_screen_on_load  = true     # screen inbox automatically on every load (default true)
 bg_sync_interval     = 5        # background sync interval in minutes; 0 = disabled (default 5)
 bulk_progress_threshold = 10    # show progress counter for batch operations larger than this (default 10)
+draft_backup_count      = 20    # rolling compose backups in ~/.cache/neomd/drafts/ (default 20, -1 = disabled)
 signature   = """**Your Name**
 Your Title, Your Company
 

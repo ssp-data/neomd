@@ -167,6 +167,46 @@ func neomdTempDir() string {
 	return dir
 }
 
+// backupDraft copies a compose temp file to ~/.cache/neomd/drafts/ before it is
+// deleted. Keeps at most maxBackups files, pruning the oldest.
+func backupDraft(tmpPath string, maxBackups int) {
+	if maxBackups < 0 {
+		return // disabled
+	}
+	dir := config.DraftsBackupDir()
+	dst := filepath.Join(dir, filepath.Base(tmpPath))
+	src, err := os.ReadFile(tmpPath)
+	if err != nil || len(src) == 0 {
+		return
+	}
+	_ = os.WriteFile(dst, src, 0600)
+
+	// Prune oldest if over limit.
+	entries, _ := os.ReadDir(dir)
+	if len(entries) <= maxBackups {
+		return
+	}
+	type fileInfo struct {
+		name    string
+		modTime time.Time
+	}
+	files := make([]fileInfo, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, fileInfo{name: e.Name(), modTime: info.ModTime()})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].modTime.Before(files[j].modTime) })
+	for i := 0; i < len(files)-maxBackups; i++ {
+		_ = os.Remove(filepath.Join(dir, files[i].name))
+	}
+}
+
 // maskEmail masks the local part of an email address: "user@example.com" → "u***@example.com".
 // For "Name <email>" format, masks the email part only.
 func maskEmail(s string) string {
@@ -2510,8 +2550,10 @@ func (m Model) continueDraft() (tea.Model, tea.Cmd) {
 		editorBin = "nvim"
 	}
 	cmd := exec.Command(editorBin, tmpPath)
+	draftBackups := m.cfg.UI.DraftBackups()
 	m.state = stateCompose
 	return m, tea.ExecProcess(cmd, func(execErr error) tea.Msg {
+		backupDraft(tmpPath, draftBackups)
 		defer os.Remove(tmpPath)
 		if execErr != nil {
 			return editorDoneMsg{err: execErr}
@@ -2601,11 +2643,8 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "e":
 		// Re-open the editor with the current body for further edits.
-		// Build a temp file with existing body and re-launch.
 		m.state = stateCompose
 		m.pendingSend = nil
-		prelude := editor.Prelude(ps.to, ps.cc, ps.subject, m.cfg.UI.Signature)
-		// Pre-fill compose fields so launchEditorCmd picks them up
 		m.compose.to.SetValue(ps.to)
 		m.compose.cc.SetValue(ps.cc)
 		m.compose.bcc.SetValue(ps.bcc)
@@ -2613,8 +2652,7 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ps.cc != "" || ps.bcc != "" {
 			m.compose.extraVisible = true
 		}
-		_ = prelude
-		return m.launchEditorCmd()
+		return m.launchEditorWithBodyCmd(ps.to, ps.cc, ps.subject, ps.body)
 	case "s":
 		// Open in nvim with spell checking, cursor on first error.
 		return m.launchSpellCheckCmd(ps)
@@ -2677,7 +2715,9 @@ func (m Model) launchSpellCheckCmd(ps *pendingSendData) (tea.Model, tea.Cmd) {
 		tmpPath,
 	)
 	m.state = stateCompose
+	draftBackups := m.cfg.UI.DraftBackups()
 	return m, tea.ExecProcess(cmd, func(execErr error) tea.Msg {
+		backupDraft(tmpPath, draftBackups)
 		defer os.Remove(tmpPath)
 		if execErr != nil {
 			return editorDoneMsg{err: execErr}
@@ -2788,7 +2828,9 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 	}
 
 	cmd := exec.Command(editorBin, tmpPath)
+	draftBackups := m.cfg.UI.DraftBackups()
 	return m, tea.ExecProcess(cmd, func(execErr error) tea.Msg {
+		backupDraft(tmpPath, draftBackups)
 		defer os.Remove(tmpPath)
 		if execErr != nil {
 			return editorDoneMsg{err: execErr}
@@ -2798,6 +2840,62 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 			return editorDoneMsg{err: readErr}
 		}
 		if string(raw) == prelude {
+			return editorDoneMsg{aborted: true}
+		}
+		pto, pcc, pbcc, psubject, _ := editor.ParseHeaders(string(raw))
+		if pto == "" {
+			pto = to
+		}
+		if pcc == "" {
+			pcc = cc
+		}
+		if pbcc == "" {
+			pbcc = bcc
+		}
+		if psubject == "" {
+			psubject = subject
+		}
+		return editorDoneMsg{to: pto, cc: pcc, bcc: pbcc, subject: psubject, body: string(raw)}
+	})
+}
+
+// launchEditorWithBodyCmd re-opens the editor with an existing body (e.g. from
+// the pre-send screen). The prelude is built from the provided headers (no
+// signature — it is already in the body from the first compose).
+func (m Model) launchEditorWithBodyCmd(to, cc, subject, body string) (tea.Model, tea.Cmd) {
+	prelude := editor.Prelude(to, cc, subject, "")
+	content := prelude + body
+
+	f, err := os.CreateTemp(neomdTempDir(), "neomd-*.md")
+	if err != nil {
+		m.status = err.Error()
+		m.isError = true
+		m.state = stateInbox
+		return m, nil
+	}
+	tmpPath := f.Name()
+	f.WriteString(content) //nolint
+	f.Close()
+
+	editorBin := os.Getenv("EDITOR")
+	if editorBin == "" {
+		editorBin = "nvim"
+	}
+
+	bcc := m.compose.bcc.Value()
+	cmd := exec.Command(editorBin, tmpPath)
+	draftBackups := m.cfg.UI.DraftBackups()
+	return m, tea.ExecProcess(cmd, func(execErr error) tea.Msg {
+		backupDraft(tmpPath, draftBackups)
+		defer os.Remove(tmpPath)
+		if execErr != nil {
+			return editorDoneMsg{err: execErr}
+		}
+		raw, readErr := os.ReadFile(tmpPath)
+		if readErr != nil {
+			return editorDoneMsg{err: readErr}
+		}
+		if string(raw) == content {
 			return editorDoneMsg{aborted: true}
 		}
 		pto, pcc, pbcc, psubject, _ := editor.ParseHeaders(string(raw))
@@ -2889,7 +2987,9 @@ func (m Model) launchForwardCmd() (tea.Model, tea.Cmd) {
 	}
 
 	cmd := exec.Command(editorBin, tmpPath)
+	draftBackups := m.cfg.UI.DraftBackups()
 	return m, tea.ExecProcess(cmd, func(execErr error) tea.Msg {
+		backupDraft(tmpPath, draftBackups)
 		defer os.Remove(tmpPath)
 		if execErr != nil {
 			return editorDoneMsg{err: execErr}
@@ -2977,7 +3077,9 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 	}
 
 	cmd := exec.Command(editorBin, tmpPath)
+	draftBackups := m.cfg.UI.DraftBackups()
 	return m, tea.ExecProcess(cmd, func(execErr error) tea.Msg {
+		backupDraft(tmpPath, draftBackups)
 		defer os.Remove(tmpPath)
 		if execErr != nil {
 			return editorDoneMsg{err: execErr}

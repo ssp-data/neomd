@@ -1,5 +1,11 @@
 # Changelog
 
+# 2026-04-06
+- **Fix: pre-send `e` losing email body** — pressing `e` in the pre-send review to re-edit now correctly reopens the editor with the existing body; previously it opened a blank compose with only the signature, silently discarding the email content (including reply history)
+- **Draft backups** — every compose session is automatically backed up to `~/.cache/neomd/drafts/` before the temp file is deleted; keeps a rolling 20 backups (configurable via `draft_backup_count` in `[ui]`, set to `-1` to disable); no more lost emails after crashes or accidental closes
+- **`:recover` / `:rec` command** — reopens the most recent draft backup as a compose session; To/Cc/Bcc/Subject are parsed from the backup and pre-filled automatically
+- **Screener docs: "screening happens once"** — documented that auto-screening only runs on the Inbox folder; emails moved to ToScreen by another device are not re-classified; use `:reset-toscreen` to move them back for re-screening
+
 # 2026-04-05
 - **OAuth2 authentication** ([#3](https://github.com/ssp-data/neomd/pull/3), thanks [@notthatjesus](https://github.com/notthatjesus)) — accounts can set `auth_type = "oauth2"` with `oauth2_client_id`, `oauth2_client_secret`, `oauth2_issuer_url`, and `oauth2_scopes` instead of a password; on first launch neomd opens the browser for the authorization code flow, persists the token to `~/.config/neomd/tokens/<account>.json`, and refreshes it automatically; works with Gmail, Office365, and any OIDC-discoverable provider via XOAUTH2 over IMAP and SMTP; password auth paths unchanged for existing accounts
 - **`auto_bcc` config** — root-level `auto_bcc = "addr@example.com"` appends an address to every outgoing email's Bcc so you keep a copy in an external mailbox (e.g. a hey.com archive); visible in the composer and pre-send review (no silent BCC), deduped against any manual Bcc entry

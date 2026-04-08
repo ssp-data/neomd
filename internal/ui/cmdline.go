@@ -2,10 +2,15 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sspaeti/neomd/internal/config"
+	"github.com/sspaeti/neomd/internal/editor"
 )
 
 // neomdCmd is a registered colon-command (like vim's :command).
@@ -158,6 +163,66 @@ func init() {
 			desc:    "write diagnostic report to /tmp/neomd/debug.log and open it",
 			run: func(m *Model) (tea.Model, tea.Cmd) {
 				return m, m.writeDebugReport()
+			},
+		},
+		{
+			name:    "recover",
+			aliases: []string{"rec"},
+			desc:    "reopen the most recent compose backup from ~/.cache/neomd/drafts/",
+			run: func(m *Model) (tea.Model, tea.Cmd) {
+				dir := config.DraftsBackupDir()
+				entries, err := os.ReadDir(dir)
+				if err != nil || len(entries) == 0 {
+					m.status = "No draft backups found in " + dir
+					return m, nil
+				}
+				// Sort by mod time descending (newest first).
+				type fileEntry struct {
+					path    string
+					modTime int64
+				}
+				var files []fileEntry
+				for _, e := range entries {
+					if e.IsDir() {
+						continue
+					}
+					info, err := e.Info()
+					if err != nil {
+						continue
+					}
+					files = append(files, fileEntry{
+						path:    filepath.Join(dir, e.Name()),
+						modTime: info.ModTime().Unix(),
+					})
+				}
+				if len(files) == 0 {
+					m.status = "No draft backups found in " + dir
+					return m, nil
+				}
+				sort.Slice(files, func(i, j int) bool { return files[i].modTime > files[j].modTime })
+
+				// Read the most recent backup.
+				raw, err := os.ReadFile(files[0].path)
+				if err != nil {
+					m.status = "read backup: " + err.Error()
+					m.isError = true
+					return m, nil
+				}
+				to, cc, bcc, subject, body := editor.ParseHeaders(string(raw))
+
+				// Pre-fill compose fields.
+				m.compose.reset()
+				m.presendFromI = 0
+				m.compose.to.SetValue(to)
+				m.compose.cc.SetValue(cc)
+				m.compose.bcc.SetValue(bcc)
+				m.compose.subject.SetValue(subject)
+				if cc != "" || bcc != "" {
+					m.compose.extraVisible = true
+				}
+				m.compose.step = 3
+
+				return m.launchEditorWithBodyCmd(to, cc, subject, body)
 			},
 		},
 		{
