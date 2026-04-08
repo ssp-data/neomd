@@ -1307,7 +1307,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Update local Answered flag so the reply indicator shows immediately.
 		if msg.replyToUID > 0 {
-			items := m.list.Items()
+			items := m.inbox.Items()
 			for i, it := range items {
 				if ei, ok := it.(emailItem); ok && ei.email.UID == msg.replyToUID {
 					ei.email.Answered = true
@@ -1315,7 +1315,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-			m.list.SetItems(items)
+			m.inbox.SetItems(items)
 		}
 		return m, nil
 
@@ -1374,6 +1374,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case everythingResultMsg:
 		return m.handleEverythingResult(msg)
+
+	case conversationResultMsg:
+		return m.handleConversationResult(msg)
 
 	case batchDoneMsg:
 		m.loading = false
@@ -2020,6 +2023,14 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, tea.Batch(m.spinner.Tick, m.fetchBodyCmd(e))
 
+	case "T":
+		e := selectedEmail(m.inbox)
+		if e == nil {
+			return m, nil
+		}
+		m.loading = true
+		return m, tea.Batch(m.spinner.Tick, m.fetchConversationCmd(e))
+
 	case "m": // mark/unmark current email for batch, advance cursor
 		e := selectedEmail(m.inbox)
 		if e == nil {
@@ -2324,6 +2335,12 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		if m.openEmail != nil {
 			return m.launchForwardCmd()
+		}
+	case "T":
+		if m.openEmail != nil {
+			m.loading = true
+			m.state = stateInbox
+			return m, tea.Batch(m.spinner.Tick, m.fetchConversationCmd(m.openEmail))
 		}
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		idx := int(msg.String()[0] - '1') // 0-based

@@ -111,6 +111,7 @@ Press `?` inside neomd to open the interactive help overlay. Start typing to fil
 | `r` | reply  (from inbox or reader) |
 | `ctrl+r` | reply-all — reply to sender + all CC recipients  (from inbox or reader) |
 | `f` | forward email  (from reader or inbox) |
+| `T` | show full conversation thread across folders  (from inbox or reader) |
 | `c` | compose new email |
 | `ctrl+b  (compose/pre-send)` | toggle Cc+Bcc fields (both hidden by default) |
 | `ctrl+f  (compose/pre-send)` | cycle From address through all accounts + [[senders]] aliases |

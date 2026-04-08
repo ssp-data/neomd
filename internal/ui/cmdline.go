@@ -200,6 +200,20 @@ func init() {
 			},
 		},
 		{
+			name:    "thread",
+			aliases: []string{"t"},
+			desc:    "show full conversation for the selected email (across folders)",
+			run: func(m *Model) (tea.Model, tea.Cmd) {
+				e := selectedEmail(m.inbox)
+				if e == nil {
+					m.status = "No email selected."
+					return m, nil
+				}
+				m.loading = true
+				return m, tea.Batch(m.spinner.Tick, m.fetchConversationCmd(e))
+			},
+		},
+		{
 			name:    "quit",
 			aliases: []string{"q"},
 			desc:    "quit neomd",

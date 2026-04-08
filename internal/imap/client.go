@@ -458,6 +458,71 @@ func (c *Client) SearchAllFolders(ctx context.Context, folders []string, query s
 	return all, nil
 }
 
+// FetchConversation searches across folders for emails related to the given
+// subject, filtered by participant overlap. Used for the conversation/thread view.
+// The subject should be the normalized base subject (Re:/Fwd: stripped).
+// Participants is a set of email addresses involved in the conversation.
+func (c *Client) FetchConversation(ctx context.Context, folders []string, subject string, participants map[string]bool) ([]Email, error) {
+	if subject == "" {
+		return nil, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var all []Email
+	for _, folder := range folders {
+		emails, err := c.SearchMessages(ctx, folder, "subject:"+subject)
+		if err != nil {
+			continue
+		}
+		all = append(all, emails...)
+	}
+	// Filter: keep only emails where at least one participant matches.
+	if len(participants) > 0 {
+		var filtered []Email
+		for _, e := range all {
+			if participantMatch(e, participants) {
+				filtered = append(filtered, e)
+			}
+		}
+		all = filtered
+	}
+	return all, nil
+}
+
+// participantMatch returns true if any address in the email's From/To/CC
+// is in the participants set.
+func participantMatch(e Email, participants map[string]bool) bool {
+	for _, addr := range append(SplitAddrs(e.From), append(SplitAddrs(e.To), SplitAddrs(e.CC)...)...) {
+		if participants[strings.ToLower(addr)] {
+			return true
+		}
+	}
+	return false
+}
+
+// SplitAddrs splits a comma-separated address field and extracts bare lowercase addresses.
+func SplitAddrs(field string) []string {
+	var out []string
+	for _, part := range strings.Split(field, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		// Extract from "Name <addr>" or bare "addr"
+		if i := strings.IndexByte(part, '<'); i >= 0 {
+			if j := strings.IndexByte(part, '>'); j > i {
+				part = part[i+1 : j]
+			}
+		}
+		part = strings.TrimSpace(strings.ToLower(part))
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
 // buildSearchCriteria parses a query string into IMAP SearchCriteria.
 // Supports prefixes: "from:value", "subject:value", "to:value".
 // Plain text without a prefix searches OR(FROM, SUBJECT, TO).

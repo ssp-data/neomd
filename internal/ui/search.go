@@ -163,6 +163,78 @@ func (m *Model) handleEverythingResult(msg everythingResultMsg) (tea.Model, tea.
 	return m, m.sortEmails()
 }
 
+// conversationResultMsg carries results from a conversation/thread fetch.
+type conversationResultMsg struct {
+	emails []imap.Email
+	err    error
+}
+
+// fetchConversationCmd fetches all emails related to the given email's
+// conversation across key folders (Inbox, Sent, Archive, etc.).
+func (m Model) fetchConversationCmd(e *imap.Email) tea.Cmd {
+	cli := m.imapCli()
+	f := m.cfg.Folders
+	// Search folders likely to contain conversation parts.
+	folders := []string{f.Inbox, f.Sent, f.Archive, f.Waiting, f.Someday, f.Scheduled}
+	if f.Work != "" {
+		folders = append(folders, f.Work)
+	}
+	// Add current folder if not already included.
+	cur := e.Folder
+	found := false
+	for _, fo := range folders {
+		if fo == cur {
+			found = true
+			break
+		}
+	}
+	if !found && cur != "" {
+		folders = append(folders, cur)
+	}
+
+	// Normalize subject and collect participants.
+	subject := normalizeSubject(e.Subject)
+	participants := make(map[string]bool)
+	for _, addr := range imap.SplitAddrs(e.From) {
+		participants[addr] = true
+	}
+	for _, addr := range imap.SplitAddrs(e.To) {
+		participants[addr] = true
+	}
+	for _, addr := range imap.SplitAddrs(e.CC) {
+		participants[addr] = true
+	}
+
+	return func() tea.Msg {
+		emails, err := cli.FetchConversation(nil, folders, subject, participants)
+		return conversationResultMsg{emails: emails, err: err}
+	}
+}
+
+// handleConversationResult displays the conversation/thread view.
+func (m *Model) handleConversationResult(msg conversationResultMsg) (tea.Model, tea.Cmd) {
+	m.loading = false
+	if msg.err != nil {
+		m.status = "Thread: " + msg.err.Error()
+		m.isError = true
+		return m, nil
+	}
+	if len(msg.emails) == 0 {
+		m.status = "No related emails found."
+		return m, nil
+	}
+	m.offTabFolder = "Thread"
+	for i := range msg.emails {
+		msg.emails[i].Subject = "[" + msg.emails[i].Folder + "] " + msg.emails[i].Subject
+	}
+	m.emails = msg.emails
+	m.markedUIDs = make(map[uint32]bool)
+	m.filterActive = false
+	m.filterText = ""
+	m.status = fmt.Sprintf("Thread — %d email(s) in conversation. esc to close.", len(msg.emails))
+	return m, m.sortEmails()
+}
+
 // viewIMAPSearchBar renders the search prompt at the bottom of the inbox.
 func (m Model) viewIMAPSearchBar() string {
 	cursor := ""

@@ -56,6 +56,7 @@ waiting      = "Waiting"
 scheduled    = "Scheduled"
 someday      = "Someday"
 spam         = "spam" #check capitalization of your pre-existing Spam folder, sometimes might be `Spam` with `S`
+# work = "Work"  # optional custom folder; add "work" to tab_order to show as a tab (gb to go, Mb to move -b for business as w was taken)
 # tab_order controls the left-to-right tab sequence; omit to use the built-in default order. e.g.:
 # tab_order = ["inbox", "to_screen", "feed", "papertrail", "waiting", "someday", "scheduled", "sent", "archive", "screened_out", "drafts", "trash"]
 # Gmail uses different folder names — see docs/gmail.md for the correct mapping.

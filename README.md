@@ -82,7 +82,8 @@ Or in Gmail:
 - **Search** — `/` filters loaded emails in-memory; `space /` or `:search` runs IMAP SEARCH across all folders (only fetching header capped at 100 per folder) with results in a temporary "Search" tab; supports `from:`, `subject:`, `to:` prefixes
 - **Address autocomplete** — To/Cc/Bcc fields autocomplete from screener lists; navigate with `ctrl+n`/`ctrl+p`, accept with `tab`
 - **Everything view** — `ge` or `:everything` shows the 50 most recent emails across all folders; find emails that were screened out, moved to spam, or otherwise hard to locate
-- **Threaded inbox** — related emails are grouped together in the inbox list with a vertical connector line (`│`/`╰`), Twitter-style; threads are detected via `In-Reply-To`/`Message-ID` headers with a subject+participant fallback; newest reply on top, root at bottom
+- **Threaded inbox** — related emails are grouped together in the inbox list with a vertical connector line (`│`/`╰`), Twitter-style; threads are detected via `In-Reply-To`/`Message-ID` headers with a subject+participant fallback; newest reply on top, root at bottom; `·` reply indicator shows which emails you've answered
+- **Conversation view** — `T` or `:thread` shows the full conversation across folders (Inbox, Sent, Archive, etc.) in a temporary tab with `[Folder]` prefix; see your replies alongside received emails
 - **Glamour reading** — incoming emails rendered as styled Markdown in the terminal
 - **HEY-style screener** — unknown senders land in `ToScreen`; press `I/O/F/P` to approve, block, mark as Feed, or mark as PaperTrail; reuses your existing `screened_in.txt` lists from neomutt
 - **Folder tabs** — Inbox, ToScreen, Feed, PaperTrail, Archive, Waiting, Someday, Scheduled, Sent, Trash, ScreenedOut

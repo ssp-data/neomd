@@ -57,14 +57,17 @@ Related emails are automatically grouped together in the inbox list. Threads are
 Threads display with a Twitter-style vertical connector line:
 
 ```
-  1   17:43  │ rafaelxxxxxxxxxxx@g…  Re: Re: AUR Neomd              (12K)
-  2   16:30  ╰ rafaelxxxxxxxxxxx@g…  Re: AUR Neomd                  (10K)
+  1  ·17:43  │ rafaelxxxxxxxxxxx@g…  Re: Re: AUR Neomd              (12K)
+  2  ·16:30 ·╰  rafaelxxxxxxxxxxx@g…  Re: AUR Neomd                  (10K)
   3 N 19:50  │ Bla blabla   via Li…  Jenna just messaged you        (38K)
   4 N 18:53  │ Bla blabla   via Li…  Jenna just messaged you        (38K)
   5 N 17:59  ╰ Bla blabla   via Li…  Jenna just messaged you        (38K)
   6   18:46    LinkedIn              tom Weller replied to ...      (45K)
+  7  ·14:22  · Simon Späti           Data pipeline question          (5K)
 ```
 
+- `·` reply indicator — you've replied to this email (IMAP `\Answered` flag, works across clients)
+- `·╰ ` reply indicator within a thread
 - `│` connects thread members (newest on top)
 - `╰` marks the root/oldest email at the bottom of each thread
 - Non-threaded emails show no connector (clean, no visual noise)
@@ -79,6 +82,22 @@ Or as image:
 | Key | Action |
 |-----|--------|
 | `r` | reply to sender |
-| `R` | reply-all (sender + all CC recipients) |
+| `ctrl+r` | reply-all (sender + all CC recipients) |
 | `f` | forward email |
+| `T` | show full conversation thread across folders |
 | `E` | continue draft (only in Drafts folder) — re-opens as editable compose |
+
+## Conversation View
+
+Press `T` from the inbox list or while reading an email to see the **full conversation across folders**. neomd searches Inbox, Sent, Archive, Waiting, and other configured folders for related emails — matching by normalized subject and participant overlap.
+
+Results display in a temporary "Thread" tab:
+- Each email shows `[Folder]` prefix (e.g. `[Sent]`, `[Inbox]`, `[Archive]`)
+- Threading connectors (`│`/`╰`) show the conversation structure
+- Press Enter to read any email, Esc to return to previous view
+
+Also available as `:thread` (alias `:t`) from the command line.
+
+## Reply Indicator
+
+Emails you've replied to show a `·` dot in the inbox list. This uses the standard IMAP `\Answered` flag, so it works across clients — if you reply from webmail, neomd shows it too.

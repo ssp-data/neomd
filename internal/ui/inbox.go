@@ -41,7 +41,7 @@ func (d emailDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 const (
 	colNumWidth    = 4 // "  1 "
 	colFlagWidth   = 2 // "N " or "  "
-	colReplyWidth  = 1 // "↩" or " "
+	colReplyWidth  = 1 // "·" or " "
 	colThreadWidth = 2 // "│ " or "╰ " or "  "
 	colDateWidth   = 7 // "Feb 03 "
 	colAttachWidth = 2 // "@ " or "  "

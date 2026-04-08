@@ -137,6 +137,78 @@ func TestHasAttachment(t *testing.T) {
 	}
 }
 
+func TestSplitAddrs(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"alice@example.com", []string{"alice@example.com"}},
+		{"Alice <alice@example.com>, Bob <bob@example.com>", []string{"alice@example.com", "bob@example.com"}},
+		{"alice@example.com, bob@example.com", []string{"alice@example.com", "bob@example.com"}},
+		{"", nil},
+		{"  , ,  ", nil},
+		{"ALICE@EXAMPLE.COM", []string{"alice@example.com"}}, // lowercased
+	}
+	for _, tt := range tests {
+		got := SplitAddrs(tt.input)
+		if len(got) != len(tt.want) {
+			t.Errorf("SplitAddrs(%q) = %v (len %d), want %v (len %d)", tt.input, got, len(got), tt.want, len(tt.want))
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("SplitAddrs(%q)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+			}
+		}
+	}
+}
+
+func TestParticipantMatch(t *testing.T) {
+	participants := map[string]bool{
+		"alice@example.com": true,
+		"bob@example.com":   true,
+	}
+	tests := []struct {
+		name  string
+		email Email
+		want  bool
+	}{
+		{
+			"from matches",
+			Email{From: "Alice <alice@example.com>", To: "other@example.com"},
+			true,
+		},
+		{
+			"to matches",
+			Email{From: "other@example.com", To: "bob@example.com"},
+			true,
+		},
+		{
+			"cc matches",
+			Email{From: "other@example.com", To: "other2@example.com", CC: "alice@example.com"},
+			true,
+		},
+		{
+			"no match",
+			Email{From: "stranger@example.com", To: "other@example.com"},
+			false,
+		},
+		{
+			"empty email",
+			Email{},
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := participantMatch(tt.email, participants)
+			if got != tt.want {
+				t.Errorf("participantMatch() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConnect_RefusesUnencrypted(t *testing.T) {
 	c := &Client{
 		cfg: Config{

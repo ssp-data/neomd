@@ -128,3 +128,48 @@ func TestScreenSummary(t *testing.T) {
 		t.Errorf("summary should contain \"1→Trash\", got: %s", got)
 	}
 }
+
+// --- Thread / Conversation tests ---
+
+func TestNormalizeSubject(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Re: Hello World", "hello world"},
+		{"Fwd: Re: Hello World", "hello world"},
+		{"AW: RE: FW: Meeting notes", "meeting notes"},
+		{"Hello World", "hello world"},
+		{"Re: Re: Re: Deep thread", "deep thread"},
+		{"", ""},
+		{"Re[2]: Numbered reply", "numbered reply"},
+		{"  Re:  Whitespace  ", "whitespace"},
+	}
+	for _, tt := range tests {
+		got := normalizeSubject(tt.input)
+		if got != tt.want {
+			t.Errorf("normalizeSubject(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestHasReplyPrefix(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"Re: Hello", true},
+		{"Fwd: Hello", true},
+		{"AW: Hello", true},
+		{"Hello", false},
+		{"", false},
+		{"RE: caps", true},
+		{"Fw: short form", true},
+	}
+	for _, tt := range tests {
+		got := hasReplyPrefix(tt.input)
+		if got != tt.want {
+			t.Errorf("hasReplyPrefix(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}

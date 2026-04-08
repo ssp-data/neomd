@@ -11,6 +11,10 @@
 - **Fix: To/CC display** — reader and inbox now show all To and CC addresses, not just the first; `FetchHeadersByUID` (used by search/everything) now also populates To and CC fields
 - **Reply-all rebind to `ctrl+r`** — `R` (Shift+R) is now consistently reload/refresh in all views; reply-all moved to `ctrl+r` which works from both inbox list and reader (previously `R` conflicted between reload in inbox and reply-all in reader)
 - **Default signature for new users** — new installs get `*sent from [neomd](https://neomd.ssp.sh)*` as the default signature
+- **Reply indicator (`·`)** — emails you've replied to show a `·` dot in the inbox list between the flag and thread columns; uses the standard IMAP `\Answered` flag so it works across clients (reply from webmail → neomd shows it)
+- **`\Answered` flag on reply** — after sending a reply, the original email is automatically marked as `\Answered` on the IMAP server
+- **Conversation thread view (`T` / `:thread`)** — press `T` from inbox list or reader to see the full conversation across folders (Inbox, Sent, Archive, Waiting, Work, etc.); searches by normalized subject + participant overlap; displays in a temporary "Thread" tab with `[Folder]` prefix and `│`/`╰` threading connectors; esc returns to previous view
+- **Custom folder support (`work`)** — optional `work = "Work"` in `[folders]` config; add `"work"` to `tab_order` to show as a tab; `gb` to go, `Mb` to move; auto-created on first run if configured; included in Everything, Search, and conversation views
 
 # 2026-04-05
 - **OAuth2 authentication** ([#3](https://github.com/ssp-data/neomd/pull/3), thanks [@notthatjesus](https://github.com/notthatjesus)) — accounts can set `auth_type = "oauth2"` with `oauth2_client_id`, `oauth2_client_secret`, `oauth2_issuer_url`, and `oauth2_scopes` instead of a password; on first launch neomd opens the browser for the authorization code flow, persists the token to `~/.config/neomd/tokens/<account>.json`, and refreshes it automatically; works with Gmail, Office365, and any OIDC-discoverable provider via XOAUTH2 over IMAP and SMTP; password auth paths unchanged for existing accounts
