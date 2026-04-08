@@ -41,6 +41,7 @@ func (d emailDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 const (
 	colNumWidth    = 4 // "  1 "
 	colFlagWidth   = 2 // "N " or "  "
+	colReplyWidth  = 1 // "↩" or " "
 	colThreadWidth = 2 // "│ " or "╰ " or "  "
 	colDateWidth   = 7 // "Feb 03 "
 	colAttachWidth = 2 // "@ " or "  "
@@ -72,6 +73,11 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		flag = "* "
 	case unread:
 		flag = "N "
+	}
+	// Reply indicator
+	replyStr := " "
+	if e.email.Answered {
+		replyStr = "·"
 	}
 	// Thread connector column
 	threadStr := "  "
