@@ -38,6 +38,9 @@ func (m Model) imapSearchAllCmd(query string) tea.Cmd {
 		f.ToScreen, f.Feed, f.PaperTrail, f.ScreenedOut,
 		f.Archive, f.Waiting, f.Scheduled, f.Someday, f.Spam,
 	}
+	if f.Work != "" {
+		folders = append(folders, f.Work)
+	}
 	return func() tea.Msg {
 		emails, err := cli.SearchAllFolders(nil, folders, query)
 		return imapSearchResultMsg{emails: emails, query: query, err: err}
@@ -125,6 +128,9 @@ func (m Model) fetchEverythingCmd() tea.Cmd {
 		f.Inbox, f.Sent, f.Trash, f.Drafts,
 		f.ToScreen, f.Feed, f.PaperTrail, f.ScreenedOut,
 		f.Archive, f.Waiting, f.Scheduled, f.Someday, f.Spam,
+	}
+	if f.Work != "" {
+		folders = append(folders, f.Work)
 	}
 	return func() tea.Msg {
 		emails, err := cli.FetchLatestAllFolders(nil, folders, 50)

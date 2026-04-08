@@ -71,6 +71,7 @@ type FoldersConfig struct {
 	Scheduled   string `toml:"scheduled"`
 	Someday     string `toml:"someday"`
 	Spam        string `toml:"spam"`
+	Work        string `toml:"work"`
 	// TabOrder lists folder keys (e.g. "inbox", "to_screen") in the desired
 	// tab display order. Spam is always excluded from tabs regardless of order.
 	// If empty, the built-in default order is used.
@@ -95,6 +96,7 @@ var keyToLabel = map[string]string{
 	"waiting":      "Waiting",
 	"scheduled":    "Scheduled",
 	"someday":      "Someday",
+	"work":         "Work",
 }
 
 // TabLabels returns the UI label names in tab display order.

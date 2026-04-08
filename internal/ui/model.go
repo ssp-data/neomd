@@ -293,6 +293,7 @@ func (m Model) writeDebugReport() tea.Cmd {
 			{"PaperTrail", f.PaperTrail}, {"ScreenedOut", f.ScreenedOut},
 			{"Archive", f.Archive}, {"Waiting", f.Waiting},
 			{"Scheduled", f.Scheduled}, {"Someday", f.Someday}, {"Spam", f.Spam},
+			{"Work", f.Work},
 		}
 		for _, kv := range folders {
 			val := kv[1]
@@ -626,6 +627,8 @@ func (m Model) activeFolder() string {
 		return m.cfg.Folders.ScreenedOut
 	case "Spam":
 		return m.cfg.Folders.Spam
+	case "Work":
+		return m.cfg.Folders.Work
 	default:
 		return m.cfg.Folders.Inbox
 	}
@@ -998,6 +1001,9 @@ func (m Model) ensureFoldersCmd() tea.Cmd {
 		f.Inbox, f.Sent, f.Trash, f.Drafts,
 		f.ToScreen, f.Feed, f.PaperTrail, f.ScreenedOut,
 		f.Archive, f.Waiting, f.Scheduled, f.Someday, f.Spam,
+	}
+	if f.Work != "" {
+		folders = append(folders, f.Work)
 	}
 	return func() tea.Msg {
 		created, err := m.imapCli().EnsureFolders(nil, folders)
@@ -2153,6 +2159,7 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			"k": "ToScreen",
 			"a": "Archive",
 			"w": "Waiting",
+			"b": "Work",
 			"m": "Someday",
 			"o": "ScreenedOut",
 		}
@@ -2184,6 +2191,7 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			"t": m.cfg.Folders.Trash,
 			"o": m.cfg.Folders.ScreenedOut,
 			"w": m.cfg.Folders.Waiting,
+			"b": m.cfg.Folders.Work,
 			"m": m.cfg.Folders.Someday,
 			"k": m.cfg.Folders.ToScreen,
 		}
