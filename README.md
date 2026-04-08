@@ -268,7 +268,7 @@ This TUI is mostly [vibe-coded](https://www.ssp.sh/brain/vibe-coding) in the sen
 
 I used my experience with Neomutt, TUIs, and the GTD workflow for handling emails with HEY Screener, and added some (hopefully) _taste_ using my favorite tools and aesthetics. Find the full history at [Twitter](https://xcancel.com/sspaeti/status/2036539855182627169#m) - inspired by seeing [Email.md](https://www.emailmd.dev/) on HackerNews.
 
-If you [rather read the prompt](https://www.ssp.sh/brain/id-rather-read-the-prompt), check out my [initial prompt](_prompts/prompt.md) and its generated [plan](_prompts/prompt-plan.md) - which I have iterated and added features by the 100s since then.
+If you [rather read the prompt](https://www.ssp.sh/brain/id-rather-read-the-prompt), check out my [initial prompt](docs/initial-prompt/prompt.md) and its generated [plan](docs/initial-prompt/prompt-plan.md) - which I have iterated and added features by the 100s since then.
 ## Roadmap
 
 See at my second brain at [Roadmap](https://www.ssp.sh/brain/neomd#roadmap).
