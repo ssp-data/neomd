@@ -627,9 +627,11 @@ func (c *Client) FetchHeadersByUID(ctx context.Context, folder string, uids []ui
 			fetchSet.AddNum(imap.UID(uid))
 		}
 		msgs, err := conn.Fetch(fetchSet, &imap.FetchOptions{
-			UID:      true,
-			Flags:    true,
-			Envelope: true,
+			UID:           true,
+			Flags:         true,
+			Envelope:      true,
+			RFC822Size:    true,
+			BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
 		}).Collect()
 		if err != nil {
 			return fmt.Errorf("FETCH headers: %w", err)
@@ -670,6 +672,8 @@ func (c *Client) FetchHeadersByUID(ctx context.Context, folder string, uids []ui
 					e.CC = strings.Join(cc, ", ")
 				}
 			}
+			e.Size = uint32(m.RFC822Size)
+			e.HasAttachment = hasAttachment(m.BodyStructure)
 			emails = append(emails, e)
 		}
 		return nil
