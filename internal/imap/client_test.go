@@ -209,6 +209,82 @@ func TestParticipantMatch(t *testing.T) {
 	}
 }
 
+func TestParseBody_InlineImageContentID(t *testing.T) {
+	// Construct a minimal multipart/related MIME message with an inline image.
+	boundary := "----=_Part_123"
+	raw := "MIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/related; boundary=\"" + boundary + "\"\r\n" +
+		"\r\n" +
+		"--" + boundary + "\r\n" +
+		"Content-Type: text/html; charset=utf-8\r\n" +
+		"\r\n" +
+		"<html><body><p>Hello</p><img src=\"cid:img001@neomd\"></body></html>\r\n" +
+		"--" + boundary + "\r\n" +
+		"Content-Type: image/png; name=\"photo.png\"\r\n" +
+		"Content-Disposition: inline; filename=\"photo.png\"\r\n" +
+		"Content-ID: <img001@neomd>\r\n" +
+		"Content-Transfer-Encoding: base64\r\n" +
+		"\r\n" +
+		"iVBORw0KGgo=\r\n" +
+		"--" + boundary + "--\r\n"
+
+	_, _, _, attachments := parseBody([]byte(raw))
+
+	if len(attachments) == 0 {
+		t.Fatal("expected at least 1 attachment, got 0")
+	}
+
+	found := false
+	for _, a := range attachments {
+		if a.ContentID == "img001@neomd" {
+			found = true
+			if a.Filename != "photo.png" {
+				t.Errorf("Filename = %q, want %q", a.Filename, "photo.png")
+			}
+			if !strings.HasPrefix(a.ContentType, "image/") {
+				t.Errorf("ContentType = %q, want image/*", a.ContentType)
+			}
+		}
+	}
+	if !found {
+		cids := make([]string, len(attachments))
+		for i, a := range attachments {
+			cids[i] = a.ContentID
+		}
+		t.Errorf("no attachment with ContentID 'img001@neomd', got CIDs: %v", cids)
+	}
+}
+
+func TestParseBody_NoContentID(t *testing.T) {
+	// Regular attachment without Content-ID should have empty ContentID.
+	boundary := "----=_Part_456"
+	raw := "MIME-Version: 1.0\r\n" +
+		"Content-Type: multipart/mixed; boundary=\"" + boundary + "\"\r\n" +
+		"\r\n" +
+		"--" + boundary + "\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n" +
+		"\r\n" +
+		"Hello world\r\n" +
+		"--" + boundary + "\r\n" +
+		"Content-Type: application/pdf; name=\"doc.pdf\"\r\n" +
+		"Content-Disposition: attachment; filename=\"doc.pdf\"\r\n" +
+		"Content-Transfer-Encoding: base64\r\n" +
+		"\r\n" +
+		"JVBERi0=\r\n" +
+		"--" + boundary + "--\r\n"
+
+	_, _, _, attachments := parseBody([]byte(raw))
+
+	if len(attachments) == 0 {
+		t.Fatal("expected at least 1 attachment, got 0")
+	}
+	for _, a := range attachments {
+		if a.Filename == "doc.pdf" && a.ContentID != "" {
+			t.Errorf("regular attachment should have empty ContentID, got %q", a.ContentID)
+		}
+	}
+}
+
 func TestConnect_RefusesUnencrypted(t *testing.T) {
 	c := &Client{
 		cfg: Config{

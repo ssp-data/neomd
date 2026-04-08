@@ -28,6 +28,7 @@ import (
 type Attachment struct {
 	Filename    string // from Content-Disposition filename or Content-Type name param
 	ContentType string // e.g. "application/pdf"
+	ContentID   string // Content-ID without angle brackets (for inline cid: references)
 	Data        []byte
 }
 
@@ -986,13 +987,15 @@ func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Atta
 					}
 				}
 				// Map Content-ID → filename so we can inject alt text into the HTML
-				if cid := strings.Trim(h.Get("Content-ID"), "<>"); cid != "" {
+				cid := strings.Trim(h.Get("Content-ID"), "<>")
+				if cid != "" {
 					cidToName[cid] = filename
 				}
 				data, _ := io.ReadAll(p.Body)
 				attachments = append(attachments, Attachment{
 					Filename:    filename,
 					ContentType: ct,
+					ContentID:   cid,
 					Data:        data,
 				})
 				continue

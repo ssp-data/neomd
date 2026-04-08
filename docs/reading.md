@@ -27,6 +27,8 @@ Remote images appear as `[Image: alt]` placeholders, keeping the reading experie
 
 **Inline / attached images** (e.g. screenshots pasted into an email) are listed in the reader header: `Attach:  [1] screenshot.png  [2] report.pdf`. Press `1`–`9` to download to `~/Downloads/` and open with `xdg-open`. Inline images also show `[Image: filename.png]` placeholders at their position in the body text.
 
+When you press `O` to open in the browser, inline images are extracted from the email and saved to temp files. The HTML `cid:` references are rewritten to `file://` paths so the browser renders them — including images sent by other people (not just your own).
+
 ## Links
 
 Links in emails are automatically numbered inline where they appear in the body. A link like `Check out our blog` renders as `Check out our blog [1]` in the terminal.

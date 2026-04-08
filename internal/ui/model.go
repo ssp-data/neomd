@@ -2398,6 +2398,22 @@ func (m Model) openInBrowser() (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Save inline image attachments (Content-ID) to temp files and rewrite
+	// cid: references to file:// URLs so the browser can display them.
+	var tmpImages []string
+	for _, a := range m.openAttachments {
+		if a.ContentID == "" || len(a.Data) == 0 {
+			continue
+		}
+		imgPath := filepath.Join(neomdTempDir(), "cid-"+a.ContentID+"-"+a.Filename)
+		if err := os.WriteFile(imgPath, a.Data, 0600); err != nil {
+			continue
+		}
+		tmpImages = append(tmpImages, imgPath)
+		// Replace cid:XYZ with file:///path (case-insensitive)
+		htmlBody = strings.ReplaceAll(htmlBody, "cid:"+a.ContentID, "file://"+imgPath)
+	}
+
 	f, err := os.CreateTemp(neomdTempDir(), "neomd-view-*.html")
 	if err != nil {
 		m.status = "open: " + err.Error()
@@ -2422,6 +2438,9 @@ func (m Model) openInBrowser() (tea.Model, tea.Cmd) {
 		go func() {
 			time.Sleep(15 * time.Second)
 			os.Remove(tmpPath)
+			for _, p := range tmpImages {
+				os.Remove(p)
+			}
 		}()
 		return nil
 	}
