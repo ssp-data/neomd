@@ -70,7 +70,9 @@ draft_backup_count      = 20    # rolling compose backups in ~/.cache/neomd/draf
 signature   = """**Your Name**
 Your Title, Your Company
 
-Connect: [LinkedIn](https://example.com/)"""
+Connect: [LinkedIn](https://example.com/)
+
+*sent from [neomd](https://neomd.ssp.sh)*"""
 ```
 
 > **Gmail users:** Gmail uses different IMAP folder names (`[Gmail]/Sent Mail`, `[Gmail]/Trash`, etc.). See [Gmail Configuration](gmail.md) for the correct mapping.

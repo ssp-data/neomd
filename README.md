@@ -20,9 +20,7 @@ With the additional **Feed** and **Papertrail**, two additional features from HE
 
 ## Screenshots
 
-  YouTube rundown of most features:
-  [![neomd demo](https://img.youtube.com/vi/lpmHqIrCC-w/maxresdefault.jpg)](https://youtu.be/lpmHqIrCC-w)
-### Overview
+### Overview: List-View
 
 Feed view with all Newsletters - also workflow with differnt tabs and unread counter only for certain tabs (not all):
 ![neomd](images/overview-email-feed.png)
@@ -34,12 +32,6 @@ Reading an email with Markdown 💙:
 ![neomd](images/reading-email.png)
 
 ### Sent emails
-
-![neomd](images/sent-email.png)
-
-Or in Gmail:
-![neomd](images/gmail.png)
-
 This is the markdown sent:
 
 ```markdown
@@ -60,7 +52,22 @@ how does that look in an email?
 Best regards
 ```
 
-Compose emails in your editor, read them rendered with [glamour](https://github.com/charmbracelet/glamour), and manage your inbox with a [HEY-style screener](https://www.hey.com/features/the-screener/) — all from the terminal.
+*Compose emails in your editor, read them rendered with [glamour](https://github.com/charmbracelet/glamour), and manage your inbox with a [HEY-style screener](https://www.hey.com/features/the-screener/) — all from the terminal.*
+
+
+Which looks like this:
+
+![neomd](images/sent-email.png)
+
+Or in Gmail:
+![neomd](images/gmail.png)
+
+
+### Video
+
+  YouTube rundown of most features:
+  [![neomd demo](https://img.youtube.com/vi/lpmHqIrCC-w/maxresdefault.jpg)](https://youtu.be/lpmHqIrCC-w)
+
 
 ## Features
 

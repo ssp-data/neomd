@@ -331,6 +331,7 @@ func defaults() *Config {
 			Theme:          "dark",
 			InboxCount:     50,
 			BgSyncInterval: 5,
+			Signature:      "*sent from [neomd](https://neomd.ssp.sh)*",
 		},
 	}
 }
