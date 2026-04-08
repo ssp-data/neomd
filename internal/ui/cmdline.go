@@ -3,8 +3,6 @@ package ui
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -171,38 +169,14 @@ func init() {
 			desc:    "reopen the most recent compose backup from ~/.cache/neomd/drafts/",
 			run: func(m *Model) (tea.Model, tea.Cmd) {
 				dir := config.DraftsBackupDir()
-				entries, err := os.ReadDir(dir)
-				if err != nil || len(entries) == 0 {
-					m.status = "No draft backups found in " + dir
-					return m, nil
-				}
-				// Sort by mod time descending (newest first).
-				type fileEntry struct {
-					path    string
-					modTime int64
-				}
-				var files []fileEntry
-				for _, e := range entries {
-					if e.IsDir() {
-						continue
-					}
-					info, err := e.Info()
-					if err != nil {
-						continue
-					}
-					files = append(files, fileEntry{
-						path:    filepath.Join(dir, e.Name()),
-						modTime: info.ModTime().Unix(),
-					})
-				}
+				files := listBackupsByAge(dir)
 				if len(files) == 0 {
 					m.status = "No draft backups found in " + dir
 					return m, nil
 				}
-				sort.Slice(files, func(i, j int) bool { return files[i].modTime > files[j].modTime })
 
-				// Read the most recent backup.
-				raw, err := os.ReadFile(files[0].path)
+				// Read the most recent backup (list is oldest-first).
+				raw, err := os.ReadFile(files[len(files)-1].path)
 				if err != nil {
 					m.status = "read backup: " + err.Error()
 					m.isError = true
@@ -222,7 +196,7 @@ func init() {
 				}
 				m.compose.step = 3
 
-				return m.launchEditorWithBodyCmd(to, cc, subject, body)
+				return m.launchEditorWithBodyCmd(to, cc, bcc, subject, body)
 			},
 		},
 		{

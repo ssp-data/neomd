@@ -167,10 +167,37 @@ func neomdTempDir() string {
 	return dir
 }
 
+// backupFile holds a backup's full path and modification time.
+type backupFile struct {
+	path    string
+	modTime time.Time
+}
+
+// listBackupsByAge returns files in dir sorted oldest-first.
+func listBackupsByAge(dir string) []backupFile {
+	entries, _ := os.ReadDir(dir)
+	files := make([]backupFile, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, backupFile{
+			path:    filepath.Join(dir, e.Name()),
+			modTime: info.ModTime(),
+		})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].modTime.Before(files[j].modTime) })
+	return files
+}
+
 // backupDraft copies a compose temp file to ~/.cache/neomd/drafts/ before it is
 // deleted. Keeps at most maxBackups files, pruning the oldest.
 func backupDraft(tmpPath string, maxBackups int) {
-	if maxBackups < 0 {
+	if maxBackups <= 0 {
 		return // disabled
 	}
 	dir := config.DraftsBackupDir()
@@ -182,28 +209,9 @@ func backupDraft(tmpPath string, maxBackups int) {
 	_ = os.WriteFile(dst, src, 0600)
 
 	// Prune oldest if over limit.
-	entries, _ := os.ReadDir(dir)
-	if len(entries) <= maxBackups {
-		return
-	}
-	type fileInfo struct {
-		name    string
-		modTime time.Time
-	}
-	files := make([]fileInfo, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		files = append(files, fileInfo{name: e.Name(), modTime: info.ModTime()})
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].modTime.Before(files[j].modTime) })
+	files := listBackupsByAge(dir)
 	for i := 0; i < len(files)-maxBackups; i++ {
-		_ = os.Remove(filepath.Join(dir, files[i].name))
+		_ = os.Remove(files[i].path)
 	}
 }
 
@@ -2652,7 +2660,7 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ps.cc != "" || ps.bcc != "" {
 			m.compose.extraVisible = true
 		}
-		return m.launchEditorWithBodyCmd(ps.to, ps.cc, ps.subject, ps.body)
+		return m.launchEditorWithBodyCmd(ps.to, ps.cc, ps.bcc, ps.subject, ps.body)
 	case "s":
 		// Open in nvim with spell checking, cursor on first error.
 		return m.launchSpellCheckCmd(ps)
@@ -2862,7 +2870,7 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 // launchEditorWithBodyCmd re-opens the editor with an existing body (e.g. from
 // the pre-send screen). The prelude is built from the provided headers (no
 // signature — it is already in the body from the first compose).
-func (m Model) launchEditorWithBodyCmd(to, cc, subject, body string) (tea.Model, tea.Cmd) {
+func (m Model) launchEditorWithBodyCmd(to, cc, bcc, subject, body string) (tea.Model, tea.Cmd) {
 	prelude := editor.Prelude(to, cc, subject, "")
 	content := prelude + body
 
@@ -2882,7 +2890,6 @@ func (m Model) launchEditorWithBodyCmd(to, cc, subject, body string) (tea.Model,
 		editorBin = "nvim"
 	}
 
-	bcc := m.compose.bcc.Value()
 	cmd := exec.Command(editorBin, tmpPath)
 	draftBackups := m.cfg.UI.DraftBackups()
 	return m, tea.ExecProcess(cmd, func(execErr error) tea.Msg {

@@ -123,10 +123,10 @@ type UIConfig struct {
 	AutoScreenOnLoad      *bool  `toml:"auto_screen_on_load"`     // screen inbox on every load (default true)
 	BgSyncInterval        int    `toml:"bg_sync_interval"`        // background sync interval in minutes (0 = disabled, default 5)
 	BulkProgressThreshold int    `toml:"bulk_progress_threshold"` // show progress counter for batches larger than this (default 10)
-	DraftBackupCount      int    `toml:"draft_backup_count"`      // rolling compose backups in ~/.cache/neomd/drafts/ (default 20, 0 = disabled)
+	DraftBackupCount      int    `toml:"draft_backup_count"`      // rolling compose backups in ~/.cache/neomd/drafts/ (default 20, -1 = disabled)
 }
 
-// DraftBackups returns the max number of rolling draft backups (default 20, 0 = disabled).
+// DraftBackups returns the max number of rolling draft backups (default 20, -1 = disabled).
 func (u UIConfig) DraftBackups() int {
 	if u.DraftBackupCount == 0 {
 		return 20
