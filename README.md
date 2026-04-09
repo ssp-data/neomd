@@ -152,6 +152,10 @@ Use an app-specific password (Gmail, Fastmail, Hostpoint, etc.) rather than your
 
 For the full configuration reference including multiple accounts, OAuth2 authentication, `[[senders]]` aliases, folder customization, signatures, and UI options, see [docs/configuration.md](docs/configuration.md).
 
+**Provider-specific guides:**
+- Gmail: [docs/gmail.md](docs/gmail.md) — folder name mapping and OAuth2 setup
+- Proton Mail Bridge: [docs/proton-bridge.md](docs/proton-bridge.md) — non-standard port configuration
+
 ### Onboarding
 
 On first launch, **auto-screening is paused** because your screener lists are empty — neomd won't move anything until you've classified your first sender. Your Inbox loads normally so you can explore.

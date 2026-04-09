@@ -72,6 +72,7 @@ func main() {
 		User:     acc.User,
 		Password: acc.Password,
 		From:     acc.From,
+		STARTTLS: acc.STARTTLS,
 	}
 
 	for _, to := range recipients {

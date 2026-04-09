@@ -32,6 +32,7 @@ type Config struct {
 	User     string
 	Password string
 	From     string // "Name <email>"
+	STARTTLS bool   // User's explicit starttls config preference
 
 	// TokenSource is used for OAuth2 accounts instead of Password.
 	TokenSource func() (string, error)
@@ -99,12 +100,10 @@ func Send(cfg Config, to, cc, bcc, subject, markdownBody string, attachments []s
 		return err
 	}
 	addr := cfg.Host + ":" + cfg.Port
-	switch cfg.Port {
-	case "465": // Implicit TLS (SMTPS)
+	if inferSMTPUseTLS(cfg.Port, cfg.STARTTLS) {
 		return sendTLS(addr, cfg.Host, auth, fromAddr, toAddrs, raw)
-	default: // STARTTLS (587) or plain (25)
-		return sendSTARTTLS(addr, auth, fromAddr, toAddrs, raw)
 	}
+	return sendSTARTTLS(addr, auth, fromAddr, toAddrs, raw)
 }
 
 // SendRaw delivers a pre-built raw MIME message (e.g. from BuildMessage).
@@ -117,11 +116,34 @@ func SendRaw(cfg Config, toAddrs []string, raw []byte) error {
 		return err
 	}
 	addr := cfg.Host + ":" + cfg.Port
-	switch cfg.Port {
-	case "465":
+	if inferSMTPUseTLS(cfg.Port, cfg.STARTTLS) {
 		return sendTLS(addr, cfg.Host, auth, fromAddr, toAddrs, raw)
+	}
+	return sendSTARTTLS(addr, auth, fromAddr, toAddrs, raw)
+}
+
+// inferSMTPUseTLS determines whether to use implicit TLS or STARTTLS based on
+// port and user config. Returns true for TLS, false for STARTTLS.
+//
+// Logic:
+//   - If userSTARTTLS is true: always use STARTTLS (user explicitly enabled it)
+//   - Standard ports: 465 → TLS, 587 → STARTTLS
+//   - Non-standard ports: default to TLS (e.g., Proton Mail Bridge on 1025 uses STARTTLS,
+//     but user must set starttls=true for that)
+func inferSMTPUseTLS(port string, userSTARTTLS bool) bool {
+	if userSTARTTLS {
+		// User explicitly set starttls=true in config — use STARTTLS.
+		return false
+	}
+	switch port {
+	case "465":
+		return true // SMTPS (implicit TLS)
+	case "587":
+		return false // Submission with STARTTLS (modern standard)
 	default:
-		return sendSTARTTLS(addr, auth, fromAddr, toAddrs, raw)
+		// Non-standard port: default to TLS for security.
+		// User must explicitly set starttls=true if their provider uses STARTTLS.
+		return true
 	}
 }
 

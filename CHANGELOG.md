@@ -1,5 +1,8 @@
 # Changelog
 
+# 2026-04-09
+- **Fix: non-standard IMAP/SMTP ports** — neomd now correctly handles non-standard ports (e.g., Proton Mail Bridge on `127.0.0.1:1143` and `127.0.0.1:1025`); previously hardcoded port-based logic ignored the user's `starttls` config and refused unencrypted connections to any port other than 993/143 (IMAP) or 465/587 (SMTP); new behavior: user's explicit `starttls = true` always forces STARTTLS, standard ports use their defaults (993→TLS, 143→STARTTLS, 465→TLS, 587→STARTTLS), non-standard ports default to TLS for security (user must set `starttls = true` if their provider uses STARTTLS on a custom port); fixes "refusing unencrypted connection to 127.0.0.1:1143" error reported by Proton Bridge users; comprehensive test coverage added for all port/config combinations
+
 # 2026-04-08
 - **Fix: pre-send `e` losing email body** — pressing `e` in the pre-send review to re-edit now correctly reopens the editor with the existing body; previously it opened a blank compose with only the signature, silently discarding the email content (including reply history)
 - **Draft backups** — every compose session is automatically backed up to `~/.cache/neomd/drafts/` before the temp file is deleted; keeps a rolling 20 backups (configurable via `draft_backup_count` in `[ui]`, set to `-1` to disable); no more lost emails after crashes or accidental closes

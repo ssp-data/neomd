@@ -8,10 +8,11 @@ On first run, neomd creates `~/.config/neomd/config.toml` with placeholders.
 [[accounts]]
 name     = "Personal"
 imap     = "imap.example.com:993"   # :993 = TLS, :143 = STARTTLS
-smtp     = "smtp.example.com:587"
+smtp     = "smtp.example.com:587"   # :587 = STARTTLS, :465 = TLS
 user     = "me@example.com"
 password = "app-password"
 from     = "Me <me@example.com>"
+starttls = false                    # optional: force STARTTLS (see TLS/STARTTLS section below)
 
 # OAuth2 authenticated accounts are supported, it just need the relevant fields. Note that the password field is not required.
 [[accounts]]
@@ -94,6 +95,50 @@ password = "${IMAP_PASS}"      # ${VAR} form
 Values containing other text or multiple `$` signs are left as-is, so passwords that happen to contain `$` are never mangled.
 
 Credentials are stored only in `~/.config/neomd/config.toml` (mode 0600) and never written elsewhere; all IMAP connections use TLS (port 993) or STARTTLS (port 143).
+
+### TLS and STARTTLS Configuration
+
+Neomd automatically determines the correct encryption method based on the port and the optional `starttls` config field:
+
+**IMAP ports:**
+- `993` → Implicit TLS (standard IMAPS)
+- `143` → STARTTLS upgrade (standard IMAP)
+- Non-standard ports (e.g., `1143` for Proton Mail Bridge) → TLS by default
+- Set `starttls = true` to force STARTTLS on any port
+
+**SMTP ports:**
+- `465` → Implicit TLS (SMTPS)
+- `587` → STARTTLS upgrade (modern submission standard)
+- Non-standard ports (e.g., `1025` for Proton Mail Bridge) → TLS by default
+- Set `starttls = true` to force STARTTLS on any port
+
+**Examples:**
+
+Standard provider (Gmail, Hostpoint, etc.):
+```toml
+[[accounts]]
+imap = "imap.gmail.com:993"
+smtp = "smtp.gmail.com:587"
+starttls = false  # optional, default behavior works
+```
+
+Proton Mail Bridge (local bridge on non-standard ports):
+```toml
+[[accounts]]
+imap = "127.0.0.1:1143"  # Uses TLS automatically
+smtp = "127.0.0.1:1025"  # Uses TLS; set starttls=true if bridge uses STARTTLS
+starttls = false
+```
+
+Custom server with STARTTLS on non-standard port:
+```toml
+[[accounts]]
+imap = "mail.custom.com:2143"
+smtp = "mail.custom.com:2587"
+starttls = true  # Forces STARTTLS instead of TLS
+```
+
+See `docs/proton-bridge.md` for complete Proton Mail Bridge setup instructions.
 
 ## Sending and Discarding
 

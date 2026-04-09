@@ -53,13 +53,16 @@ func main() {
 	imapClients := make([]*goIMAP.Client, 0, len(accounts))
 	for _, acc := range accounts {
 		h, p := splitAddr(acc.IMAP)
+		// Determine TLS/STARTTLS: respect explicit user config, otherwise infer from port.
+		// Security: non-standard ports default to TLS (e.g., Proton Mail Bridge on 1143).
+		useTLS, useSTARTTLS := inferIMAPSecurity(p, acc.STARTTLS)
 		imapCfg := goIMAP.Config{
 			Host:     h,
 			Port:     p,
 			User:     acc.User,
 			Password: acc.Password,
-			TLS:      p == "993",
-			STARTTLS: p == "143",
+			TLS:      useTLS,
+			STARTTLS: useSTARTTLS,
 		}
 		if acc.IsOAuth2() {
 			if acc.OAuth2ClientID == "" {
@@ -135,4 +138,27 @@ func splitAddr(addr string) (host, port string) {
 		return addr, "993"
 	}
 	return addr[:i], addr[i+1:]
+}
+
+// inferIMAPSecurity determines TLS/STARTTLS settings based on port and user config.
+// Returns (useTLS, useSTARTTLS).
+//
+// Logic:
+//   - If userSTARTTLS is true: always use STARTTLS (user explicitly enabled it)
+//   - Standard ports: 993 → TLS, 143 → STARTTLS
+//   - Non-standard ports: default to TLS (e.g., Proton Mail Bridge on 1143)
+func inferIMAPSecurity(port string, userSTARTTLS bool) (useTLS, useSTARTTLS bool) {
+	if userSTARTTLS {
+		// User explicitly set starttls=true in config — honor it.
+		return false, true
+	}
+	switch port {
+	case "993":
+		return true, false // Standard IMAPS (implicit TLS)
+	case "143":
+		return false, true // Standard IMAP (STARTTLS upgrade)
+	default:
+		// Non-standard port (e.g., Proton Mail Bridge): default to TLS for security.
+		return true, false
+	}
 }

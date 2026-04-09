@@ -385,3 +385,75 @@ func TestExtractAddr(t *testing.T) {
 		})
 	}
 }
+
+func TestInferSMTPUseTLS(t *testing.T) {
+	tests := []struct {
+		name         string
+		port         string
+		userSTARTTLS bool
+		wantTLS      bool
+		description  string
+	}{
+		// Standard ports
+		{
+			name:         "standard SMTPS port 465",
+			port:         "465",
+			userSTARTTLS: false,
+			wantTLS:      true,
+			description:  "Port 465 should use implicit TLS",
+		},
+		{
+			name:         "standard submission port 587",
+			port:         "587",
+			userSTARTTLS: false,
+			wantTLS:      false,
+			description:  "Port 587 should use STARTTLS",
+		},
+		// Non-standard ports (Proton Mail Bridge, etc.)
+		{
+			name:         "Proton Mail Bridge SMTP port 1025",
+			port:         "1025",
+			userSTARTTLS: false,
+			wantTLS:      true,
+			description:  "Non-standard port 1025 should default to TLS (user must set starttls=true if needed)",
+		},
+		{
+			name:         "custom port 1025 with STARTTLS override",
+			port:         "1025",
+			userSTARTTLS: true,
+			wantTLS:      false,
+			description:  "User setting starttls=true should force STARTTLS on non-standard port",
+		},
+		// User config overrides
+		{
+			name:         "port 465 with STARTTLS override",
+			port:         "465",
+			userSTARTTLS: true,
+			wantTLS:      false,
+			description:  "User setting starttls=true should override port 465 default",
+		},
+		{
+			name:         "port 587 with STARTTLS override",
+			port:         "587",
+			userSTARTTLS: true,
+			wantTLS:      false,
+			description:  "Port 587 with starttls=true should use STARTTLS (same as default)",
+		},
+		{
+			name:         "port 587 with starttls false",
+			port:         "587",
+			userSTARTTLS: false,
+			wantTLS:      false,
+			description:  "Port 587 should use STARTTLS even when starttls=false (port takes precedence)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := inferSMTPUseTLS(tt.port, tt.userSTARTTLS)
+			if got != tt.wantTLS {
+				t.Errorf("%s: got TLS=%v, want TLS=%v", tt.description, got, tt.wantTLS)
+			}
+		})
+	}
+}

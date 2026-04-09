@@ -670,6 +670,7 @@ func (m Model) sendEmailCmd(smtpAcct config.AccountConfig, from, to, cc, bcc, su
 		User:        smtpAcct.User,
 		Password:    smtpAcct.Password,
 		From:        from,
+		STARTTLS:    smtpAcct.STARTTLS,
 		TokenSource: m.tokenSourceFor(smtpAcct.Name),
 	}
 	cli := m.imapCli()
