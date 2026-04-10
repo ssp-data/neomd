@@ -149,6 +149,7 @@ password = "app-password"
 from     = "Me <me@example.com>"
 starttls = false
 tls_cert_file = ""                  # optional PEM cert/CA for self-signed local bridges
+store_sent_drafts_in_sending_account = false
 
 [screener]
 screened_in  = "~/.config/neomd/lists/screened_in.txt"

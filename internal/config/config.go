@@ -160,6 +160,12 @@ type Config struct {
 	Accounts []AccountConfig `toml:"accounts"`
 	Account  AccountConfig   `toml:"account"` // legacy single-account fallback
 
+	// StoreSentDraftsInSendingAccount controls where Sent/Drafts are stored when
+	// multiple SMTP identities are configured. Default false: always use the
+	// primary IMAP account (the first configured account). When true, Sent/Drafts
+	// follow the selected sending account.
+	StoreSentDraftsInSendingAccount bool `toml:"store_sent_drafts_in_sending_account"`
+
 	// Senders is a list of extra "From" aliases (use [[senders]] in config.toml).
 	// These share the active account's SMTP connection — no IMAP or credentials needed.
 	Senders []SenderConfig `toml:"senders"`

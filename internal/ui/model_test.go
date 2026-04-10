@@ -142,6 +142,49 @@ func TestPresendSMTPAccount(t *testing.T) {
 	})
 }
 
+func TestSentDraftsIMAPClient_DefaultsToPrimaryAccount(t *testing.T) {
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{Name: "Personal", From: "me@example.com"},
+			{Name: "Work", From: "me@work.example"},
+		},
+	}
+	personal := imap.New(imap.Config{Host: "personal"})
+	work := imap.New(imap.Config{Host: "work"})
+	m := Model{
+		cfg:          cfg,
+		accounts:     cfg.ActiveAccounts(),
+		clients:      []*imap.Client{personal, work},
+		presendFromI: 1, // sending as Work
+	}
+
+	if got := m.sentDraftsIMAPClient(); got != personal {
+		t.Fatal("sentDraftsIMAPClient() should default to the primary IMAP account")
+	}
+}
+
+func TestSentDraftsIMAPClient_FollowsSendingAccountWhenEnabled(t *testing.T) {
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{Name: "Personal", From: "me@example.com"},
+			{Name: "Work", From: "me@work.example"},
+		},
+		StoreSentDraftsInSendingAccount: true,
+	}
+	personal := imap.New(imap.Config{Host: "personal"})
+	work := imap.New(imap.Config{Host: "work"})
+	m := Model{
+		cfg:          cfg,
+		accounts:     cfg.ActiveAccounts(),
+		clients:      []*imap.Client{personal, work},
+		presendFromI: 1, // sending as Work
+	}
+
+	if got := m.sentDraftsIMAPClient(); got != work {
+		t.Fatal("sentDraftsIMAPClient() should follow the selected sending account when enabled")
+	}
+}
+
 func TestMatchFromAddress(t *testing.T) {
 	cfg := &config.Config{
 		Accounts: []config.AccountConfig{

@@ -624,8 +624,22 @@ func (m Model) imapCliForAccount(accountName string) *imap.Client {
 	return m.imapCli()
 }
 
+func (m Model) primaryIMAPClient() *imap.Client {
+	if len(m.clients) > 0 {
+		return m.clients[0]
+	}
+	return m.imapCli()
+}
+
+func (m Model) sentDraftsIMAPClient() *imap.Client {
+	if m.cfg != nil && m.cfg.StoreSentDraftsInSendingAccount {
+		return m.imapCliForAccount(m.presendSMTPAccount().Name)
+	}
+	return m.primaryIMAPClient()
+}
+
 func (m Model) presendIMAPClient() *imap.Client {
-	return m.imapCliForAccount(m.presendSMTPAccount().Name)
+	return m.sentDraftsIMAPClient()
 }
 
 func (m *Model) applyEditedFrom(from string) {
@@ -726,7 +740,7 @@ func (m Model) sendEmailCmd(smtpAcct config.AccountConfig, from, to, cc, bcc, su
 		TLSCertFile: smtpAcct.TLSCertFile,
 		TokenSource: m.tokenSourceFor(smtpAcct.Name),
 	}
-	cli := m.imapCliForAccount(smtpAcct.Name)
+	cli := m.sentDraftsIMAPClient()
 	sentFolder := m.cfg.Folders.Sent
 	replyCli := m.imapCliForAccount(replyToAccount)
 	return func() tea.Msg {

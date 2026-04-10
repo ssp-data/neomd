@@ -29,6 +29,7 @@ oauth2_scopes = ["", ""]
 
 # Multiple accounts supported — add more [[accounts]] blocks
 # Switch between them with `ctrl+a` in the inbox
+store_sent_drafts_in_sending_account = false  # default: Sent/Drafts stay in the first IMAP account
 
 # Optional: SMTP-only aliases — cycle with ctrl+f in compose/pre-send
 # [[senders]]
@@ -150,6 +151,24 @@ normal certificate verification. If that fails with an unknown-authority error
 on a loopback host (`127.0.0.1`, `::1`, `localhost`), neomd retries once with a
 localhost-only fallback so existing Bridge setups keep working. If you want
 strict verification, export the Bridge certificate and set `tls_cert_file`.
+
+### Sent and Drafts Storage
+
+When multiple accounts or `[[senders]]` aliases are configured, SMTP delivery
+always uses the selected sending identity's account.
+
+By default, IMAP storage for Sent and Drafts uses the first configured account,
+so one primary mailbox owns your sent/draft archive:
+
+```toml
+store_sent_drafts_in_sending_account = false
+```
+
+If you want Sent and Drafts to follow the selected sending account instead, set:
+
+```toml
+store_sent_drafts_in_sending_account = true
+```
 
 ## Sending and Discarding
 

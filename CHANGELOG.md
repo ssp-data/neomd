@@ -1,6 +1,7 @@
 # Changelog
 
 # 2026-04-10
+- **Sent/Drafts primary-account default restored** — in multi-account setups, Sent and Drafts now default back to the first configured IMAP account while SMTP still uses the selected sending identity; added `store_sent_drafts_in_sending_account = true` for users who want Sent/Drafts to follow the sending account instead
 - **Proton Mail Bridge compatibility** — documented that Proton Mail works with neomd only via Proton Mail Bridge (paid Proton feature), added optional `tls_cert_file` support for trusting Bridge’s exported self-signed certificate, and added a narrow localhost-only TLS retry fallback for Bridge connections on `127.0.0.1`/`localhost`; normal remote IMAP/SMTP providers keep their existing strict certificate verification behavior
 - **Issue #6 verification pass** — reviewed the user report against the current code and  specifically verified that startup auto-screening does not route Inbox mail to Trash in the current implementation, while manual `ToScreen` screening remains message-by-message by design
 - **Fix: Drafts/Spam reload off-tab folder mismatch** — reloading while viewing an off-tab folder now reloads that actual mailbox instead of the currently selected tab's folder; fixes the confusing case where Drafts could show Inbox content after pressing `R`
