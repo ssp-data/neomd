@@ -11,6 +11,64 @@ import (
 // replyPrefixRe matches common reply/forward prefixes.
 var replyPrefixRe = regexp.MustCompile(`(?i)^(re|fwd?|fw|aw|sv|vs|ref|rif)\s*(\[\d+\])?\s*:\s*`)
 
+// compareEmails returns -1 if a < b, 0 if a == b, 1 if a > b.
+// Comparison uses the specified sortField with deterministic tie-breakers:
+// 1. Primary sort field (from/subject/size/date)
+// 2. Date (newest first) if primary keys match and sortField != "date"
+// 3. UID for fully deterministic ordering
+func compareEmails(a, b imap.Email, sortField string) int {
+	// Primary sort comparison
+	var cmp int // -1 = a < b, 0 = equal, 1 = a > b
+	switch sortField {
+	case "from":
+		aFrom, bFrom := strings.ToLower(a.From), strings.ToLower(b.From)
+		if aFrom < bFrom {
+			cmp = -1
+		} else if aFrom > bFrom {
+			cmp = 1
+		}
+	case "subject":
+		aSubj, bSubj := strings.ToLower(a.Subject), strings.ToLower(b.Subject)
+		if aSubj < bSubj {
+			cmp = -1
+		} else if aSubj > bSubj {
+			cmp = 1
+		}
+	case "size":
+		if a.Size < b.Size {
+			cmp = -1
+		} else if a.Size > b.Size {
+			cmp = 1
+		}
+	default: // "date"
+		if a.Date.Before(b.Date) {
+			cmp = -1
+		} else if a.Date.After(b.Date) {
+			cmp = 1
+		}
+	}
+
+	// Tie-breaker 1: date (newest first) if primary keys are equal
+	if cmp == 0 && sortField != "date" {
+		if a.Date.After(b.Date) {
+			cmp = -1
+		} else if a.Date.Before(b.Date) {
+			cmp = 1
+		}
+	}
+
+	// Tie-breaker 2: UID for deterministic ordering
+	if cmp == 0 {
+		if a.UID < b.UID {
+			cmp = -1
+		} else if a.UID > b.UID {
+			cmp = 1
+		}
+	}
+
+	return cmp
+}
+
 // hasReplyPrefix returns true if the subject starts with a reply/forward prefix.
 func hasReplyPrefix(subject string) bool {
 	return replyPrefixRe.MatchString(strings.TrimSpace(subject))
@@ -144,24 +202,16 @@ func threadEmails(emails []imap.Email, sortField string, sortReverse bool) []thr
 
 	// Sort threads by user's chosen sort field and order.
 	// We use the newest email in each thread as the representative for sorting.
-	sort.Slice(threads, func(i, j int) bool {
+	sort.SliceStable(threads, func(i, j int) bool {
 		a := emails[threads[i].newestIdx]
 		b := emails[threads[j].newestIdx]
-		var less bool
-		switch sortField {
-		case "from":
-			less = strings.ToLower(a.From) < strings.ToLower(b.From)
-		case "subject":
-			less = strings.ToLower(a.Subject) < strings.ToLower(b.Subject)
-		case "size":
-			less = a.Size < b.Size
-		default: // "date"
-			less = a.Date.Before(b.Date)
-		}
+		cmp := compareEmails(a, b, sortField)
+
+		// Apply sort direction
 		if sortReverse {
-			return !less
+			return cmp > 0 // descending: a > b means a comes first
 		}
-		return less
+		return cmp < 0 // ascending: a < b means a comes first
 	})
 
 	// Build output with thread connector lines.

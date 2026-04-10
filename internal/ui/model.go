@@ -2361,22 +2361,12 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) sortEmails() tea.Cmd {
 	field, rev := m.sortField, m.sortReverse
 	sort.SliceStable(m.emails, func(i, j int) bool {
-		a, b := m.emails[i], m.emails[j]
-		var less bool
-		switch field {
-		case "from":
-			less = strings.ToLower(a.From) < strings.ToLower(b.From)
-		case "subject":
-			less = strings.ToLower(a.Subject) < strings.ToLower(b.Subject)
-		case "size":
-			less = a.Size < b.Size
-		default: // "date"
-			less = a.Date.Before(b.Date)
-		}
+		cmp := compareEmails(m.emails[i], m.emails[j], field)
+		// Apply sort direction
 		if rev {
-			return !less
+			return cmp > 0 // descending: a > b means a comes first
 		}
-		return less
+		return cmp < 0 // ascending: a < b means a comes first
 	})
 	return m.applyFilter()
 }
