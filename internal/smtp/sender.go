@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sspaeti/neomd/internal/mailtls"
 	"github.com/sspaeti/neomd/internal/render"
 )
 
@@ -27,12 +28,13 @@ var imgSrcRe = regexp.MustCompile(`<img\s[^>]*src="(/[^"]+)"`)
 
 // Config holds outgoing mail settings.
 type Config struct {
-	Host     string // e.g. "smtp.example.com"
-	Port     string // e.g. "587" (STARTTLS) or "465" (TLS)
-	User     string
-	Password string
-	From     string // "Name <email>"
-	STARTTLS bool   // User's explicit starttls config preference
+	Host        string // e.g. "smtp.example.com"
+	Port        string // e.g. "587" (STARTTLS) or "465" (TLS)
+	User        string
+	Password    string
+	From        string // "Name <email>"
+	STARTTLS    bool   // User's explicit starttls config preference
+	TLSCertFile string // optional PEM CA/cert for self-signed local bridges
 
 	// TokenSource is used for OAuth2 accounts instead of Password.
 	TokenSource func() (string, error)
@@ -100,10 +102,14 @@ func Send(cfg Config, to, cc, bcc, subject, markdownBody string, attachments []s
 		return err
 	}
 	addr := cfg.Host + ":" + cfg.Port
-	if inferSMTPUseTLS(cfg.Port, cfg.STARTTLS) {
-		return sendTLS(addr, cfg.Host, auth, fromAddr, toAddrs, raw)
+	tlsCfg, err := mailtls.Config(cfg.Host, cfg.TLSCertFile)
+	if err != nil {
+		return err
 	}
-	return sendSTARTTLS(addr, auth, fromAddr, toAddrs, raw)
+	if inferSMTPUseTLS(cfg.Port, cfg.STARTTLS) {
+		return sendTLS(addr, cfg, tlsCfg, auth, fromAddr, toAddrs, raw)
+	}
+	return sendSTARTTLS(addr, cfg, tlsCfg, auth, fromAddr, toAddrs, raw)
 }
 
 // SendRaw delivers a pre-built raw MIME message (e.g. from BuildMessage).
@@ -116,10 +122,14 @@ func SendRaw(cfg Config, toAddrs []string, raw []byte) error {
 		return err
 	}
 	addr := cfg.Host + ":" + cfg.Port
-	if inferSMTPUseTLS(cfg.Port, cfg.STARTTLS) {
-		return sendTLS(addr, cfg.Host, auth, fromAddr, toAddrs, raw)
+	tlsCfg, err := mailtls.Config(cfg.Host, cfg.TLSCertFile)
+	if err != nil {
+		return err
 	}
-	return sendSTARTTLS(addr, auth, fromAddr, toAddrs, raw)
+	if inferSMTPUseTLS(cfg.Port, cfg.STARTTLS) {
+		return sendTLS(addr, cfg, tlsCfg, auth, fromAddr, toAddrs, raw)
+	}
+	return sendSTARTTLS(addr, cfg, tlsCfg, auth, fromAddr, toAddrs, raw)
 }
 
 // inferSMTPUseTLS determines whether to use implicit TLS or STARTTLS based on
@@ -148,19 +158,27 @@ func inferSMTPUseTLS(port string, userSTARTTLS bool) bool {
 }
 
 // sendSTARTTLS sends via STARTTLS upgrade (port 587).
-func sendSTARTTLS(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
-	return smtp.SendMail(addr, auth, from, to, msg)
+func sendSTARTTLS(addr string, cfg Config, tlsCfg *tls.Config, auth smtp.Auth, from string, to []string, msg []byte) error {
+	err := sendSTARTTLSWithConfig(addr, cfg.Host, tlsCfg, auth, from, to, msg)
+	if err != nil && mailtls.ShouldRetryInsecureLocalhost(cfg.Host, cfg.TLSCertFile, err) {
+		return sendSTARTTLSWithConfig(addr, cfg.Host, mailtls.InsecureLocalhostConfig(cfg.Host), auth, from, to, msg)
+	}
+	return err
 }
 
 // sendTLS sends via implicit TLS (port 465 / SMTPS).
-func sendTLS(addr, host string, auth smtp.Auth, from string, to []string, msg []byte) error {
-	tlsCfg := &tls.Config{ServerName: host}
+func sendTLS(addr string, cfg Config, tlsCfg *tls.Config, auth smtp.Auth, from string, to []string, msg []byte) error {
 	conn, err := tls.Dial("tcp", addr, tlsCfg)
 	if err != nil {
-		return fmt.Errorf("TLS dial %s: %w", addr, err)
+		if mailtls.ShouldRetryInsecureLocalhost(cfg.Host, cfg.TLSCertFile, err) {
+			conn, err = tls.Dial("tcp", addr, mailtls.InsecureLocalhostConfig(cfg.Host))
+		}
+		if err != nil {
+			return fmt.Errorf("TLS dial %s: %w", addr, err)
+		}
 	}
 
-	c, err := smtp.NewClient(conn, host)
+	c, err := smtp.NewClient(conn, cfg.Host)
 	if err != nil {
 		return fmt.Errorf("SMTP new client: %w", err)
 	}
@@ -168,6 +186,44 @@ func sendTLS(addr, host string, auth smtp.Auth, from string, to []string, msg []
 
 	if err := c.Auth(auth); err != nil {
 		return fmt.Errorf("SMTP auth: %w", err)
+	}
+	if err := c.Mail(from); err != nil {
+		return fmt.Errorf("SMTP MAIL FROM: %w", err)
+	}
+	for _, r := range to {
+		if err := c.Rcpt(r); err != nil {
+			return fmt.Errorf("SMTP RCPT TO %s: %w", r, err)
+		}
+	}
+	w, err := c.Data()
+	if err != nil {
+		return fmt.Errorf("SMTP DATA: %w", err)
+	}
+	if _, err := w.Write(msg); err != nil {
+		return fmt.Errorf("write message: %w", err)
+	}
+	return w.Close()
+}
+
+func sendSTARTTLSWithConfig(addr, host string, tlsCfg *tls.Config, auth smtp.Auth, from string, to []string, msg []byte) error {
+	c, err := smtp.Dial(addr)
+	if err != nil {
+		return fmt.Errorf("SMTP dial %s: %w", addr, err)
+	}
+	defer c.Close()
+
+	if ok, _ := c.Extension("STARTTLS"); !ok {
+		return fmt.Errorf("SMTP server %s does not support STARTTLS", addr)
+	}
+	if err := c.StartTLS(tlsCfg); err != nil {
+		return fmt.Errorf("SMTP STARTTLS %s: %w", addr, err)
+	}
+	if auth != nil {
+		if ok, _ := c.Extension("AUTH"); ok {
+			if err := c.Auth(auth); err != nil {
+				return fmt.Errorf("SMTP auth: %w", err)
+			}
+		}
 	}
 	if err := c.Mail(from); err != nil {
 		return fmt.Errorf("SMTP MAIL FROM: %w", err)

@@ -21,6 +21,7 @@ Add the following to your `~/.config/neomd/config.toml`:
   password = "bridge-password-here"  # Get this from Proton Bridge settings
   from = "Your Name <your-proton-email@proton.me>"
   starttls = false  # Proton Bridge uses TLS on non-standard ports
+  tls_cert_file = "~/ProtonBridge/cert.pem"  # optional: exported Bridge certificate
 ```
 
 ## Key Configuration Details
@@ -33,6 +34,9 @@ Add the following to your `~/.config/neomd/config.toml`:
   - Standard ports (993→TLS, 143→STARTTLS for IMAP; 465→TLS, 587→STARTTLS for SMTP)
   - Non-standard ports default to TLS unless `starttls = true` is set
   - Explicit `starttls = true` always forces STARTTLS
+- **Certificate**: Proton Bridge uses a self-signed certificate because the IMAP/SMTP server only runs on your own computer. neomd now handles this in two ways:
+  - Best: export the Bridge certificate and set `tls_cert_file`
+  - Fallback: for `127.0.0.1` / `localhost`, neomd retries once if verification fails with an unknown-authority error
 
 ## Troubleshooting
 
@@ -44,6 +48,19 @@ If you still see this error:
 1. Ensure you're running the latest version: `neomd --version`
 2. Check your config has the correct IMAP/SMTP addresses
 3. Verify Proton Bridge is running: `ps aux | grep bridge`
+
+### "tls: failed to verify certificate"
+
+This usually means Proton Bridge presented its local self-signed certificate and
+your client did not trust it yet.
+
+Recommended fix:
+1. In Proton Mail Bridge, export the TLS certificates
+2. Point `tls_cert_file` at the exported `cert.pem`
+3. Keep `starttls = false` for IMAP on `1143` unless your Bridge shows otherwise
+
+Without `tls_cert_file`, neomd now retries once for loopback hosts only, which
+keeps common Proton Bridge setups working without affecting normal remote IMAP servers.
 
 ### Connection Refused
 

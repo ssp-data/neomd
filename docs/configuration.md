@@ -13,6 +13,7 @@ user     = "me@example.com"
 password = "app-password"
 from     = "Me <me@example.com>"
 starttls = false                    # optional: force STARTTLS (see TLS/STARTTLS section below)
+tls_cert_file = ""                  # optional PEM cert/CA for self-signed local bridges
 
 # OAuth2 authenticated accounts are supported, it just need the relevant fields. Note that the password field is not required.
 [[accounts]]
@@ -122,6 +123,7 @@ Standard provider (Gmail, Hostpoint, etc.):
 imap = "imap.gmail.com:993"
 smtp = "smtp.gmail.com:587"
 starttls = false  # optional, default behavior works
+tls_cert_file = ""
 ```
 
 Proton Mail Bridge (local bridge on non-standard ports):
@@ -130,6 +132,7 @@ Proton Mail Bridge (local bridge on non-standard ports):
 imap = "127.0.0.1:1143"  # Uses TLS automatically
 smtp = "127.0.0.1:1025"  # Uses TLS; set starttls=true if bridge uses STARTTLS
 starttls = false
+tls_cert_file = "~/ProtonBridge/cert.pem"  # optional: exported Bridge cert
 ```
 
 Custom server with STARTTLS on non-standard port:
@@ -141,6 +144,12 @@ starttls = true  # Forces STARTTLS instead of TLS
 ```
 
 See `docs/proton-bridge.md` for complete Proton Mail Bridge setup instructions.
+
+For localhost/self-signed bridges such as Proton Mail Bridge, neomd first tries
+normal certificate verification. If that fails with an unknown-authority error
+on a loopback host (`127.0.0.1`, `::1`, `localhost`), neomd retries once with a
+localhost-only fallback so existing Bridge setups keep working. If you want
+strict verification, export the Bridge certificate and set `tls_cert_file`.
 
 ## Sending and Discarding
 

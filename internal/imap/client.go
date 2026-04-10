@@ -20,6 +20,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/mail"
+	"github.com/sspaeti/neomd/internal/mailtls"
 	"github.com/sspaeti/neomd/internal/oauth2"
 )
 
@@ -58,6 +59,7 @@ type Config struct {
 	Password    string
 	TLS         bool                   // implicit TLS (port 993)
 	STARTTLS    bool                   // STARTTLS upgrade (port 143)
+	TLSCertFile string                 // optional PEM CA/cert for self-signed local bridges
 	TokenSource func() (string, error) // The token is used instead of the password for OAuth2 Accounts
 }
 
@@ -86,10 +88,13 @@ func (c *Client) connect(_ context.Context) error {
 		return nil
 	}
 	addr := c.addr()
-	opts := &imapclient.Options{}
+	tlsCfg, err := mailtls.Config(c.cfg.Host, c.cfg.TLSCertFile)
+	if err != nil {
+		return err
+	}
+	opts := &imapclient.Options{TLSConfig: tlsCfg}
 	var (
 		conn *imapclient.Client
-		err  error
 	)
 	switch {
 	case c.cfg.TLS:
@@ -98,6 +103,16 @@ func (c *Client) connect(_ context.Context) error {
 		conn, err = imapclient.DialStartTLS(addr, opts)
 	default:
 		return fmt.Errorf("refusing unencrypted connection to %s — use port 993 (TLS) or 143 (STARTTLS)", addr)
+	}
+	if err != nil && mailtls.ShouldRetryInsecureLocalhost(c.cfg.Host, c.cfg.TLSCertFile, err) {
+		c.logger.Warn("retrying IMAP TLS connection with localhost self-signed certificate fallback", "host", c.cfg.Host, "port", c.cfg.Port)
+		opts = &imapclient.Options{TLSConfig: mailtls.InsecureLocalhostConfig(c.cfg.Host)}
+		switch {
+		case c.cfg.TLS:
+			conn, err = imapclient.DialTLS(addr, opts)
+		case c.cfg.STARTTLS:
+			conn, err = imapclient.DialStartTLS(addr, opts)
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", addr, err)

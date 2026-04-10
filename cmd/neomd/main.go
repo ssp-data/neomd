@@ -57,12 +57,13 @@ func main() {
 		// Security: non-standard ports default to TLS (e.g., Proton Mail Bridge on 1143).
 		useTLS, useSTARTTLS := inferIMAPSecurity(p, acc.STARTTLS)
 		imapCfg := goIMAP.Config{
-			Host:     h,
-			Port:     p,
-			User:     acc.User,
-			Password: acc.Password,
-			TLS:      useTLS,
-			STARTTLS: useSTARTTLS,
+			Host:        h,
+			Port:        p,
+			User:        acc.User,
+			Password:    acc.Password,
+			TLS:         useTLS,
+			STARTTLS:    useSTARTTLS,
+			TLSCertFile: acc.TLSCertFile,
 		}
 		if acc.IsOAuth2() {
 			if acc.OAuth2ClientID == "" {

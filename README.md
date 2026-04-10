@@ -147,6 +147,8 @@ smtp     = "smtp.example.com:587"
 user     = "me@example.com"
 password = "app-password"
 from     = "Me <me@example.com>"
+starttls = false
+tls_cert_file = ""                  # optional PEM cert/CA for self-signed local bridges
 
 [screener]
 screened_in  = "~/.config/neomd/lists/screened_in.txt"

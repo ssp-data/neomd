@@ -23,13 +23,14 @@ type SenderConfig struct {
 
 // AccountConfig holds IMAP/SMTP connection settings.
 type AccountConfig struct {
-	Name     string `toml:"name"`
-	IMAP     string `toml:"imap"` // host:port (993 = TLS, 143 = STARTTLS)
-	SMTP     string `toml:"smtp"` // host:port (587 = STARTTLS, 465 = TLS)
-	User     string `toml:"user"`
-	Password string `toml:"password"`
-	From     string `toml:"from"` // "Name <email@example.com>"
-	STARTTLS bool   `toml:"starttls"`
+	Name        string `toml:"name"`
+	IMAP        string `toml:"imap"` // host:port (993 = TLS, 143 = STARTTLS)
+	SMTP        string `toml:"smtp"` // host:port (587 = STARTTLS, 465 = TLS)
+	User        string `toml:"user"`
+	Password    string `toml:"password"`
+	From        string `toml:"from"` // "Name <email@example.com>"
+	STARTTLS    bool   `toml:"starttls"`
+	TLSCertFile string `toml:"tls_cert_file"` // optional PEM CA/cert for self-signed local bridges
 
 	// OAuth2 fields — only used when auth_type = "oauth2".
 	AuthType           string   `toml:"auth_type"` // "plain" (default) | "oauth2"
@@ -289,9 +290,11 @@ func Load(path string) (*Config, error) {
 	for i := range cfg.Accounts {
 		cfg.Accounts[i].Password = expandEnv(cfg.Accounts[i].Password)
 		cfg.Accounts[i].User = expandEnv(cfg.Accounts[i].User)
+		cfg.Accounts[i].TLSCertFile = expandPath(expandEnv(cfg.Accounts[i].TLSCertFile))
 	}
 	cfg.Account.Password = expandEnv(cfg.Account.Password)
 	cfg.Account.User = expandEnv(cfg.Account.User)
+	cfg.Account.TLSCertFile = expandPath(expandEnv(cfg.Account.TLSCertFile))
 
 	return cfg, nil
 }

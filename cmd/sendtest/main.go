@@ -67,12 +67,13 @@ func main() {
 
 	h, p := splitAddr(acc.SMTP)
 	smtpCfg := smtp.Config{
-		Host:     h,
-		Port:     p,
-		User:     acc.User,
-		Password: acc.Password,
-		From:     acc.From,
-		STARTTLS: acc.STARTTLS,
+		Host:        h,
+		Port:        p,
+		User:        acc.User,
+		Password:    acc.Password,
+		From:        acc.From,
+		STARTTLS:    acc.STARTTLS,
+		TLSCertFile: acc.TLSCertFile,
 	}
 
 	for _, to := range recipients {
