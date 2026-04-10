@@ -13,7 +13,7 @@ import (
 
 // neomdCmd is a registered colon-command (like vim's :command).
 type neomdCmd struct {
-	name    string // full name, e.g. "screen-all"
+	name    string   // full name, e.g. "screen-all"
 	aliases []string // short forms accepted, e.g. ["sa", "screen-a"]
 	desc    string
 	// run is called when the command is executed; m is the current model.
@@ -137,7 +137,7 @@ func init() {
 		{
 			name:    "search",
 			aliases: []string{"se"},
-			desc:    "IMAP search all emails in current folder (From + Subject)",
+			desc:    "IMAP search all emails across all configured folders (From + Subject + To)",
 			run: func(m *Model) (tea.Model, tea.Cmd) {
 				m.imapSearchActive = true
 				m.imapSearchText = ""
@@ -182,11 +182,14 @@ func init() {
 					m.isError = true
 					return m, nil
 				}
-				to, cc, bcc, subject, body := editor.ParseHeaders(string(raw))
+				to, cc, bcc, from, subject, body := editor.ParseHeaders(string(raw))
 
 				// Pre-fill compose fields.
 				m.compose.reset()
 				m.presendFromI = 0
+				if idx := m.matchFromAddress(from); idx >= 0 {
+					m.presendFromI = idx
+				}
 				m.compose.to.SetValue(to)
 				m.compose.cc.SetValue(cc)
 				m.compose.bcc.SetValue(bcc)

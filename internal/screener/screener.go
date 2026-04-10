@@ -15,12 +15,12 @@ import (
 type Category int
 
 const (
-	CategoryToScreen  Category = iota // unknown — awaiting decision
-	CategoryInbox                     // approved sender
-	CategoryScreenedOut               // blocked (known human/company)
-	CategoryFeed                      // newsletter / feed
-	CategoryPaperTrail                // receipts / notifications
-	CategorySpam                      // actual spam — never needs review
+	CategoryToScreen    Category = iota // unknown — awaiting decision
+	CategoryInbox                       // approved sender
+	CategoryScreenedOut                 // blocked (known human/company)
+	CategoryFeed                        // newsletter / feed
+	CategoryPaperTrail                  // receipts / notifications
+	CategorySpam                        // actual spam — never needs review
 )
 
 func (c Category) String() string {
@@ -57,6 +57,16 @@ type Screener struct {
 	feed        map[string]bool
 	paperTrail  map[string]bool
 	spam        map[string]bool
+}
+
+// Snapshot is a point-in-time copy of all screener list files and in-memory sets.
+// It is used to roll back a failed screener operation.
+type Snapshot struct {
+	ScreenedIn  map[string]bool
+	ScreenedOut map[string]bool
+	Feed        map[string]bool
+	PaperTrail  map[string]bool
+	Spam        map[string]bool
 }
 
 // New loads all lists from the paths in cfg.
@@ -164,6 +174,62 @@ func (s *Screener) MarkFeed(from string) error {
 // MarkPaperTrail adds addr to papertrail.txt and updates the in-memory set.
 func (s *Screener) MarkPaperTrail(from string) error {
 	return s.addToList(s.cfg.PaperTrail, s.paperTrail, from)
+}
+
+func cloneSet(src map[string]bool) map[string]bool {
+	dst := make(map[string]bool, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+// Snapshot captures the current screener state so a caller can roll back.
+func (s *Screener) Snapshot() Snapshot {
+	return Snapshot{
+		ScreenedIn:  cloneSet(s.screenedIn),
+		ScreenedOut: cloneSet(s.screenedOut),
+		Feed:        cloneSet(s.feed),
+		PaperTrail:  cloneSet(s.paperTrail),
+		Spam:        cloneSet(s.spam),
+	}
+}
+
+func writeSet(path string, m map[string]bool) error {
+	lines := make([]string, 0, len(m))
+	for addr := range m {
+		lines = append(lines, addr)
+	}
+	content := ""
+	if len(lines) > 0 {
+		content = strings.Join(lines, "\n") + "\n"
+	}
+	return os.WriteFile(path, []byte(content), 0600)
+}
+
+// Restore rewrites all screener list files and in-memory sets from a snapshot.
+func (s *Screener) Restore(snapshot Snapshot) error {
+	if err := writeSet(s.cfg.ScreenedIn, snapshot.ScreenedIn); err != nil {
+		return err
+	}
+	if err := writeSet(s.cfg.ScreenedOut, snapshot.ScreenedOut); err != nil {
+		return err
+	}
+	if err := writeSet(s.cfg.Feed, snapshot.Feed); err != nil {
+		return err
+	}
+	if err := writeSet(s.cfg.PaperTrail, snapshot.PaperTrail); err != nil {
+		return err
+	}
+	if err := writeSet(s.cfg.Spam, snapshot.Spam); err != nil {
+		return err
+	}
+	s.screenedIn = cloneSet(snapshot.ScreenedIn)
+	s.screenedOut = cloneSet(snapshot.ScreenedOut)
+	s.feed = cloneSet(snapshot.Feed)
+	s.paperTrail = cloneSet(snapshot.PaperTrail)
+	s.spam = cloneSet(snapshot.Spam)
+	return nil
 }
 
 // removeFromList deletes addr from the file and in-memory set if present.

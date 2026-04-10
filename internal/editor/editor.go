@@ -86,11 +86,18 @@ func View(content string) (*exec.Cmd, string, error) {
 }
 
 // Prelude builds the header shown at the top of a new compose buffer.
-// cc may be empty. If signature is non-empty it is appended after a blank line separator.
-func Prelude(to, cc, subject, signature string) string {
+// cc, bcc, and from may be empty. If signature is non-empty it is appended
+// after a blank line separator.
+func Prelude(to, cc, bcc, from, subject, signature string) string {
 	s := fmt.Sprintf("# [neomd: to: %s]\n", to)
 	if cc != "" {
 		s += fmt.Sprintf("# [neomd: cc: %s]\n", cc)
+	}
+	if bcc != "" {
+		s += fmt.Sprintf("# [neomd: bcc: %s]\n", bcc)
+	}
+	if from != "" {
+		s += fmt.Sprintf("# [neomd: from: %s]\n", from)
 	}
 	s += fmt.Sprintf("# [neomd: subject: %s]\n\n", subject)
 	if signature != "" {
@@ -101,29 +108,18 @@ func Prelude(to, cc, subject, signature string) string {
 
 // ReplyPrelude builds a quote block for replies. cc and from may be empty.
 func ReplyPrelude(to, cc, subject, from, originalFrom, originalBody string) string {
-	s := fmt.Sprintf("# [neomd: to: %s]\n", to)
-	if cc != "" {
-		s += fmt.Sprintf("# [neomd: cc: %s]\n", cc)
-	}
-	if from != "" {
-		s += fmt.Sprintf("# [neomd: from: %s]\n", from)
-	}
-	s += fmt.Sprintf("# [neomd: subject: %s]\n\n---\n\n> **%s** wrote:\n>\n%s\n\n---\n\n",
-		subject, originalFrom, quoteLines(originalBody))
-	return s
+	return Prelude(to, cc, "", from, subject, "") +
+		fmt.Sprintf("---\n\n> **%s** wrote:\n>\n%s\n\n---\n\n",
+			originalFrom, quoteLines(originalBody))
 }
 
 // ForwardPrelude builds a quoted forward block. The To field is left empty for
 // the user to fill in.
 func ForwardPrelude(subject, from, originalFrom, originalDate, originalTo, originalBody string) string {
-	s := "# [neomd: to: ]\n"
-	if from != "" {
-		s += fmt.Sprintf("# [neomd: from: %s]\n", from)
-	}
 	if !strings.HasPrefix(strings.ToLower(subject), "fwd:") {
 		subject = "Fwd: " + subject
 	}
-	s += fmt.Sprintf("# [neomd: subject: %s]\n\n", subject)
+	s := Prelude("", "", "", from, subject, "")
 	s += "---------- Forwarded message ----------\n"
 	s += fmt.Sprintf("From: %s\n", originalFrom)
 	s += fmt.Sprintf("Date: %s\n", originalDate)
@@ -134,9 +130,9 @@ func ForwardPrelude(subject, from, originalFrom, originalDate, originalTo, origi
 }
 
 // ParseHeaders scans raw editor content for # [neomd: key: value] lines and
-// returns the extracted to, cc, bcc, subject values and the remaining body
+// returns the extracted to, cc, bcc, from, subject values and the remaining body
 // (with header lines stripped). Any field not found is returned as "".
-func ParseHeaders(raw string) (to, cc, bcc, subject, body string) {
+func ParseHeaders(raw string) (to, cc, bcc, from, subject, body string) {
 	lines := splitLines(raw)
 	var kept []string
 	for _, line := range lines {
@@ -148,6 +144,8 @@ func ParseHeaders(raw string) (to, cc, bcc, subject, body string) {
 				cc = strings.TrimSpace(m[2])
 			case "bcc":
 				bcc = strings.TrimSpace(m[2])
+			case "from":
+				from = strings.TrimSpace(m[2])
 			case "subject":
 				subject = strings.TrimSpace(m[2])
 			}

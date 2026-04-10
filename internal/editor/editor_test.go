@@ -7,23 +7,25 @@ import (
 
 func TestParseHeaders(t *testing.T) {
 	tests := []struct {
-		name                             string
-		input                            string
-		wantTo, wantCC, wantBCC, wantSub string
-		wantBodyContains                 string // substring the body must contain
-		wantBodyNotContains              string // substring the body must NOT contain
+		name                                       string
+		input                                      string
+		wantTo, wantCC, wantBCC, wantFrom, wantSub string
+		wantBodyContains                           string // substring the body must contain
+		wantBodyNotContains                        string // substring the body must NOT contain
 	}{
 		{
 			name: "all fields present",
 			input: "# [neomd: to: alice@example.com]\n" +
 				"# [neomd: cc: bob@example.com]\n" +
 				"# [neomd: bcc: secret@example.com]\n" +
+				"# [neomd: from: Me <me@example.com>]\n" +
 				"# [neomd: subject: Hello World]\n" +
 				"\n" +
 				"Body text here.\n",
 			wantTo:              "alice@example.com",
 			wantCC:              "bob@example.com",
 			wantBCC:             "secret@example.com",
+			wantFrom:            "Me <me@example.com>",
 			wantSub:             "Hello World",
 			wantBodyContains:    "Body text here.",
 			wantBodyNotContains: "neomd:",
@@ -55,13 +57,13 @@ func TestParseHeaders(t *testing.T) {
 			wantBodyContains: "## Heading",
 		},
 		{
-			name:               "no headers at all",
-			input:              "Just plain text\nwith multiple lines.\n",
-			wantTo:             "",
-			wantCC:             "",
-			wantBCC:            "",
-			wantSub:            "",
-			wantBodyContains:   "Just plain text",
+			name:                "no headers at all",
+			input:               "Just plain text\nwith multiple lines.\n",
+			wantTo:              "",
+			wantCC:              "",
+			wantBCC:             "",
+			wantSub:             "",
+			wantBodyContains:    "Just plain text",
 			wantBodyNotContains: "",
 		},
 		{
@@ -77,7 +79,7 @@ func TestParseHeaders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			to, cc, bcc, subject, body := ParseHeaders(tt.input)
+			to, cc, bcc, from, subject, body := ParseHeaders(tt.input)
 			if to != tt.wantTo {
 				t.Errorf("to = %q, want %q", to, tt.wantTo)
 			}
@@ -86,6 +88,9 @@ func TestParseHeaders(t *testing.T) {
 			}
 			if bcc != tt.wantBCC {
 				t.Errorf("bcc = %q, want %q", bcc, tt.wantBCC)
+			}
+			if from != tt.wantFrom {
+				t.Errorf("from = %q, want %q", from, tt.wantFrom)
 			}
 			if subject != tt.wantSub {
 				t.Errorf("subject = %q, want %q", subject, tt.wantSub)
@@ -102,12 +107,12 @@ func TestParseHeaders(t *testing.T) {
 
 func TestPrelude(t *testing.T) {
 	tests := []struct {
-		name      string
-		to, cc    string
-		subject   string
-		signature string
-		wantHas   []string // substrings that must appear
-		wantNot   []string // substrings that must NOT appear
+		name              string
+		to, cc, bcc, from string
+		subject           string
+		signature         string
+		wantHas           []string // substrings that must appear
+		wantNot           []string // substrings that must NOT appear
 	}{
 		{
 			name:    "basic without cc or sig",
@@ -117,7 +122,7 @@ func TestPrelude(t *testing.T) {
 				"# [neomd: to: alice@example.com]",
 				"# [neomd: subject: Greetings]",
 			},
-			wantNot: []string{"# [neomd: cc:", "--  \n"},
+			wantNot: []string{"# [neomd: cc:", "# [neomd: bcc:", "# [neomd: from:", "--  \n"},
 		},
 		{
 			name:    "with cc",
@@ -128,6 +133,17 @@ func TestPrelude(t *testing.T) {
 				"# [neomd: to: alice@example.com]",
 				"# [neomd: cc: bob@example.com]",
 				"# [neomd: subject: Team]",
+			},
+		},
+		{
+			name:    "with bcc and from",
+			to:      "alice@example.com",
+			bcc:     "secret@example.com",
+			from:    "Me <me@example.com>",
+			subject: "Private",
+			wantHas: []string{
+				"# [neomd: bcc: secret@example.com]",
+				"# [neomd: from: Me <me@example.com>]",
 			},
 		},
 		{
@@ -147,7 +163,7 @@ func TestPrelude(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Prelude(tt.to, tt.cc, tt.subject, tt.signature)
+			got := Prelude(tt.to, tt.cc, tt.bcc, tt.from, tt.subject, tt.signature)
 			for _, want := range tt.wantHas {
 				if !strings.Contains(got, want) {
 					t.Errorf("Prelude missing %q, got:\n%s", want, got)
@@ -231,9 +247,9 @@ func TestForwardPrelude(t *testing.T) {
 
 func TestPreludeParseHeadersRoundTrip(t *testing.T) {
 	tests := []struct {
-		name    string
-		to, cc  string
-		subject string
+		name              string
+		to, cc, bcc, from string
+		subject           string
 	}{
 		{
 			name:    "to and subject only",
@@ -246,17 +262,30 @@ func TestPreludeParseHeadersRoundTrip(t *testing.T) {
 			cc:      "bob@example.com",
 			subject: "With CC",
 		},
+		{
+			name:    "with bcc and from",
+			to:      "alice@example.com",
+			bcc:     "secret@example.com",
+			from:    "Me <me@example.com>",
+			subject: "With hidden recipients",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prelude := Prelude(tt.to, tt.cc, tt.subject, "")
-			gotTo, gotCC, _, gotSubject, _ := ParseHeaders(prelude)
+			prelude := Prelude(tt.to, tt.cc, tt.bcc, tt.from, tt.subject, "")
+			gotTo, gotCC, gotBCC, gotFrom, gotSubject, _ := ParseHeaders(prelude)
 			if gotTo != tt.to {
 				t.Errorf("round-trip to = %q, want %q", gotTo, tt.to)
 			}
 			if gotCC != tt.cc {
 				t.Errorf("round-trip cc = %q, want %q", gotCC, tt.cc)
+			}
+			if gotBCC != tt.bcc {
+				t.Errorf("round-trip bcc = %q, want %q", gotBCC, tt.bcc)
+			}
+			if gotFrom != tt.from {
+				t.Errorf("round-trip from = %q, want %q", gotFrom, tt.from)
 			}
 			if gotSubject != tt.subject {
 				t.Errorf("round-trip subject = %q, want %q", gotSubject, tt.subject)

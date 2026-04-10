@@ -199,6 +199,17 @@ func BuildMessage(from, to, cc, subject, markdownBody string, attachments []stri
 	return buildMessage(from, to, cc, subject, markdownBody, htmlBody, attachments)
 }
 
+// BuildDraftMessage constructs a raw MIME draft for IMAP APPEND.
+// Unlike SMTP delivery, drafts should retain the Bcc header so the user's
+// intent survives round-tripping through Drafts.
+func BuildDraftMessage(from, to, cc, bcc, subject, markdownBody string, attachments []string) ([]byte, error) {
+	htmlBody, err := render.ToHTML(markdownBody)
+	if err != nil {
+		return nil, fmt.Errorf("markdown to html: %w", err)
+	}
+	return buildMessageWithBCC(from, to, cc, bcc, subject, markdownBody, htmlBody, attachments)
+}
+
 // inlineImage holds a local image path and its assigned Content-ID.
 type inlineImage struct {
 	path string
@@ -215,6 +226,10 @@ type inlineImage struct {
 //   - images only          → multipart/related > (multipart/alternative + inline images)
 //   - images + files       → multipart/mixed > (multipart/related > alt+images) + files
 func buildMessage(from, to, cc, subject, plainText, htmlBody string, attachments []string) ([]byte, error) {
+	return buildMessageWithBCC(from, to, cc, "", subject, plainText, htmlBody, attachments)
+}
+
+func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string, attachments []string) ([]byte, error) {
 	// Find local image paths in htmlBody (<img src="/abs/path">), assign CIDs.
 	var inlines []inlineImage
 	processedHTML := imgSrcRe.ReplaceAllStringFunc(htmlBody, func(match string) string {
@@ -245,6 +260,9 @@ func buildMessage(from, to, cc, subject, plainText, htmlBody string, attachments
 		hdr("To", to)
 		if cc != "" {
 			hdr("Cc", cc)
+		}
+		if bcc != "" {
+			hdr("Bcc", bcc)
 		}
 		hdr("Subject", mime.QEncoding.Encode("utf-8", subject))
 		hdr("Date", time.Now().Format(time.RFC1123Z))

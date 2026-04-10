@@ -12,6 +12,12 @@
 - **Inbox paging clarity** — the inbox header now shows the current fetch limit (`loaded/limit`) and `d/u` page movement directly, so the “only 50 emails” behavior is visible without guessing
 - **Discard confirmation for unsent mail** — `esc` in compose and `esc`/`x` in pre-send now ask for confirmation before dropping the message; recovery hints still point to `:recover`
 - **Default Inbox load raised to 200** — new configs now use `inbox_count = 200`; README, config docs, and welcome text now clarify that normal loads/auto-screening only process that loaded Inbox slice, while `:screen-all` scans the full Inbox on the IMAP server
+- **Compose/draft round-trip preservation** — editor/pre-send/draft/recover flows now preserve `Bcc` and selected `From`; continuing a draft also restores its attachments back into the compose session
+- **Correct IMAP account for Sent/Drafts** — sent copies and saved drafts now use the IMAP account that matches the selected sending identity / `[[senders]]` alias instead of always using the currently active inbox account
+- **Draft MIME keeps `Bcc`** — Drafts saved via IMAP now retain the `Bcc` header so reopening a draft does not silently lose hidden recipients
+- **Search/Everything/Thread subjects no longer mutate** — folder prefixes are now display-only in list rendering, so reply/forward/thread logic keeps using the real RFC subject
+- **Screener rollback safety** — screener actions now snapshot list state and roll back both list files and already-moved emails if a later move fails, keeping mailbox state and screener files consistent
+- **`:search` help text fixed** — the command description now correctly says it searches across configured folders, not just the current folder
 
 # 2026-04-09
 - **Fix: non-standard IMAP/SMTP ports** — neomd now correctly handles non-standard ports (e.g., Proton Mail Bridge on `127.0.0.1:1143` and `127.0.0.1:1025`); previously hardcoded port-based logic ignored the user's `starttls` config and refused unencrypted connections to any port other than 993/143 (IMAP) or 465/587 (SMTP); new behavior: user's explicit `starttls = true` always forces STARTTLS, standard ports use their defaults (993→TLS, 143→STARTTLS, 465→TLS, 587→STARTTLS), non-standard ports default to TLS for security (user must set `starttls = true` if their provider uses STARTTLS on a custom port); fixes "refusing unencrypted connection to 127.0.0.1:1143" error reported by Proton Bridge users; comprehensive test coverage added for all port/config combinations

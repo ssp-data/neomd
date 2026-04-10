@@ -342,6 +342,39 @@ func TestFileOperations(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("Snapshot and Restore roll back mutations", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := makeCfg(dir)
+
+		s, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Approve("undo@example.com"); err != nil {
+			t.Fatal(err)
+		}
+		snap := s.Snapshot()
+		if err := s.Block("undo@example.com"); err != nil {
+			t.Fatal(err)
+		}
+		if got := s.Classify("undo@example.com"); got != CategoryScreenedOut {
+			t.Fatalf("after Block got %v, want ScreenedOut", got)
+		}
+		if err := s.Restore(snap); err != nil {
+			t.Fatal(err)
+		}
+		if got := s.Classify("undo@example.com"); got != CategoryInbox {
+			t.Fatalf("after Restore got %v, want Inbox", got)
+		}
+		data, err := os.ReadFile(cfg.ScreenedIn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "undo@example.com\n" {
+			t.Fatalf("screened_in contents = %q, want restored entry", data)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

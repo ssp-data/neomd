@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sspaeti/neomd/internal/config"
+	"github.com/sspaeti/neomd/internal/imap"
 )
 
 func TestMaskEmail(t *testing.T) {
@@ -141,6 +142,21 @@ func TestPresendSMTPAccount(t *testing.T) {
 	})
 }
 
+func TestMatchFromAddress(t *testing.T) {
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{Name: "Personal", From: "Me <me@example.com>"},
+		},
+		Senders: []config.SenderConfig{
+			{Name: "Work", From: "Me <me@work.example>"},
+		},
+	}
+	m := Model{cfg: cfg, accounts: cfg.ActiveAccounts()}
+	if got := m.matchFromAddress("me@work.example"); got != 1 {
+		t.Fatalf("matchFromAddress() = %d, want 1", got)
+	}
+}
+
 func TestActiveFolderUsesOffTabFolder(t *testing.T) {
 	m := Model{
 		cfg: &config.Config{
@@ -260,5 +276,20 @@ func TestUpdatePresendEscRequestsDiscardConfirmation(t *testing.T) {
 	}
 	if got.state != statePresend {
 		t.Fatalf("state = %v, want pre-send", got.state)
+	}
+}
+
+func TestHandleEverythingResultKeepsRealSubject(t *testing.T) {
+	m := Model{
+		inbox: newInboxList(80, 20, "", ""),
+	}
+	msg := everythingResultMsg{
+		emails: []imap.Email{{UID: 1, Folder: "Sent", Subject: "Quarterly update"}},
+	}
+
+	next, _ := m.handleEverythingResult(msg)
+	got := next.(*Model)
+	if got.emails[0].Subject != "Quarterly update" {
+		t.Fatalf("subject = %q, want unchanged real subject", got.emails[0].Subject)
 	}
 }

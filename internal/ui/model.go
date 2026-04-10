@@ -123,9 +123,9 @@ type (
 		err  error
 	}
 	editorDoneMsg struct {
-		to, cc, bcc, subject, body string
-		err                        error
-		aborted                    bool // true when file was unchanged (ZQ / :q!)
+		to, cc, bcc, from, subject, body string
+		err                              error
+		aborted                          bool // true when file was unchanged (ZQ / :q!)
 	}
 )
 
@@ -614,6 +614,25 @@ func (m Model) presendSMTPAccount() config.AccountConfig {
 	return m.activeAccount()
 }
 
+func (m Model) imapCliForAccount(accountName string) *imap.Client {
+	for i, a := range m.accounts {
+		if strings.EqualFold(a.Name, accountName) && i < len(m.clients) {
+			return m.clients[i]
+		}
+	}
+	return m.imapCli()
+}
+
+func (m Model) presendIMAPClient() *imap.Client {
+	return m.imapCliForAccount(m.presendSMTPAccount().Name)
+}
+
+func (m *Model) applyEditedFrom(from string) {
+	if idx := m.matchFromAddress(from); idx >= 0 {
+		m.presendFromI = idx
+	}
+}
+
 // imapCli returns the IMAP client for the active account.
 func (m Model) imapCli() *imap.Client {
 	if m.accountI < len(m.clients) {
@@ -705,7 +724,7 @@ func (m Model) sendEmailCmd(smtpAcct config.AccountConfig, from, to, cc, bcc, su
 		STARTTLS:    smtpAcct.STARTTLS,
 		TokenSource: m.tokenSourceFor(smtpAcct.Name),
 	}
-	cli := m.imapCli()
+	cli := m.imapCliForAccount(smtpAcct.Name)
 	sentFolder := m.cfg.Folders.Sent
 	return func() tea.Msg {
 		// Build raw MIME once — reused for both SMTP delivery and Sent copy.
@@ -790,6 +809,31 @@ func (m Model) targetEmails() []imap.Email {
 
 func normalizedSender(from string) string {
 	return strings.ToLower(extractEmailAddr(from))
+}
+
+func writeAttachmentsTemp(files []imap.Attachment) ([]string, error) {
+	paths := make([]string, 0, len(files))
+	for _, a := range files {
+		base := filepath.Base(a.Filename)
+		if base == "." || base == string(filepath.Separator) || base == "" {
+			base = "attachment"
+		}
+		f, err := os.CreateTemp(neomdTempDir(), "draft-"+base+"-*")
+		if err != nil {
+			return nil, err
+		}
+		if _, err := f.Write(a.Data); err != nil {
+			f.Close()
+			os.Remove(f.Name())
+			return nil, err
+		}
+		if err := f.Close(); err != nil {
+			os.Remove(f.Name())
+			return nil, err
+		}
+		paths = append(paths, f.Name())
+	}
+	return paths, nil
 }
 
 func (m Model) validateScreenerSafety() error {
@@ -957,13 +1001,14 @@ func (m Model) batchScreenerCmd(emails []imap.Email, action string) tea.Cmd {
 				}
 			}
 		}
-		for i, o := range expandedOps {
-			// Move first, classify after — if move fails, screener file stays unchanged.
-			if o.dst != "" && o.dst != o.srcFolder {
-				if _, err := m.imapCli().MoveMessage(nil, o.srcFolder, o.uid, o.dst); err != nil {
-					return batchDoneMsg{err: fmt.Errorf("stopped after %d/%d: %w", i, len(expandedOps), err)}
-				}
+		snapshot := sc.Snapshot()
+		seenSenders := make(map[string]bool)
+		for _, o := range expandedOps {
+			sender := normalizedSender(o.from)
+			if seenSenders[sender] {
+				continue
 			}
+			seenSenders[sender] = true
 			var err error
 			switch action {
 			case "I":
@@ -978,7 +1023,25 @@ func (m Model) batchScreenerCmd(emails []imap.Email, action string) tea.Cmd {
 				err = sc.MarkSpam(o.from)
 			}
 			if err != nil {
-				return batchDoneMsg{err: fmt.Errorf("stopped after %d/%d: %w", i, len(expandedOps), err)}
+				_ = sc.Restore(snapshot)
+				return batchDoneMsg{err: err}
+			}
+		}
+		var undos []undoMove
+		for i, o := range expandedOps {
+			if o.dst != "" && o.dst != o.srcFolder {
+				destUID, err := m.imapCli().MoveMessage(nil, o.srcFolder, o.uid, o.dst)
+				if err != nil {
+					for j := len(undos) - 1; j >= 0; j-- {
+						u := undos[j]
+						_, _ = m.imapCli().MoveMessage(nil, u.toFolder, u.uid, u.fromFolder)
+					}
+					if restoreErr := sc.Restore(snapshot); restoreErr != nil {
+						return batchDoneMsg{err: fmt.Errorf("stopped after %d/%d: %w (rollback failed: %v)", i, len(expandedOps), err, restoreErr)}
+					}
+					return batchDoneMsg{err: fmt.Errorf("stopped after %d/%d: %w", i, len(expandedOps), err)}
+				}
+				undos = append(undos, undoMove{uid: destUID, fromFolder: o.srcFolder, toFolder: o.dst})
 			}
 			if bp != nil {
 				bp.moved.Add(1)
@@ -1732,6 +1795,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Strip editor header hints and extract [attach] lines.
 		inlineAttach, cleanBody := extractInlineAttachments(stripPrelude(msg.body))
 		m.attachments = append(m.attachments, inlineAttach...)
+		m.applyEditedFrom(msg.from)
 
 		// Go to pre-send review instead of sending immediately.
 		m.pendingSend = &pendingSendData{
@@ -2294,6 +2358,15 @@ func saveCmdHistory(path string, history []string) {
 	_ = os.WriteFile(path, []byte(content), 0600)
 }
 
+func (m Model) shouldPrefixFolderInSubject() bool {
+	switch m.offTabFolder {
+	case "Search", "Everything", "Thread":
+		return true
+	default:
+		return false
+	}
+}
+
 // addCmdHistory prepends input to history (deduplicating) and caps at 5 entries.
 func addCmdHistory(history []string, input string) []string {
 	// Remove existing occurrence of the same command (dedup)
@@ -2317,7 +2390,7 @@ func addCmdHistory(history []string, input string) []string {
 // Call this whenever filterText changes.
 func (m *Model) applyFilter() tea.Cmd {
 	if m.filterText == "" {
-		return setEmails(&m.inbox, m.emails, m.markedUIDs)
+		return setEmails(&m.inbox, m.emails, m.markedUIDs, m.shouldPrefixFolderInSubject())
 	}
 	query := strings.ToLower(m.filterText)
 	var filtered []imap.Email
@@ -2327,7 +2400,7 @@ func (m *Model) applyFilter() tea.Cmd {
 			filtered = append(filtered, e)
 		}
 	}
-	return setEmails(&m.inbox, filtered, m.markedUIDs)
+	return setEmails(&m.inbox, filtered, m.markedUIDs, m.shouldPrefixFolderInSubject())
 }
 
 // handleChord dispatches two-key sequences (g<x>, M<x>, space<x>).
@@ -2801,22 +2874,40 @@ func (m Model) continueDraft() (tea.Model, tea.Cmd) {
 	e := m.openEmail
 	to := e.To
 	cc := e.CC
+	bcc := e.BCC
+	from := e.From
 	subject := e.Subject
 
 	// Pre-fill compose fields so viewCompose shows them
 	m.compose.reset()
-	m.presendFromI = 0
+	if idx := m.matchFromAddress(from); idx >= 0 {
+		m.presendFromI = idx
+	} else {
+		m.presendFromI = 0
+	}
 	m.compose.to.SetValue(to)
 	m.compose.cc.SetValue(cc)
+	m.compose.bcc.SetValue(bcc)
 	m.compose.subject.SetValue(subject)
-	if cc != "" {
+	if cc != "" || bcc != "" {
 		m.compose.extraVisible = true
 	}
 	m.compose.step = 3 // jump past header steps to subject-done state
+	if len(m.openAttachments) > 0 {
+		paths, err := writeAttachmentsTemp(m.openAttachments)
+		if err != nil {
+			m.status = "continueDraft attachments: " + err.Error()
+			m.isError = true
+			return m, nil
+		}
+		m.attachments = paths
+	} else {
+		m.attachments = nil
+	}
 
 	// Build temp file with prelude + existing body.
 	// No signature — the draft body already contains it from the first compose.
-	prelude := editor.Prelude(to, cc, subject, "")
+	prelude := editor.Prelude(to, cc, bcc, m.presendFrom(), subject, "")
 	body := m.openBody
 
 	f, err := os.CreateTemp(neomdTempDir(), "neomd-*.md")
@@ -2849,17 +2940,23 @@ func (m Model) continueDraft() (tea.Model, tea.Cmd) {
 		if string(raw) == prelude+body {
 			return editorDoneMsg{aborted: true}
 		}
-		pto, pcc, _, psubject, _ := editor.ParseHeaders(string(raw))
+		pto, pcc, pbcc, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
 		if pto == "" {
 			pto = to
 		}
 		if pcc == "" {
 			pcc = cc
 		}
+		if pbcc == "" {
+			pbcc = bcc
+		}
+		if pfrom == "" {
+			pfrom = m.presendFrom()
+		}
 		if psubject == "" {
 			psubject = subject
 		}
-		return editorDoneMsg{to: pto, cc: pcc, bcc: "", subject: psubject, body: string(raw)}
+		return editorDoneMsg{to: pto, cc: pcc, bcc: pbcc, from: pfrom, subject: psubject, body: string(raw)}
 	})
 }
 
@@ -2986,7 +3083,7 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.launchSpellCheckCmd(ps)
 	case "d":
 		// Save to Drafts without sending.
-		return m, m.saveDraftCmd(m.presendFrom(), ps.to, ps.cc, ps.subject, ps.body, m.attachments)
+		return m, m.saveDraftCmd(m.presendIMAPClient(), m.presendFrom(), ps.to, ps.cc, ps.bcc, ps.subject, ps.body, m.attachments)
 	case "ctrl+b":
 		// Toggle CC/BCC fields — show input prompts to add/edit them.
 		m.compose.extraVisible = !m.compose.extraVisible
@@ -3015,7 +3112,7 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // enabled and the cursor positioned on the first misspelled word.
 // On return, the (possibly corrected) body replaces the pre-send body.
 func (m Model) launchSpellCheckCmd(ps *pendingSendData) (tea.Model, tea.Cmd) {
-	prelude := editor.Prelude(ps.to, ps.cc, ps.subject, "")
+	prelude := editor.Prelude(ps.to, ps.cc, ps.bcc, m.presendFrom(), ps.subject, "")
 	content := prelude + ps.body
 
 	f, err := os.CreateTemp(neomdTempDir(), "neomd-*.md")
@@ -3046,7 +3143,7 @@ func (m Model) launchSpellCheckCmd(ps *pendingSendData) (tea.Model, tea.Cmd) {
 		if readErr != nil {
 			return editorDoneMsg{err: readErr}
 		}
-		pto, pcc, pbcc, psubject, _ := editor.ParseHeaders(string(raw))
+		pto, pcc, pbcc, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
 		if pto == "" {
 			pto = ps.to
 		}
@@ -3056,10 +3153,13 @@ func (m Model) launchSpellCheckCmd(ps *pendingSendData) (tea.Model, tea.Cmd) {
 		if pbcc == "" {
 			pbcc = ps.bcc
 		}
+		if pfrom == "" {
+			pfrom = m.presendFrom()
+		}
 		if psubject == "" {
 			psubject = ps.subject
 		}
-		return editorDoneMsg{to: pto, cc: pcc, bcc: pbcc, subject: psubject, body: string(raw)}
+		return editorDoneMsg{to: pto, cc: pcc, bcc: pbcc, from: pfrom, subject: psubject, body: string(raw)}
 	})
 }
 
@@ -3110,15 +3210,14 @@ func (m Model) previewInBrowser() (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) saveDraftCmd(from, to, cc, subject, body string, attachments []string) tea.Cmd {
-	cli := m.imapCli()
+func (m Model) saveDraftCmd(imapCli *imap.Client, from, to, cc, bcc, subject, body string, attachments []string) tea.Cmd {
 	folder := m.cfg.Folders.Drafts
 	return func() tea.Msg {
-		raw, err := smtp.BuildMessage(from, to, cc, subject, body, attachments)
+		raw, err := smtp.BuildDraftMessage(from, to, cc, bcc, subject, body, attachments)
 		if err != nil {
 			return saveDraftDoneMsg{err: err}
 		}
-		err = cli.SaveDraft(nil, folder, raw)
+		err = imapCli.SaveDraft(nil, folder, raw)
 		return saveDraftDoneMsg{err: err}
 	}
 }
@@ -3128,7 +3227,7 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 	cc := m.compose.cc.Value()
 	bcc := m.compose.bcc.Value()
 	subject := m.compose.subject.Value()
-	prelude := editor.Prelude(to, cc, subject, m.cfg.UI.Signature)
+	prelude := editor.Prelude(to, cc, bcc, m.presendFrom(), subject, m.cfg.UI.Signature)
 
 	// Write temp file
 	f, err := os.CreateTemp(neomdTempDir(), "neomd-*.md")
@@ -3162,7 +3261,7 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 		if string(raw) == prelude {
 			return editorDoneMsg{aborted: true}
 		}
-		pto, pcc, pbcc, psubject, _ := editor.ParseHeaders(string(raw))
+		pto, pcc, pbcc, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
 		if pto == "" {
 			pto = to
 		}
@@ -3172,10 +3271,13 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 		if pbcc == "" {
 			pbcc = bcc
 		}
+		if pfrom == "" {
+			pfrom = m.presendFrom()
+		}
 		if psubject == "" {
 			psubject = subject
 		}
-		return editorDoneMsg{to: pto, cc: pcc, bcc: pbcc, subject: psubject, body: string(raw)}
+		return editorDoneMsg{to: pto, cc: pcc, bcc: pbcc, from: pfrom, subject: psubject, body: string(raw)}
 	})
 }
 
@@ -3183,7 +3285,7 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 // the pre-send screen). The prelude is built from the provided headers (no
 // signature — it is already in the body from the first compose).
 func (m Model) launchEditorWithBodyCmd(to, cc, bcc, subject, body string) (tea.Model, tea.Cmd) {
-	prelude := editor.Prelude(to, cc, subject, "")
+	prelude := editor.Prelude(to, cc, bcc, m.presendFrom(), subject, "")
 	content := prelude + body
 
 	f, err := os.CreateTemp(neomdTempDir(), "neomd-*.md")
@@ -3217,7 +3319,7 @@ func (m Model) launchEditorWithBodyCmd(to, cc, bcc, subject, body string) (tea.M
 		if string(raw) == content {
 			return editorDoneMsg{aborted: true}
 		}
-		pto, pcc, pbcc, psubject, _ := editor.ParseHeaders(string(raw))
+		pto, pcc, pbcc, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
 		if pto == "" {
 			pto = to
 		}
@@ -3227,10 +3329,13 @@ func (m Model) launchEditorWithBodyCmd(to, cc, bcc, subject, body string) (tea.M
 		if pbcc == "" {
 			pbcc = bcc
 		}
+		if pfrom == "" {
+			pfrom = m.presendFrom()
+		}
 		if psubject == "" {
 			psubject = subject
 		}
-		return editorDoneMsg{to: pto, cc: pcc, bcc: pbcc, subject: psubject, body: string(raw)}
+		return editorDoneMsg{to: pto, cc: pcc, bcc: pbcc, from: pfrom, subject: psubject, body: string(raw)}
 	})
 }
 
@@ -3320,7 +3425,10 @@ func (m Model) launchForwardCmd() (tea.Model, tea.Cmd) {
 		if string(raw) == prelude {
 			return editorDoneMsg{aborted: true}
 		}
-		pto, _, _, psubject, _ := editor.ParseHeaders(string(raw))
+		pto, _, _, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
+		if pfrom == "" {
+			pfrom = m.presendFrom()
+		}
 		if psubject == "" {
 			if !strings.HasPrefix(strings.ToLower(subject), "fwd:") {
 				psubject = "Fwd: " + subject
@@ -3328,7 +3436,7 @@ func (m Model) launchForwardCmd() (tea.Model, tea.Cmd) {
 				psubject = subject
 			}
 		}
-		return editorDoneMsg{to: pto, cc: "", bcc: "", subject: psubject, body: string(raw)}
+		return editorDoneMsg{to: pto, cc: "", bcc: "", from: pfrom, subject: psubject, body: string(raw)}
 	})
 }
 
@@ -3410,17 +3518,20 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 		if string(raw) == prelude {
 			return editorDoneMsg{aborted: true}
 		}
-		pto, pcc, _, psubject, _ := editor.ParseHeaders(string(raw))
+		pto, pcc, _, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
 		if pto == "" {
 			pto = to
 		}
 		if pcc == "" {
 			pcc = cc
 		}
+		if pfrom == "" {
+			pfrom = m.presendFrom()
+		}
 		if psubject == "" {
 			psubject = subject
 		}
-		return editorDoneMsg{to: pto, cc: pcc, bcc: "", subject: psubject, body: string(raw)}
+		return editorDoneMsg{to: pto, cc: pcc, bcc: "", from: pfrom, subject: psubject, body: string(raw)}
 	})
 }
 
@@ -3437,6 +3548,19 @@ func (m Model) matchFromIndex(toField, ccField string) int {
 	}
 	for i, from := range froms {
 		if recipients[strings.ToLower(extractEmailAddr(from))] {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m Model) matchFromAddress(from string) int {
+	target := strings.ToLower(extractEmailAddr(from))
+	if target == "" {
+		return -1
+	}
+	for i, candidate := range m.presendFroms() {
+		if strings.ToLower(extractEmailAddr(candidate)) == target {
 			return i
 		}
 	}

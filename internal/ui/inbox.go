@@ -17,6 +17,7 @@ type emailItem struct {
 	email        imap.Email
 	index        int    // position in list (1-based)
 	marked       bool   // selected for batch operation
+	displaySubj  string // rendered subject (may include folder prefix in temporary views)
 	threadPrefix string // tree chars e.g. "┌─>" for threaded display
 }
 
@@ -33,7 +34,7 @@ type emailDelegate struct {
 	draftFolder string // when active folder matches, show To instead of From
 }
 
-func (d emailDelegate) Height() int                              { return 1 }
+func (d emailDelegate) Height() int                             { return 1 }
 func (d emailDelegate) Spacing() int                            { return 0 }
 func (d emailDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
@@ -105,7 +106,11 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		sender = "→ " + e.email.To // show recipient in Drafts
 	}
 	from := truncate(cleanFrom(sender), fromMax)
-	subject := truncate(e.email.Subject, subjectMax)
+	subjectText := e.email.Subject
+	if e.displaySubj != "" {
+		subjectText = e.displaySubj
+	}
+	subject := truncate(subjectText, subjectMax)
 
 	if isSelected {
 		row := fmt.Sprintf("%s%s%s%s%s%s%-*s  %-*s  %s",
@@ -232,14 +237,19 @@ func newInboxList(width, height int, sentFolder, draftFolder string) list.Model 
 // setEmails replaces the list contents, preserving marked state.
 // It threads emails before display — grouped conversations appear together
 // with tree-drawing prefixes (┌─>) on reply rows.
-func setEmails(l *list.Model, emails []imap.Email, marked map[uint32]bool) tea.Cmd {
+func setEmails(l *list.Model, emails []imap.Email, marked map[uint32]bool, prefixFolders bool) tea.Cmd {
 	threaded := threadEmails(emails)
 	items := make([]list.Item, len(threaded))
 	for i, te := range threaded {
+		displaySubj := te.email.Subject
+		if prefixFolders {
+			displaySubj = "[" + te.email.Folder + "] " + displaySubj
+		}
 		items[i] = emailItem{
 			email:        te.email,
 			index:        i + 1,
 			marked:       marked[te.email.UID],
+			displaySubj:  displaySubj,
 			threadPrefix: te.threadPrefix,
 		}
 	}

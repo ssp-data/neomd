@@ -37,11 +37,12 @@ type Email struct {
 	From          string
 	To            string
 	CC            string // comma-separated CC addresses (may be empty)
+	BCC           string // comma-separated BCC addresses (mainly useful for Drafts)
 	ReplyTo       string // Reply-To address if present (may be empty)
 	Subject       string
 	Date          time.Time
 	Seen          bool
-	Answered      bool   // \Answered flag — set when replied to from any client
+	Answered      bool // \Answered flag — set when replied to from any client
 	Folder        string
 	Size          uint32 // RFC822 size in bytes
 	HasAttachment bool   // true if BODYSTRUCTURE contains an attachment part
@@ -294,6 +295,13 @@ func (c *Client) FetchHeaders(ctx context.Context, folder string, n int) ([]Emai
 						cc = append(cc, a.Addr())
 					}
 					e.CC = strings.Join(cc, ", ")
+				}
+				if len(m.Envelope.Bcc) > 0 {
+					bcc := make([]string, 0, len(m.Envelope.Bcc))
+					for _, a := range m.Envelope.Bcc {
+						bcc = append(bcc, a.Addr())
+					}
+					e.BCC = strings.Join(bcc, ", ")
 				}
 				if len(m.Envelope.ReplyTo) > 0 {
 					e.ReplyTo = m.Envelope.ReplyTo[0].Addr()
@@ -670,6 +678,13 @@ func (c *Client) FetchHeadersByUID(ctx context.Context, folder string, uids []ui
 						cc = append(cc, a.Addr())
 					}
 					e.CC = strings.Join(cc, ", ")
+				}
+				if len(m.Envelope.Bcc) > 0 {
+					bcc := make([]string, 0, len(m.Envelope.Bcc))
+					for _, a := range m.Envelope.Bcc {
+						bcc = append(bcc, a.Addr())
+					}
+					e.BCC = strings.Join(bcc, ", ")
 				}
 			}
 			e.Size = uint32(m.RFC822Size)
