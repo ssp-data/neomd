@@ -217,6 +217,25 @@ For professional HTML signatures (with logos, tables, styled text), use the `[ui
 - **`[html-signature]` placeholder** — include this in your text signature to enable HTML signature for a specific email; visible in the editor and pre-send preview, but stripped before sending
 - **Per-email control** — delete the `[html-signature]` line in the editor to send without the HTML signature for that email
 
+
+#### This is how it looks
+
+The sent e-mail with above HTML signature looks like this:
+![image](../images/html-signature.png)
+
+In the email as text:
+```markdown
+Hello there
+
+how are you
+here's my new HTML signature below.
+BR Simon
+
+--  
+[html-signature]
+```
+
+
 **Notes:**
 
 - Use inline styles only (no `<style>` blocks or external CSS) for maximum email client compatibility
