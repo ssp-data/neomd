@@ -18,3 +18,5 @@ neomd-*.md
 # OS
 .DS_Store
 .codex
+
+.claude/

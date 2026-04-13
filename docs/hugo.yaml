@@ -4,6 +4,10 @@ title: neomd Documentation
 # Base URL will be set by GitHub Actions
 baseURL: "https://ssp-data.github.io/neomd/"
 
+# Canonify all absolute URLs (prepends baseURL to /images/, /docs/, etc.)
+# Required for GitHub Pages project sites (not user/org sites)
+canonifyURLs: true
+
 # Disable RSS generation to avoid template issues
 disableKinds: ["RSS"]
 
