@@ -49,6 +49,9 @@ Press `ctrl+e` from the inbox or reader view to react to an email with a single 
 - 👀 Eyes
 - ✅ Check
 
+
+![emoji](/images/emoji-reactions.png)
+
 **How it works:**
 
 1. Press `ctrl+e` while viewing or selecting an email
