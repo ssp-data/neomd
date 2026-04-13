@@ -5,7 +5,10 @@
       "Bash(go test:*)",
       "Bash(make build:*)",
       "Bash(make test:*)",
-      "WebFetch(domain:www.ssp.sh)"
+      "WebFetch(domain:www.ssp.sh)",
+      "Bash(roborev --help:*)",
+      "WebFetch(domain:www.roborev.io)",
+      "Bash(roborev check-agents:*)"
     ]
   }
 }

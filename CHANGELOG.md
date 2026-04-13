@@ -1,6 +1,9 @@
 # Changelog
 
-# 2026-04-10
+# 2026-04-13
+- **Emoji reactions (`ctrl+e`)** — fast, keyboard-driven emoji reactions from inbox or reader; press `ctrl+e` to open emoji picker overlay, select with `1`-`8` for instant send or navigate with `j`/`k` and press `enter`; sends minimal reaction email (emoji + italic footer + quoted original message) with proper threading headers; available reactions: 👍 ❤️ 😂 🎉 🙏 💯 👀 ✅; original email marked with `\Answered` flag; reaction saved to Sent folder; auto-selects From address matching recipient (same logic as regular replies)
+- **Email threading headers** — all replies (regular `r`/`R` and emoji reactions `ctrl+e`) now include proper `In-Reply-To` and `References` headers for conversation threading; ensures replies appear correctly grouped in Gmail, Outlook, and Apple Mail conversation views; `References` header extracted from IMAP message body and preserved in reply chain
+- **Fix: refresh not showing new emails immediately** — pressing `R` now correctly displays new emails on first refresh; previously the IMAP client cached the selected mailbox state, so the first `R` would skip re-SELECT and use stale UID SEARCH results (showing the old unread count but no new messages in the list); required a second `R` or tab switch to see new emails; now forces a fresh SELECT to ensure mailbox state is current; also fixed background sync path to prevent stale cache; added regression test (internal/imap/client_test.go:410)
 
 
 # 2026-04-10

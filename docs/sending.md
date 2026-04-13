@@ -28,7 +28,57 @@ In compose and pre-send, press `ctrl+f` to cycle through all configured accounts
 
 In the compose form, `ctrl+b` toggles the Cc and Bcc fields (hidden by default). Bcc recipients receive the email but are never written to message headers. From the reader, `r` replies to the sender and `R` replies to the sender plus all Cc recipients (your own address excluded, `Reply-To` respected).
 
+All replies include proper `In-Reply-To` and `References` headers for email threading, ensuring they appear in conversation threads in Gmail, Outlook, and Apple Mail.
+
 Press `f` to forward an email — works from both the reader and the inbox list (the body is fetched automatically). The editor opens with the original message quoted and `Fwd:` prepended to the subject. Fill in the `# [neomd: to: ]` field and add your own text above the quoted block.
+
+## Emoji Reactions
+
+Press `ctrl+e` from the inbox or reader view to react to an email with a single emoji — a fast, lightweight way to acknowledge receipt without writing a full reply.
+
+**Available reactions:**
+- 👍 Thumbs up
+- ❤️ Love
+- 😂 Laugh
+- 🎉 Celebrate
+- 🙏 Thanks
+- 💯 Perfect
+- 👀 Eyes
+- ✅ Check
+
+**How it works:**
+
+1. Press `ctrl+e` while viewing or selecting an email
+2. Choose an emoji by pressing `1`-`8` (instant send) or navigate with `j`/`k` and press `enter`
+3. Press `esc` to cancel
+
+The reaction is sent immediately (no editor, no pre-send review) as a properly formatted email with:
+
+**Plain text:**
+```
+👍
+
+Simon Späti reacted via [neomd](https://neomd.ssp.sh)
+
+---
+
+> **John Doe** wrote:
+>
+> original email body quoted here
+
+---
+```
+
+**HTML:**
+The emoji is displayed at 48px with a styled footer containing your name and a link to neomd. The original message is quoted below in a styled blockquote.
+
+**Threading:**
+Reactions include proper `In-Reply-To` and `References` headers so they appear in the conversation thread (tested with Gmail, Outlook, and Apple Mail). The original email is marked with the `\Answered` flag.
+
+**From address:**
+The reaction is automatically sent from the address that received the original email (same logic as regular replies). A copy is saved to your Sent folder.
+
+Emoji reactions are perfect for quick acknowledgments, celebrating good news, or thanking someone without the overhead of composing a full reply.
 
 ## Attachments
 

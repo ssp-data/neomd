@@ -49,6 +49,7 @@ type Email struct {
 	HasAttachment bool   // true if BODYSTRUCTURE contains an attachment part
 	MessageID     string // Message-ID from envelope (for threading)
 	InReplyTo     string // first In-Reply-To message ID (for threading)
+	References    string // References header (space-separated Message-IDs for threading)
 }
 
 // Config holds connection parameters.
@@ -195,6 +196,15 @@ func (c *Client) Close() {
 	}
 }
 
+// ResetMailboxSelection clears the cached selected mailbox, forcing the next
+// FetchHeaders or similar operation to re-SELECT the mailbox and fetch fresh state.
+// This is useful when refreshing to ensure new messages are visible.
+func (c *Client) ResetMailboxSelection() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.selectedMailbox = ""
+}
+
 // TokenSource returns the OAuth2 token source for this client, or nil for
 // password-authenticated accounts.
 func (c *Client) TokenSource() func() (string, error) { return c.cfg.TokenSource }
@@ -325,6 +335,8 @@ func (c *Client) FetchHeaders(ctx context.Context, folder string, n int) ([]Emai
 				if len(m.Envelope.InReplyTo) > 0 {
 					e.InReplyTo = m.Envelope.InReplyTo[0]
 				}
+				// Note: References header is fetched when the body is loaded (FetchBody)
+				// because it's not available in the IMAP Envelope structure.
 			}
 			e.Size = uint32(m.RFC822Size)
 			e.HasAttachment = hasAttachment(m.BodyStructure)
@@ -712,12 +724,12 @@ func (c *Client) FetchHeadersByUID(ctx context.Context, folder string, uids []ui
 }
 
 // FetchBody fetches the body of a single message.
-// Returns (markdownBody, rawHTML, webURL, attachments, error).
-func (c *Client) FetchBody(ctx context.Context, folder string, uid uint32) (string, string, string, []Attachment, error) {
+// Returns (markdownBody, rawHTML, webURL, attachments, references, error).
+func (c *Client) FetchBody(ctx context.Context, folder string, uid uint32) (string, string, string, []Attachment, string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	var markdown, rawHTML, webURL string
+	var markdown, rawHTML, webURL, references string
 	var attachments []Attachment
 	err := c.withConn(ctx, func(conn *imapclient.Client) error {
 		if err := c.selectMailbox(folder); err != nil {
@@ -739,11 +751,11 @@ func (c *Client) FetchBody(ctx context.Context, folder string, uid uint32) (stri
 		}
 
 		if len(msgs[0].BodySection) > 0 {
-			markdown, rawHTML, webURL, attachments = parseBody(msgs[0].BodySection[0].Bytes)
+			markdown, rawHTML, webURL, attachments, references = parseBody(msgs[0].BodySection[0].Bytes)
 		}
 		return nil
 	})
-	return markdown, rawHTML, webURL, attachments, err
+	return markdown, rawHTML, webURL, attachments, references, err
 }
 
 // MoveMessage moves uid from src to dst using the IMAP MOVE command (RFC 6851).
@@ -969,16 +981,19 @@ func (c *Client) SaveDraft(ctx context.Context, folder string, raw []byte) error
 //   - rawHTML:      original HTML part verbatim (empty for plain-text emails)
 //   - webURL:       "view online" URL extracted from List-Post header or plain-text
 //     preamble (e.g. Substack's "View this post on the web at https://…")
-func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Attachment) {
+func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Attachment, references string) {
 	e, err := message.Read(bytes.NewReader(raw))
 	if err != nil && !message.IsUnknownCharset(err) {
-		return string(raw), "", "", nil
+		return string(raw), "", "", nil, ""
 	}
 
 	// Check if this is a neomd-authored draft. Drafts use the X-Neomd-Draft header
 	// to signal that the plain text body is already markdown and should not be
 	// normalized (which adds trailing spaces and would mutate the draft on each save/load).
 	isDraft := e.Header.Get("X-Neomd-Draft") == "true"
+
+	// Extract References header for email threading
+	references = e.Header.Get("References")
 
 	// List-Post header contains the canonical article URL on most newsletters:
 	//   List-Post: <https://newsletter.example.com/p/slug>
@@ -1082,18 +1097,18 @@ func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Atta
 	// text/plain part is typically a stripped dump with raw redirect URLs.
 	// Fall back to plain text for plain-text-only emails (e.g. direct replies).
 	if htmlText != "" {
-		return htmlToMarkdown(htmlText), htmlText, webURL, attachments
+		return htmlToMarkdown(htmlText), htmlText, webURL, attachments, references
 	}
 	if plainText != "" {
 		// For neomd drafts, return the raw markdown without normalization.
 		// Normalization adds trailing spaces for hard line breaks, which would
 		// mutate the draft content on each save/reopen cycle.
 		if isDraft {
-			return plainText, "", webURL, attachments
+			return plainText, "", webURL, attachments, references
 		}
-		return normalizePlainText(plainText), "", webURL, attachments
+		return normalizePlainText(plainText), "", webURL, attachments, references
 	}
-	return "(no body)", "", webURL, attachments
+	return "(no body)", "", webURL, attachments, references
 }
 
 // extractPlainTextWebURL looks for a "View … on the web at https://…" line

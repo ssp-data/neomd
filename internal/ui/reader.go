@@ -126,7 +126,7 @@ func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, width int) 
 // readerHelp returns the one-line help string for the reader view.
 // When isDraft is true, "E draft" is shown so the user knows they can re-open in compose.
 func readerHelp(isDraft bool, hasLinks bool) string {
-	keys := []string{"j/k scroll", "h/q back", "r reply", "ctrl+r reply-all", "f fwd", "e nvim"}
+	keys := []string{"j/k scroll", "h/q back", "r reply", "ctrl+r reply-all", "ctrl+e react", "f fwd", "e nvim"}
 	if isDraft {
 		keys = append(keys, "E draft")
 	}
@@ -140,7 +140,7 @@ func readerHelp(isDraft bool, hasLinks bool) string {
 
 // inboxHelp returns the one-line help string for the inbox view.
 func inboxHelp(folder string) string {
-	base := []string{"enter/l open", "d/u page", "r reply", "ctrl+r reply-all", "f fwd", "c compose", "I/O/F/P/A screen", "g goto", "M move", ", sort", "/ filter", "R reload", ": cmds", "space more", "? help", "q quit"}
+	base := []string{"enter/l open", "d/u page", "r reply", "ctrl+r reply-all", "ctrl+e react", "f fwd", "c compose", "I/O/F/P/A screen", "g goto", "M move", ", sort", "/ filter", "R reload", ": cmds", "space more", "? help", "q quit"}
 	_ = folder
 	if folder == "ToScreen" {
 		base = []string{"I approve", "O block", "F feed", "P papertrail", "q back"}

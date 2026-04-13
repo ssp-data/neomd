@@ -228,7 +228,7 @@ func TestParseBody_InlineImageContentID(t *testing.T) {
 		"iVBORw0KGgo=\r\n" +
 		"--" + boundary + "--\r\n"
 
-	_, _, _, attachments := parseBody([]byte(raw))
+	_, _, _, attachments, _ := parseBody([]byte(raw))
 
 	if len(attachments) == 0 {
 		t.Fatal("expected at least 1 attachment, got 0")
@@ -273,7 +273,7 @@ func TestParseBody_NoContentID(t *testing.T) {
 		"JVBERi0=\r\n" +
 		"--" + boundary + "--\r\n"
 
-	_, _, _, attachments := parseBody([]byte(raw))
+	_, _, _, attachments, _ := parseBody([]byte(raw))
 
 	if len(attachments) == 0 {
 		t.Fatal("expected at least 1 attachment, got 0")
@@ -334,7 +334,7 @@ Signature line 2`
 		originalBody
 
 	// First parse (simulating draft reopen)
-	body1, _, _, _ := parseBody([]byte(draftMIME))
+	body1, _, _, _, _ := parseBody([]byte(draftMIME))
 
 	// Verify the body matches exactly (no trailing spaces added)
 	if body1 != originalBody {
@@ -351,7 +351,7 @@ Signature line 2`
 		"\r\n" +
 		body1 // Use the result from first parse
 
-	body2, _, _, _ := parseBody([]byte(draftMIME2))
+	body2, _, _, _, _ := parseBody([]byte(draftMIME2))
 
 	// Verify still matches exactly (no accumulation of trailing spaces)
 	if body2 != originalBody {
@@ -378,11 +378,54 @@ func TestParseBody_NonDraftGetsNormalized(t *testing.T) {
 		"\r\n" +
 		originalBody
 
-	body, _, _, _ := parseBody([]byte(regularMIME))
+	body, _, _, _, _ := parseBody([]byte(regularMIME))
 
 	// Normalization should add two trailing spaces before the newline
 	expectedNormalized := "Line 1  \nLine 2"
 	if body != expectedNormalized {
 		t.Errorf("normalization not applied to regular email\ngot:\n%q\nwant:\n%q", body, expectedNormalized)
+	}
+}
+
+func TestParseBody_ReferencesExtraction(t *testing.T) {
+	// Build a test message with References header
+	raw := "From: test@example.com\r\n" +
+		"To: recipient@example.com\r\n" +
+		"Subject: Test\r\n" +
+		"Message-ID: <msg3@example.com>\r\n" +
+		"In-Reply-To: <msg2@example.com>\r\n" +
+		"References: <msg1@example.com> <msg2@example.com>\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n" +
+		"\r\n" +
+		"Test body"
+
+	_, _, _, _, references := parseBody([]byte(raw))
+
+	wantReferences := "<msg1@example.com> <msg2@example.com>"
+	if references != wantReferences {
+		t.Errorf("References = %q, want %q", references, wantReferences)
+	}
+}
+
+func TestResetMailboxSelection(t *testing.T) {
+	// Verify that ResetMailboxSelection clears the cached selectedMailbox.
+	// This prevents stale mailbox state from suppressing new message visibility
+	// when refreshing (github.com/sspaeti/neomd#66 regression test).
+	c := &Client{
+		cfg: Config{
+			Host: "imap.example.com",
+			Port: "993",
+			TLS:  true,
+		},
+	}
+
+	// Simulate that a mailbox was previously selected
+	c.selectedMailbox = "INBOX"
+
+	// Reset should clear it
+	c.ResetMailboxSelection()
+
+	if c.selectedMailbox != "" {
+		t.Errorf("ResetMailboxSelection() did not clear selectedMailbox: got %q, want empty string", c.selectedMailbox)
 	}
 }

@@ -178,7 +178,7 @@ func TestIntegration_SendPlainEmail(t *testing.T) {
 	}
 
 	// Fetch body and verify content
-	markdown, rawHTML, _, _, err := cli.FetchBody(context.Background(), "INBOX", email.UID)
+	markdown, rawHTML, _, _, _, err := cli.FetchBody(context.Background(), "INBOX", email.UID)
 	if err != nil {
 		t.Fatalf("FetchBody: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestIntegration_SendWithCC(t *testing.T) {
 	defer cleanupEmail(t, cli, "INBOX", email.UID)
 
 	// Fetch raw body to check CC header
-	markdown, _, _, _, err := cli.FetchBody(context.Background(), "INBOX", email.UID)
+	markdown, _, _, _, _, err := cli.FetchBody(context.Background(), "INBOX", email.UID)
 	if err != nil {
 		t.Fatalf("FetchBody: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestIntegration_SendWithAttachment(t *testing.T) {
 	defer cleanupEmail(t, cli, "INBOX", email.UID)
 
 	// Fetch body — attachments should be listed
-	_, _, _, attachments, err := cli.FetchBody(context.Background(), "INBOX", email.UID)
+	_, _, _, attachments, _, err := cli.FetchBody(context.Background(), "INBOX", email.UID)
 	if err != nil {
 		t.Fatalf("FetchBody: %v", err)
 	}
@@ -426,7 +426,7 @@ func TestIntegration_SendWithInlineImage(t *testing.T) {
 	defer cleanupEmail(t, cli, "INBOX", email.UID)
 
 	// Fetch body — inline image should appear as attachment with image content type
-	_, rawHTML, _, attachments, err := cli.FetchBody(context.Background(), "INBOX", email.UID)
+	_, rawHTML, _, attachments, _, err := cli.FetchBody(context.Background(), "INBOX", email.UID)
 	if err != nil {
 		t.Fatalf("FetchBody: %v", err)
 	}
@@ -476,7 +476,7 @@ func TestIntegration_SignatureRenderedInHTML(t *testing.T) {
 	email := waitForEmail(t, cli, "INBOX", subject, 30*time.Second)
 	defer cleanupEmail(t, cli, "INBOX", email.UID)
 
-	markdown, rawHTML, _, _, err := cli.FetchBody(context.Background(), "INBOX", email.UID)
+	markdown, rawHTML, _, _, _, err := cli.FetchBody(context.Background(), "INBOX", email.UID)
 	if err != nil {
 		t.Fatalf("FetchBody: %v", err)
 	}

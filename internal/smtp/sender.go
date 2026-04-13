@@ -249,6 +249,12 @@ func sendSTARTTLSWithConfig(addr, host string, tlsCfg *tls.Config, auth smtp.Aut
 // otherwise the structure is unchanged (multipart/alternative only).
 // htmlSignature, if non-empty, is injected before the closing </body> tag in the HTML part.
 func BuildMessage(from, to, cc, subject, markdownBody string, attachments []string, htmlSignature string) ([]byte, error) {
+	return BuildMessageWithThreading(from, to, cc, subject, markdownBody, attachments, htmlSignature, "", "")
+}
+
+// BuildMessageWithThreading builds a MIME message with optional threading headers (In-Reply-To, References).
+// Used for replies and forwards to maintain proper email conversation threading.
+func BuildMessageWithThreading(from, to, cc, subject, markdownBody string, attachments []string, htmlSignature, inReplyTo, references string) ([]byte, error) {
 	htmlBody, err := render.ToHTML(markdownBody)
 	if err != nil {
 		return nil, fmt.Errorf("markdown to html: %w", err)
@@ -262,7 +268,16 @@ func BuildMessage(from, to, cc, subject, markdownBody string, attachments []stri
 			htmlBody = htmlBody[:idx] + "\n" + htmlSignature + "\n" + htmlBody[idx:]
 		}
 	}
-	return buildMessage(from, to, cc, subject, markdownBody, htmlBody, attachments)
+	// Build References chain: append inReplyTo to existing references
+	refChain := references
+	if inReplyTo != "" {
+		if refChain != "" {
+			refChain = refChain + " " + inReplyTo
+		} else {
+			refChain = inReplyTo
+		}
+	}
+	return buildMessageWithBCC(from, to, cc, "", subject, markdownBody, htmlBody, attachments, inReplyTo, refChain)
 }
 
 // BuildDraftMessage constructs a raw MIME draft for IMAP APPEND.
@@ -271,8 +286,34 @@ func BuildMessage(from, to, cc, subject, markdownBody string, attachments []stri
 // Drafts are stored as plain text only (no HTML conversion) to preserve the
 // original markdown formatting exactly during save/load cycles.
 func BuildDraftMessage(from, to, cc, bcc, subject, markdownBody string, attachments []string) ([]byte, error) {
-	// Pass empty htmlBody to store plain text only
-	return buildMessageWithBCC(from, to, cc, bcc, subject, markdownBody, "", attachments)
+	// Pass empty htmlBody to store plain text only; no threading headers for drafts
+	return buildMessageWithBCC(from, to, cc, bcc, subject, markdownBody, "", attachments, "", "")
+}
+
+// BuildReactionMessage constructs a minimal reaction email with threading headers.
+// Used for emoji reactions sent as replies to emails.
+// markdownBody is used for both text/plain and text/html parts (same as BuildMessageWithThreading).
+// inReplyTo is the Message-ID of the original email.
+// references is the References chain from the original email (may be empty).
+func BuildReactionMessage(from, to, cc, subject, markdownBody, inReplyTo, references string) ([]byte, error) {
+	// Convert markdown to HTML (same as regular replies)
+	htmlBody, err := render.ToHTML(markdownBody)
+	if err != nil {
+		return nil, fmt.Errorf("markdown to html: %w", err)
+	}
+
+	// Build References chain: append inReplyTo to existing references
+	refChain := references
+	if inReplyTo != "" {
+		if refChain != "" {
+			refChain = refChain + " " + inReplyTo
+		} else {
+			refChain = inReplyTo
+		}
+	}
+	// No attachments for reactions
+	// Use markdown for text/plain part, rendered HTML for text/html part (same as regular replies)
+	return buildMessageWithBCC(from, to, cc, "", subject, markdownBody, htmlBody, nil, inReplyTo, refChain)
 }
 
 // inlineImage holds a local image path and its assigned Content-ID.
@@ -291,10 +332,10 @@ type inlineImage struct {
 //   - images only          → multipart/related > (multipart/alternative + inline images)
 //   - images + files       → multipart/mixed > (multipart/related > alt+images) + files
 func buildMessage(from, to, cc, subject, plainText, htmlBody string, attachments []string) ([]byte, error) {
-	return buildMessageWithBCC(from, to, cc, "", subject, plainText, htmlBody, attachments)
+	return buildMessageWithBCC(from, to, cc, "", subject, plainText, htmlBody, attachments, "", "")
 }
 
-func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string, attachments []string) ([]byte, error) {
+func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string, attachments []string, inReplyTo, references string) ([]byte, error) {
 	// Find local image paths in htmlBody (<img src="/abs/path">), assign CIDs.
 	var inlines []inlineImage
 	processedHTML := imgSrcRe.ReplaceAllStringFunc(htmlBody, func(match string) string {
@@ -332,6 +373,13 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 		hdr("Subject", mime.QEncoding.Encode("utf-8", subject))
 		hdr("Date", time.Now().Format(time.RFC1123Z))
 		hdr("Message-ID", "<"+msgID+"@neomd>")
+		// Threading headers for replies
+		if inReplyTo != "" {
+			hdr("In-Reply-To", inReplyTo)
+		}
+		if references != "" {
+			hdr("References", references)
+		}
 		hdr("MIME-Version", "1.0")
 		hdr("Content-Type", contentType)
 		hdr("X-Mailer", "neomd")
@@ -356,6 +404,13 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 		hdr("Subject", mime.QEncoding.Encode("utf-8", subject))
 		hdr("Date", time.Now().Format(time.RFC1123Z))
 		hdr("Message-ID", "<"+msgID+"@neomd>")
+		// Threading headers for replies
+		if inReplyTo != "" {
+			hdr("In-Reply-To", inReplyTo)
+		}
+		if references != "" {
+			hdr("References", references)
+		}
 		hdr("MIME-Version", "1.0")
 		hdr("Content-Type", "text/plain; charset=utf-8")
 		hdr("Content-Transfer-Encoding", "quoted-printable")

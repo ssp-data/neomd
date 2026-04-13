@@ -85,6 +85,7 @@ var HelpSections = []HelpSection{
 		{"R", "reload / refresh folder"},
 		{"r", "reply  (from inbox or reader)"},
 		{"ctrl+r", "reply-all — reply to sender + all CC recipients  (from inbox or reader)"},
+		{"ctrl+e", "react with emoji  (from inbox or reader)"},
 		{"f", "forward email  (from reader or inbox)"},
 		{"T", "show full conversation thread across folders  (from inbox or reader)"},
 		{"c", "compose new email"},

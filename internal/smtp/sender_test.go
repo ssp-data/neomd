@@ -686,3 +686,193 @@ func TestInferSMTPUseTLS(t *testing.T) {
 		})
 	}
 }
+func TestBuildReactionMessage_ThreadingHeaders(t *testing.T) {
+	markdown := "👍\n\n_Simon reacted via [neomd](https://neomd.ssp.sh)_\n\n---\n\n> **John** wrote:\n>\n> Hello"
+	inReplyTo := "<original@example.com>"
+	references := "<first@example.com> <second@example.com>"
+
+	raw, err := BuildReactionMessage(
+		"simon@example.com",
+		"john@example.com",
+		"",
+		"Re: Test",
+		markdown,
+		inReplyTo,
+		references,
+	)
+	if err != nil {
+		t.Fatalf("BuildReactionMessage: %v", err)
+	}
+
+	msg, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("ReadMessage: %v", err)
+	}
+
+	// Verify In-Reply-To header
+	gotInReplyTo := msg.Header.Get("In-Reply-To")
+	if gotInReplyTo != inReplyTo {
+		t.Errorf("In-Reply-To = %q, want %q", gotInReplyTo, inReplyTo)
+	}
+
+	// Verify References header includes original references + inReplyTo
+	gotReferences := msg.Header.Get("References")
+	wantReferences := references + " " + inReplyTo
+	if gotReferences != wantReferences {
+		t.Errorf("References = %q, want %q", gotReferences, wantReferences)
+	}
+
+	// Verify multipart/alternative structure
+	mediaType, params, err := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("ParseMediaType: %v", err)
+	}
+	if mediaType != "multipart/alternative" {
+		t.Errorf("Content-Type = %q, want multipart/alternative", mediaType)
+	}
+
+	// Verify plain text part has no markdown syntax
+	mr := multipart.NewReader(msg.Body, params["boundary"])
+	var foundPlainText, foundHTML bool
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextPart: %v", err)
+		}
+		ct := part.Header.Get("Content-Type")
+		body, _ := io.ReadAll(part)
+
+		if strings.Contains(ct, "text/plain") {
+			foundPlainText = true
+			bodyStr := string(body)
+			// Plain text contains markdown syntax (same as regular replies)
+			if !strings.Contains(bodyStr, "_Simon reacted via [neomd]") {
+				t.Errorf("text/plain missing markdown footer, got: %s", bodyStr)
+			}
+			// Should contain quoted reply
+			if !strings.Contains(bodyStr, "> **John** wrote:") {
+				t.Errorf("text/plain missing quoted reply, got: %s", bodyStr)
+			}
+		}
+		if strings.Contains(ct, "text/html") {
+			foundHTML = true
+			// HTML should be rendered (not raw markdown)
+			bodyStr := string(body)
+			if !strings.Contains(bodyStr, "<") || !strings.Contains(bodyStr, ">") {
+				t.Errorf("text/html part is not HTML: %s", bodyStr)
+			}
+		}
+	}
+
+	if !foundPlainText {
+		t.Error("Missing text/plain part")
+	}
+	if !foundHTML {
+		t.Error("Missing text/html part")
+	}
+}
+
+func TestPlainTextFormatting_ReplyVsReaction(t *testing.T) {
+	// Test what plain text email clients actually see for both replies and reactions
+	
+	// 1. Build a regular reply
+	replyMarkdown := "Thanks for your email!\n\n---\n\n> **John** wrote:\n>\n> Can you help with [this issue](https://example.com/issue)?"
+	replyRaw, err := BuildMessageWithThreading(
+		"simon@example.com",
+		"john@example.com",
+		"",
+		"Re: Help needed",
+		replyMarkdown,
+		nil, // no attachments
+		"", // no HTML signature
+		"<original@example.com>",
+		"<first@example.com>",
+	)
+	if err != nil {
+		t.Fatalf("BuildMessageWithThreading: %v", err)
+	}
+
+	// 2. Build an emoji reaction
+	reactionMarkdown := "👍\n\n_Simon reacted via [neomd](https://neomd.ssp.sh)_\n\n---\n\n> **John** wrote:\n>\n> Can you help with [this issue](https://example.com/issue)?"
+	reactionRaw, err := BuildReactionMessage(
+		"simon@example.com",
+		"john@example.com",
+		"",
+		"Re: Help needed",
+		reactionMarkdown,
+		"<original@example.com>",
+		"<first@example.com>",
+	)
+	if err != nil {
+		t.Fatalf("BuildReactionMessage: %v", err)
+	}
+
+	// Extract text/plain parts from both
+	replyPlainText := extractPlainTextPart(t, replyRaw)
+	reactionPlainText := extractPlainTextPart(t, reactionRaw)
+
+	t.Logf("=== REGULAR REPLY (text/plain part) ===\n%s\n", replyPlainText)
+	t.Logf("=== EMOJI REACTION (text/plain part) ===\n%s\n", reactionPlainText)
+
+	// Verify both contain markdown syntax (current behavior)
+	if !strings.Contains(replyPlainText, "[this issue]") {
+		t.Error("Regular reply text/plain part does not contain markdown link syntax")
+	}
+	if !strings.Contains(replyPlainText, "> **John** wrote:") {
+		t.Error("Regular reply text/plain part does not contain markdown bold syntax")
+	}
+
+	if !strings.Contains(reactionPlainText, "[neomd]") {
+		t.Error("Reaction text/plain part does not contain markdown link syntax")
+	}
+	if !strings.Contains(reactionPlainText, "_Simon reacted") {
+		t.Error("Reaction text/plain part does not contain markdown italic syntax")
+	}
+	if !strings.Contains(reactionPlainText, "> **John** wrote:") {
+		t.Error("Reaction text/plain part does not contain markdown bold syntax")
+	}
+
+	// Log findings
+	t.Log("\n=== FINDINGS ===")
+	t.Log("Both regular replies and emoji reactions send markdown in text/plain part.")
+	t.Log("This is consistent behavior - if it's a problem for reactions, it's also a problem for replies.")
+}
+
+func extractPlainTextPart(t *testing.T, raw []byte) string {
+	t.Helper()
+	msg, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("ReadMessage: %v", err)
+	}
+
+	mediaType, params, err := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("ParseMediaType: %v", err)
+	}
+
+	if !strings.HasPrefix(mediaType, "multipart/") {
+		// Not multipart, read body directly
+		body, _ := io.ReadAll(msg.Body)
+		return string(body)
+	}
+
+	mr := multipart.NewReader(msg.Body, params["boundary"])
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextPart: %v", err)
+		}
+		ct := part.Header.Get("Content-Type")
+		if strings.Contains(ct, "text/plain") {
+			body, _ := io.ReadAll(part)
+			return string(body)
+		}
+	}
+	return ""
+}
