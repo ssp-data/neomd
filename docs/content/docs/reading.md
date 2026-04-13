@@ -1,4 +1,7 @@
-# Reading Emails
+---
+title: Reading Emails
+weight: 4
+---
 
 Emails are rendered as styled Markdown in the terminal using [glamour](https://github.com/charmbracelet/glamour). The reader supports vim-style navigation.
 
@@ -76,7 +79,7 @@ Threads display with a Twitter-style vertical connector line:
 - Threads are sorted by their most recent email, so active conversations float to the top
 
 Or as image:
-![neomd](../images/reader-threaded.png)
+![neomd](/images/reader-threaded.png)
 
 
 ## Replying, Forwarding, and Drafts

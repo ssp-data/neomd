@@ -1,4 +1,4 @@
-// docs regenerates the keybindings section in docs/keybindings.md from the
+// docs regenerates the keybindings section in docs/content/docs/keybindings.md from the
 // single source of truth in internal/ui/keys.go.
 //
 // Usage: go run ./cmd/docs   (or: make docs)
@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	readmePath = "docs/keybindings.md"
+	readmePath = "docs/content/docs/keybindings.md"
 	startTag   = "<!-- keybindings-start -->"
 	endTag     = "<!-- keybindings-end -->"
 )

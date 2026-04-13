@@ -6,6 +6,9 @@ LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
 .PHONY: build run install clean test test-integration send-test vet fmt tidy release docs help check-go demo demo-reset demo-hp demo-hp-reset benchmark
 
+
+.DEFAULT_GOAL := install
+
 ## check-go: verify Go is installed
 check-go:
 	@command -v go >/dev/null 2>&1 || { \
@@ -110,7 +113,7 @@ clean:
 	rm -f $(BINARY) $(BINARY)-android
 
 ## release: tag and push a new release (usage: make release VERSION=v0.1.0)
-release: docs
+release: docs docs-build
 	@test -n "$(VERSION)" || (echo "Usage: make release VERSION=v0.1.0" && exit 1)
 	git tag -a $(VERSION) -m "Release $(VERSION)"
 	git push origin $(VERSION)
@@ -119,6 +122,23 @@ release: docs
 ## docs: regenerate keybindings section in README.md from internal/ui/keys.go
 docs:
 	go run ./cmd/docs
+	@./scripts/sync-readme-to-docs.sh
+
+## docs-sync: sync README.md to docs/content/overview.md
+docs-sync:
+	./scripts/sync-readme-to-docs.sh
+
+## docs-serve: serve Hugo docs site locally at http://localhost:1313
+docs-serve:
+	$(MAKE) -C docs serve
+
+## docs-build: build Hugo docs site to docs/public/
+docs-build:
+	$(MAKE) -C docs build
+
+## docs-clean: remove generated Hugo files
+docs-clean:
+	$(MAKE) -C docs clean
 
 ## help: print this list
 help:

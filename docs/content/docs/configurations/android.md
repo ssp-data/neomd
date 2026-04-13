@@ -1,14 +1,15 @@
-# Android (Termux)
+---
+title: Android (Termux)
+weight: 3
+---
 
 Neomd runs on Android via [Termux](https://f-droid.org/en/packages/com.termux/). Build natively on the phone — cross-compiled binaries have DNS issues on Android.
-
-
 
 ## Install
 
 ```sh
 pkg install golang git
-git clone https://github.com/sspaeti/neomd
+git clone https://github.com/ssp-data/neomd
 cd neomd
 go build -o neomd ./cmd/neomd
 ./neomd
@@ -37,10 +38,10 @@ make android
 ## Images
 
 Overview email - feed:
-![neomd](../images/android-overview.png)
+![neomd](/images/android-overview.png)
 
 Reading an email:
-![neomd](../images/android-reading.png)
+![neomd](/images/android-reading.png)
 
 
 ## Home Screen Shortcuts

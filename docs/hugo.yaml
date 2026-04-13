@@ -1,0 +1,75 @@
+# Hugo configuration file
+title: neomd Documentation
+
+# Base URL will be set by GitHub Actions
+baseURL: "https://ssp-data.github.io/neomd/"
+
+# Disable RSS generation to avoid template issues
+disableKinds: ["RSS"]
+
+# import hextra as module
+module:
+  imports:
+    - path: github.com/imfing/hextra
+
+markup:
+  # allow raw html
+  goldmark:
+    renderer:
+      unsafe: true
+    parser:
+      attribute:
+        block: true
+      autoHeadingID: true
+      autoHeadingIDType: github
+
+  # enable hextra syntax highlight
+  highlight:
+    noClasses: false
+
+  tableOfContents:
+    startLevel: 2
+    endLevel: 6
+    ordered: false
+
+menu:
+  main:
+    - name: Documentation
+      pageRef: /docs
+      weight: 1
+    - name: Search
+      weight: 2
+      params:
+        type: search
+    - name: GitHub
+      weight: 3
+      url: "https://github.com/ssp-data/neomd"
+      params:
+        icon: github
+
+  sidebar:
+    - name: More
+      params:
+        type: separator
+      weight: 100
+    - name: Changelog
+      url: "https://github.com/ssp-data/neomd/blob/main/CHANGELOG.md"
+      weight: 101
+    - name: Roadmap
+      url: "https://www.ssp.sh/brain/neomd#roadmap"
+      weight: 102
+
+params:
+  description: "A fast, keyboard-first TUI email client with smart screening"
+
+  navbar:
+    displayTitle: true
+    displayLogo: false
+
+  footer:
+    displayCopyright: true
+    displayPoweredBy: true
+
+  editURL:
+    enable: true
+    base: "https://github.com/ssp-data/neomd/edit/main/docs/content/docs"

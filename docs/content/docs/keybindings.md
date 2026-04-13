@@ -1,9 +1,14 @@
-# Keybindings
+---
+title: Keybindings
+weight: 2
+---
 
 Press `?` inside neomd to open the interactive help overlay. Start typing to filter shortcuts.
 
-> The tables below are generated from [`internal/ui/keys.go`](../internal/ui/keys.go).
-> To update both the help overlay and this document at once, edit that file and run `make docs`.
+{{< callout type="info" >}}
+The tables below are generated from [`internal/ui/keys.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/keys.go).
+To update both the help overlay and this document at once, edit that file and run `make docs`.
+{{< /callout >}}
 
 <!-- keybindings-start -->
 

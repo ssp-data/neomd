@@ -1,4 +1,7 @@
-# Gmail Configuration
+---
+title: Gmail Configuration
+weight: 1
+---
 
 Gmail uses special IMAP folder names prefixed with `[Gmail]/`. neomd works with Gmail, but requires adjusted folder mappings and comes with performance caveats.
 
@@ -47,7 +50,7 @@ Similarly, Gmail doesn't expose its scheduled send feature via IMAP, so `[Gmail]
 
 Gmail's IMAP is significantly slower than dedicated email providers. On a sustained session, each IMAP command takes ~180ms on Gmail vs ~12ms on providers like Hostpoint or Fastmail. This means every folder switch, email open, and move feels noticeably slower (~570ms vs ~33ms per folder switch).
 
-See the [Benchmark section](../README.md#benchmark) in the README for detailed measurements.
+See the [Benchmark section](https://github.com/ssp-data/neomd#benchmark) in the README for detailed measurements.
 
 For the best neomd experience, consider a dedicated email provider. If you still want to use Gmail, it works — just expect ~1 second per action instead of instant.
 

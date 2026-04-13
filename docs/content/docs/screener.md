@@ -1,4 +1,7 @@
-# Screener Workflow
+---
+title: Screener Workflow
+weight: 3
+---
 
 The screener classifies senders into four buckets using plain-text allowlists. Unknown senders land in `ToScreen` until you make a decision.
 
@@ -55,7 +58,7 @@ When you add many senders to `feed.txt` or `papertrail.txt` at once (e.g. after 
 
 Emails are only auto-screened while they are in the **Inbox**. Once moved to ToScreen (or any other folder), they are not re-classified automatically. This keeps the logic simple and predictable.
 
-If emails end up in ToScreen incorrectly (e.g. screened by another device like [Termux with Android](android.md) with incomplete lists), use `:reset-toscreen` to move them back to Inbox where auto-screen will re-classify them.
+If emails end up in ToScreen incorrectly (e.g. screened by another device like [Termux with Android](configurations/android) with incomplete lists), use `:reset-toscreen` to move them back to Inbox where auto-screen will re-classify them.
 
 ## Colon commands
 

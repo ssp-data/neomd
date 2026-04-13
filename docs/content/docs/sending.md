@@ -1,4 +1,7 @@
-# How Sending Works
+---
+title: Sending Emails
+weight: 5
+---
 
 neomd sends every email as `multipart/alternative`:
 
@@ -89,8 +92,9 @@ Attachments are tightly integrated with both the pre-send screen and neovim.
 **From within neovim** — press `<leader>a` in any `neomd-*.md` buffer to open yazi in a floating terminal. Selected files are inserted at the cursor as visible `[attach] /path/to/file` lines.
 
 
-> [!NOTE]
-> **Requires** [custom.lua](https://github.com/sspaeti/dotfiles/blob/master/nvim/.config/nvim/lua/sspaeti/custom.lua) added to your neovim config, and [yazi](https://github.com/sxyazi/yazi) installed.
+{{< callout type="info" >}}
+**Requires** [custom.lua](https://github.com/sspaeti/dotfiles/blob/master/nvim/.config/nvim/lua/sspaeti/custom.lua) added to your neovim config, and [yazi](https://github.com/sxyazi/yazi) installed.
+{{< /callout >}}
 
 neomd strips `[attach]` lines before sending:
 - **Image files** (`.png`, `.jpg`, `.gif`, `.webp`, `.svg`) → embedded inline in the HTML body; recipients see the image at that position
@@ -104,13 +108,13 @@ And a PDF for reference:
 [attach] /home/you/docs/report.pdf
 ```
 
-![neomd](../images/attachments-example.webp)
+![neomd](/images/attachments-example.webp)
 
 ## Pre-send Review
 
 After saving and closing the editor, neomd shows a review screen before sending — add or remove attachments, save to Drafts, or re-open the editor without sending accidentally.
 
-![neomd](../images/presend-navigation.png)
+![neomd](/images/presend-navigation.png)
 
 | Key | Action |
 |-----|--------|
@@ -175,6 +179,6 @@ This gives you full control: professional HTML signatures by default, plain sign
 - Test your HTML signature by sending to yourself first
 - The `--` separator is added automatically before the text signature
 
-For full HTML signature configuration examples, see [configuration.md](configuration.md#html-signatures).
+For full HTML signature configuration examples, see [Configuration Reference](configuration#html-signatures).
 
-For reading emails — images, links, attachments, and navigation — see [reading.md](reading.md).
+For reading emails — images, links, attachments, and navigation — see [Reading Emails](reading).

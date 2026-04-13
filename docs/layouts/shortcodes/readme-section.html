@@ -1,0 +1,28 @@
+{{- $file := .Get "file" | default "../../README.md" -}}
+{{- $start := .Get "start" -}}
+{{- $end := .Get "end" -}}
+{{- $content := readFile $file -}}
+
+{{- if and $start $end -}}
+  {{- $lines := split $content "\n" -}}
+  {{- $inSection := false -}}
+  {{- $output := slice -}}
+
+  {{- range $lines -}}
+    {{- if strings.Contains . $start -}}
+      {{- $inSection = true -}}
+    {{- end -}}
+
+    {{- if $inSection -}}
+      {{- $output = $output | append . -}}
+    {{- end -}}
+
+    {{- if strings.Contains . $end -}}
+      {{- $inSection = false -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- $output | delimit "\n" | markdownify -}}
+{{- else -}}
+  {{- $content | markdownify -}}
+{{- end -}}

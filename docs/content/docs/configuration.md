@@ -1,4 +1,7 @@
-# Configuration Reference
+---
+title: Configuration Reference
+weight: 1
+---
 
 On first run, neomd creates `~/.config/neomd/config.toml` with placeholders.
 
@@ -64,7 +67,7 @@ spam         = "spam" #check capitalization of your pre-existing Spam folder, so
 # work = "Work"  # optional custom folder; add "work" to tab_order to show as a tab (gb to go, Mb to move -b for business as w was taken)
 # tab_order controls the left-to-right tab sequence; omit to use the built-in default order. e.g.:
 # tab_order = ["inbox", "to_screen", "feed", "papertrail", "waiting", "someday", "scheduled", "sent", "archive", "screened_out", "drafts", "trash"]
-# Gmail uses different folder names — see docs/gmail.md for the correct mapping.
+# Gmail uses different folder names — see docs/content/gmail.md for the correct mapping.
 
 [ui]
 theme                = "dark"   # dark | light | auto
@@ -82,14 +85,15 @@ Connect: [LinkedIn](https://example.com/)
 ```
 
 
-> [!NOTE]
-> **Gmail** uses different IMAP folder names (`[Gmail]/Sent Mail`, `[Gmail]/Trash`, etc.). See [Gmail Configuration](gmail.md) for the correct mapping.
+{{< callout type="info" >}}
+**Gmail** uses different IMAP folder names (`[Gmail]/Sent Mail`, `[Gmail]/Trash`, etc.). See [Gmail Configuration](configurations/gmail) for the correct mapping.
+{{< /callout >}}
 
 Use an app-specific password (Gmail, Fastmail, Hostpoint, etc.) rather than your main account password.
 
 `inbox_count` is a fetch cap for normal folder loads and startup auto-screening. If you want to re-screen the entire Inbox on the IMAP server, use `:screen-all` from inside neomd; that scans every Inbox email, not just the loaded subset, and can take a while on large mailboxes.
 
-### Environment Variables
+## Environment Variables
 
 The `password` and `user` fields support environment variable expansion. If the entire value is a single env var reference, neomd resolves it at startup:
 
@@ -102,7 +106,7 @@ Values containing other text or multiple `$` signs are left as-is, so passwords 
 
 Credentials are stored only in `~/.config/neomd/config.toml` (mode 0600) and never written elsewhere; all IMAP connections use TLS (port 993) or STARTTLS (port 143).
 
-### TLS and STARTTLS Configuration
+## TLS and STARTTLS Configuration
 
 Neomd automatically determines the correct encryption method based on the port and the optional `starttls` config field:
 
@@ -146,7 +150,7 @@ smtp = "mail.custom.com:2587"
 starttls = true  # Forces STARTTLS instead of TLS
 ```
 
-See `docs/proton-bridge.md` for complete Proton Mail Bridge setup instructions.
+See [Proton Bridge Setup](configurations/proton-bridge) for complete Proton Mail Bridge setup instructions.
 
 For localhost/self-signed bridges such as Proton Mail Bridge, neomd first tries
 normal certificate verification. If that fails with an unknown-authority error
@@ -154,7 +158,7 @@ on a loopback host (`127.0.0.1`, `::1`, `localhost`), neomd retries once with a
 localhost-only fallback so existing Bridge setups keep working. If you want
 strict verification, export the Bridge certificate and set `tls_cert_file`.
 
-### Sent and Drafts Storage
+## Sent and Drafts Storage
 
 When multiple accounts or `[[senders]]` aliases are configured, SMTP delivery
 always uses the selected sending identity's account.
@@ -223,7 +227,7 @@ For professional HTML signatures (with logos, tables, styled text), use the `[ui
 #### This is how it looks
 
 The sent e-mail with above HTML signature looks like this:
-![image](../images/html-signature.png)
+![HTML signature example](/images/html-signature.png)
 
 In the email as text:
 ```markdown
@@ -233,7 +237,7 @@ how are you
 here's my new HTML signature below.
 BR Simon
 
---  
+--
 [html-signature]
 ```
 

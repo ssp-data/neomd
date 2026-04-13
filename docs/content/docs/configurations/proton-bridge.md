@@ -1,4 +1,7 @@
-# Configuring neomd with Proton Mail Bridge
+---
+title: Proton Mail Bridge
+weight: 2
+---
 
 Proton Mail Bridge allows you to use neomd with ProtonMail accounts by running a local IMAP/SMTP bridge.
 
