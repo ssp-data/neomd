@@ -133,21 +133,12 @@ func ForwardPrelude(subject, from, originalFrom, originalDate, originalTo, origi
 	return s
 }
 
-// ReactionBody builds the plain text body for an emoji reaction.
-// Returns markdown format (for HTML rendering) and plain text format (for text/plain part).
-// Markdown version includes syntax for italics and links.
-// Plain text version is clean without markdown symbols.
-func ReactionBody(emoji, fromName, originalFrom, originalBody string) (markdown, plainText string) {
+// ReactionBody builds the markdown body for an emoji reaction.
+// Returns markdown that will be used for both text/plain and text/html parts (same as regular replies).
+// Includes the quoted original message using the same quoting logic as regular replies.
+func ReactionBody(emoji, fromName, originalFrom, originalBody string) string {
 	quoted := buildQuotedReply(originalFrom, originalBody)
-
-	// Markdown version (will be rendered to HTML)
-	markdown = fmt.Sprintf("%s\n\n_%s reacted via [neomd](https://neomd.ssp.sh)_\n\n%s", emoji, fromName, quoted)
-
-	// Plain text version (no markdown syntax)
-	plainQuoted := fmt.Sprintf("---\n\n%s wrote:\n\n%s\n\n---\n\n", originalFrom, quoteLines(originalBody))
-	plainText = fmt.Sprintf("%s\n\n%s reacted via neomd (https://neomd.ssp.sh)\n\n%s", emoji, fromName, plainQuoted)
-
-	return markdown, plainText
+	return fmt.Sprintf("%s\n\n_%s reacted via [neomd](https://neomd.ssp.sh)_\n\n%s", emoji, fromName, quoted)
 }
 
 // ParseHeaders scans raw editor content for # [neomd: key: value] lines and

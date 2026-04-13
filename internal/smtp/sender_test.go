@@ -687,7 +687,6 @@ func TestInferSMTPUseTLS(t *testing.T) {
 	}
 }
 func TestBuildReactionMessage_ThreadingHeaders(t *testing.T) {
-	plainText := "👍\n\nSimon reacted via neomd (https://neomd.ssp.sh)\n\n---\n\nJohn wrote:\n\n> Hello"
 	markdown := "👍\n\n_Simon reacted via [neomd](https://neomd.ssp.sh)_\n\n---\n\n> **John** wrote:\n>\n> Hello"
 	inReplyTo := "<original@example.com>"
 	references := "<first@example.com> <second@example.com>"
@@ -697,7 +696,6 @@ func TestBuildReactionMessage_ThreadingHeaders(t *testing.T) {
 		"john@example.com",
 		"",
 		"Re: Test",
-		plainText,
 		markdown,
 		inReplyTo,
 		references,
@@ -750,13 +748,13 @@ func TestBuildReactionMessage_ThreadingHeaders(t *testing.T) {
 		if strings.Contains(ct, "text/plain") {
 			foundPlainText = true
 			bodyStr := string(body)
-			// Plain text should not have markdown syntax
-			if strings.Contains(bodyStr, "_") || strings.Contains(bodyStr, "[neomd]") {
-				t.Errorf("text/plain part contains markdown syntax: %s", bodyStr)
+			// Plain text contains markdown syntax (same as regular replies)
+			if !strings.Contains(bodyStr, "_Simon reacted via [neomd]") {
+				t.Errorf("text/plain missing markdown footer, got: %s", bodyStr)
 			}
-			// Should contain plain text version
-			if !strings.Contains(bodyStr, "Simon reacted via neomd") {
-				t.Errorf("text/plain missing footer, got: %s", bodyStr)
+			// Should contain quoted reply
+			if !strings.Contains(bodyStr, "> **John** wrote:") {
+				t.Errorf("text/plain missing quoted reply, got: %s", bodyStr)
 			}
 		}
 		if strings.Contains(ct, "text/html") {

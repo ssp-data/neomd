@@ -292,11 +292,10 @@ func BuildDraftMessage(from, to, cc, bcc, subject, markdownBody string, attachme
 
 // BuildReactionMessage constructs a minimal reaction email with threading headers.
 // Used for emoji reactions sent as replies to emails.
-// plainTextBody contains the reaction for plain text email clients (no markdown syntax).
-// markdownBody contains the reaction text with markdown syntax for HTML rendering.
+// markdownBody is used for both text/plain and text/html parts (same as BuildMessageWithThreading).
 // inReplyTo is the Message-ID of the original email.
 // references is the References chain from the original email (may be empty).
-func BuildReactionMessage(from, to, cc, subject, plainTextBody, markdownBody, inReplyTo, references string) ([]byte, error) {
+func BuildReactionMessage(from, to, cc, subject, markdownBody, inReplyTo, references string) ([]byte, error) {
 	// Convert markdown to HTML (same as regular replies)
 	htmlBody, err := render.ToHTML(markdownBody)
 	if err != nil {
@@ -313,8 +312,8 @@ func BuildReactionMessage(from, to, cc, subject, plainTextBody, markdownBody, in
 		}
 	}
 	// No attachments for reactions
-	// Use plainTextBody for text/plain part (no markdown syntax), htmlBody for text/html part
-	return buildMessageWithBCC(from, to, cc, "", subject, plainTextBody, htmlBody, nil, inReplyTo, refChain)
+	// Use markdown for text/plain part, rendered HTML for text/html part (same as regular replies)
+	return buildMessageWithBCC(from, to, cc, "", subject, markdownBody, htmlBody, nil, inReplyTo, refChain)
 }
 
 // inlineImage holds a local image path and its assigned Content-ID.
