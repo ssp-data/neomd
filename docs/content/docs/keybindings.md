@@ -132,7 +132,8 @@ To update both the help overlay and this document at once, edit that file and ru
 | `e  (pre-send)` | re-open editor to edit body |
 | `enter  (pre-send)` | confirm and send |
 | `1-9  (reader)` | download attachment N to ~/Downloads and open with xdg-open |
-| `space+1-9  (reader)` | open link N in $BROWSER (0 = 10th link) |
+| `space+1-0  (reader)` | open link 1-10 in $BROWSER (0 = 10th link) |
+| `space+l11-99  (reader)` | open link 11-99 in $BROWSER (e.g. space+l26 for [26]) |
 | `e  (reader)` | open in $EDITOR read-only — search, copy, vim motions |
 | `E  (reader)` | continue draft — re-open as editable compose (Drafts folder) |
 | `o  (reader)` | open in w3m (terminal browser) |

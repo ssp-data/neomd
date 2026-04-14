@@ -40,8 +40,8 @@ func extractLinks(markdown string) []emailLink {
 		}
 		links = append(links, emailLink{Text: text, URL: url})
 	}
-	if len(links) > 10 {
-		links = links[:10]
+	if len(links) > 99 {
+		links = links[:99]
 	}
 	return links
 }
@@ -141,7 +141,7 @@ func readerHelp(isDraft bool, hasLinks bool) string {
 	}
 	keys = append(keys, "o w3m", "O browser", "ctrl+o web", "1-9 attach")
 	if hasLinks {
-		keys = append(keys, "space+1-9 links")
+		keys = append(keys, "space+1-0 links", "space+l11-99 links 11+")
 	}
 	keys = append(keys, "? help")
 	return styleHelp.Render("  " + strings.Join(keys, " · "))

@@ -1,5 +1,10 @@
 # Changelog
 
+# 2026-04-14
+- **CC/BCC display in reader** — the email reader now shows CC and BCC headers when viewing sent emails; both fields appear conditionally (only when present) between To and Subject in the header display; particularly useful for confirming auto_bcc was applied when replying; note that BCC visibility depends on IMAP provider behavior (some providers strip BCC headers from Sent folder, others preserve them)
+- **Extended link support (99 links)** — link opener now supports up to 99 links per email (previously limited to 10); `space+1-0` opens links 1-10, `space+l11-99` opens links 11-99 using intuitive numeric shortcuts (e.g. `space+l26` for link [26]); status line provides progressive feedback during multi-key input; footer help and `?` overlay updated
+- **Fix: link extraction with brackets in text** — markdown link regex now correctly matches links with brackets inside the link text (e.g. `[[Watch the studio tour here]](url)`); changed from `[^\]]+` (anything except `]`) to non-greedy `.+?` to handle nested brackets; fixes newsletter links from Beehiiv and similar services
+
 # 2026-04-13
 - **Emoji reactions (`ctrl+e`)** — fast, keyboard-driven emoji reactions from inbox or reader; press `ctrl+e` to open emoji picker overlay, select with `1`-`8` for instant send or navigate with `j`/`k` and press `enter`; sends minimal reaction email (emoji + italic footer + quoted original message) with proper threading headers; available reactions: 👍 ❤️ 😂 🎉 🙏 💯 👀 ✅; original email marked with `\Answered` flag; reaction saved to Sent folder; auto-selects From address matching recipient (same logic as regular replies)
 - **Email threading headers** — all replies (regular `r`/`R` and emoji reactions `ctrl+e`) now include proper `In-Reply-To` and `References` headers for conversation threading; ensures replies appear correctly grouped in Gmail, Outlook, and Apple Mail conversation views; `References` header extracted from IMAP message body and preserved in reply chain

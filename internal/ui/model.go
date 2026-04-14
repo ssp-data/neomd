@@ -2749,7 +2749,7 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		pending := m.readerPending
 		m.readerPending = ""
 		switch pending {
-		case " ": // space + digit opens link
+		case " ": // space + digit opens link (1-10)
 			if len(key) == 1 && key >= "0" && key <= "9" {
 				var idx int
 				if key == "0" {
@@ -2763,11 +2763,39 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.status = fmt.Sprintf("No link [%s].", key)
 				return m, nil
 			}
+			// space + l = prefix for links 11-99 (two digits)
+			if key == "l" {
+				m.readerPending = "l"
+				m.status = "link number (11-99): l__"
+				return m, nil
+			}
+			// Not a digit or 'l' — fall through
+		case "l": // l + first digit (waiting for second digit)
+			if len(key) == 1 && key >= "0" && key <= "9" {
+				m.readerPending = "l" + key
+				m.status = fmt.Sprintf("link number: l%s_", key)
+				return m, nil
+			}
 			// Not a digit — fall through
 		case "g": // gg = top of email
 			if key == "g" {
 				m.reader.GotoTop()
 				return m, nil
+			}
+		default:
+			// Handle "l[0-9]" pattern (first digit entered, waiting for second)
+			if len(pending) == 2 && pending[0] == 'l' && pending[1] >= '0' && pending[1] <= '9' {
+				if len(key) == 1 && key >= "0" && key <= "9" {
+					// Parse two-digit number
+					numStr := string(pending[1]) + key
+					num, _ := strconv.Atoi(numStr)
+					idx := num - 1 // convert to 0-based index
+					if idx >= 0 && idx < len(m.openLinks) {
+						return m, m.openLinkCmd(m.openLinks[idx].URL)
+					}
+					m.status = fmt.Sprintf("No link [%d].", num)
+					return m, nil
+				}
 			}
 		}
 	}
@@ -2821,7 +2849,11 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		if len(m.openLinks) > 0 {
 			m.readerPending = " "
-			m.status = "open link: space+1-9 (0=10th)"
+			if len(m.openLinks) > 10 {
+				m.status = "open link: 1-0 (links 1-10), l11-99 (links 11+)"
+			} else {
+				m.status = "open link: 1-0"
+			}
 			return m, nil
 		}
 	case "g":
