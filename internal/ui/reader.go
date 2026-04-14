@@ -17,7 +17,8 @@ type emailLink struct {
 }
 
 // mdLinkRe matches [text](url) in markdown.
-var mdLinkRe = regexp.MustCompile(`\[([^\]]+)\]\((https?://[^)]+)\)`)
+// Uses non-greedy .+? to allow brackets inside link text (e.g. [[text]](url))
+var mdLinkRe = regexp.MustCompile(`\[(.+?)\]\((https?://[^)]+)\)`)
 
 // extractLinks pulls all [text](url) links from markdown, deduplicating by URL.
 func extractLinks(markdown string) []emailLink {
