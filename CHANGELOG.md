@@ -1,6 +1,7 @@
 # Changelog
 
 # 2026-04-16
+- **`B` move to Work/business** — press `B` to move marked or cursor email(s) to Work folder (similar to `A` for Archive); quick single-key action without screener list updates; shows friendly error if Work folder not configured; useful for rapid GTD-style email processing; complements existing `gb` (go to Work) and `Mb` (move to Work) shortcuts
 - **Redesigned welcome screen** — new two-column layout with ASCII art logo, philosophy/getting started guide on the left, and essential shortcuts organized by category on the right; wider box (100 chars) with cleaner spacing; maintains kanagawa color scheme; more scannable and visually appealing for new users
 - **ASCII logo in help overlay** — pressing `?` now shows the neomd ASCII art logo overlaid on the top-right corner of the help screen; shortcuts start immediately at the top without vertical space taken by the logo; logo only appears when scrolled to the top
 - **`space+w` welcome shortcut** — press `space` then `w` to reopen the welcome screen anytime; useful for reviewing keybindings and getting started guide; documented in help overlay and keybindings reference

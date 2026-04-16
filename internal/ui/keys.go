@@ -45,6 +45,7 @@ var HelpSections = []HelpSection{
 		{"F", "mark as Feed → feed.txt + move to Feed"},
 		{"P", "mark as PaperTrail → papertrail.txt + move to PaperTrail"},
 		{"A", "archive (move to Archive, no screener update)"},
+		{"B", "move to Work/business (no screener update, if configured)"},
 		{"S", "dry-run screen inbox (loaded emails), then y/n"},
 	}},
 	{"Move  (marked or cursor, no screener update)", [][2]string{

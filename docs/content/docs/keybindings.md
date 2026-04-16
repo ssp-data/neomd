@@ -58,6 +58,7 @@ To update both the help overlay and this document at once, edit that file and ru
 | `F` | mark as Feed → feed.txt + move to Feed |
 | `P` | mark as PaperTrail → papertrail.txt + move to PaperTrail |
 | `A` | archive (move to Archive, no screener update) |
+| `B` | move to Work/business (no screener update, if configured) |
 | `S` | dry-run screen inbox (loaded emails), then y/n |
 
 

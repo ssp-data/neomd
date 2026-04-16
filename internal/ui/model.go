@@ -2278,6 +2278,21 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.bulkProgress = m.newBulkOp("Archiving", len(targets))
 		return m, tea.Batch(m.spinner.Tick, m.batchMoveCmd(targets, m.cfg.Folders.Archive))
 
+	// B = move to Work/Business (pure move, no screener update)
+	case "B":
+		if m.cfg.Folders.Work == "" {
+			m.status = "Work folder not configured"
+			m.isError = true
+			return m, nil
+		}
+		targets := m.targetEmails()
+		if len(targets) == 0 {
+			return m, nil
+		}
+		m.loading = true
+		m.bulkProgress = m.newBulkOp("Moving to Work", len(targets))
+		return m, tea.Batch(m.spinner.Tick, m.batchMoveCmd(targets, m.cfg.Folders.Work))
+
 	// ── Auto-screen dry-run (Inbox only) ────────────────────────────
 	case ":":
 		m.cmdMode = true
