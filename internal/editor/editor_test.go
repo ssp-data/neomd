@@ -245,6 +245,38 @@ func TestForwardPrelude(t *testing.T) {
 	})
 }
 
+func TestReactionBody(t *testing.T) {
+	from := "alice@example.com"
+	body := "Hello"
+	quoted := buildQuotedReply(from, body)
+
+	tests := []struct {
+		name      string
+		signature string
+		wantSep   bool
+	}{
+		{"no signature", "", false},
+		{"with signature", "BR Simon", true},
+		{"html-only marker stripped to empty", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ReactionBody("👍", tt.signature, from, body)
+			if !strings.HasPrefix(got, "👍") {
+				t.Errorf("expected emoji prefix, got: %q", got)
+			}
+			if !strings.HasSuffix(got, quoted) {
+				t.Errorf("expected quoted suffix, got: %q", got)
+			}
+			hasSep := strings.Contains(got, "\n\n--  \n")
+			if hasSep != tt.wantSep {
+				t.Errorf("hasSep = %v, want %v, body:\n%s", hasSep, tt.wantSep, got)
+			}
+		})
+	}
+}
+
 func TestPreludeParseHeadersRoundTrip(t *testing.T) {
 	tests := []struct {
 		name              string

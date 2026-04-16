@@ -806,15 +806,13 @@ func (m Model) sendReaction(emojiIndex int) (tea.Model, tea.Cmd) {
 		subject = "Re: " + subject
 	}
 
-	// Extract sender name for footer
 	from := m.presendFrom()
-	fromName := extractName(from)
-	if fromName == "" {
-		fromName = extractEmailAddr(from)
-	}
 
-	// Build reaction body in markdown (used for both text/plain and text/html parts, same as regular replies)
-	bodyMarkdown := editor.ReactionBody(emoji.emoji, fromName, e.From, m.openBody)
+	// Strip [html-signature] marker from the text signature: users who configure
+	// text = "[html-signature]" (the documented HTML-only signature setup) would
+	// otherwise send the literal marker string as the plain-text reaction body.
+	_, cleanTextSig := extractHTMLSignatureMarker(m.cfg.UI.TextSignature())
+	bodyMarkdown := editor.ReactionBody(emoji.emoji, strings.TrimSpace(cleanTextSig), e.From, m.openBody)
 
 	// Get SMTP account
 	smtpAcct := m.activeAccount()
@@ -869,6 +867,7 @@ func (m Model) sendReactionCmd(smtpAcct config.AccountConfig, from, to, subject,
 		raw, err := smtp.BuildReactionMessage(
 			from, to, "", subject,
 			bodyMarkdown,
+			m.cfg.UI.HTMLSignature(),
 			originalEmail.MessageID,
 			references,
 		)

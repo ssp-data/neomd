@@ -295,11 +295,19 @@ func BuildDraftMessage(from, to, cc, bcc, subject, markdownBody string, attachme
 // markdownBody is used for both text/plain and text/html parts (same as BuildMessageWithThreading).
 // inReplyTo is the Message-ID of the original email.
 // references is the References chain from the original email (may be empty).
-func BuildReactionMessage(from, to, cc, subject, markdownBody, inReplyTo, references string) ([]byte, error) {
+func BuildReactionMessage(from, to, cc, subject, markdownBody, htmlSignature, inReplyTo, references string) ([]byte, error) {
 	// Convert markdown to HTML (same as regular replies)
 	htmlBody, err := render.ToHTML(markdownBody)
 	if err != nil {
 		return nil, fmt.Errorf("markdown to html: %w", err)
+	}
+	if htmlSignature != "" {
+		// Inject before the quoted reply (<hr>) so signature appears between emoji and quote
+		if idx := strings.Index(htmlBody, "<hr"); idx >= 0 {
+			htmlBody = htmlBody[:idx] + "\n" + htmlSignature + "\n" + htmlBody[idx:]
+		} else if idx := strings.LastIndex(htmlBody, "</body>"); idx >= 0 {
+			htmlBody = htmlBody[:idx] + "\n" + htmlSignature + "\n" + htmlBody[idx:]
+		}
 	}
 
 	// Build References chain: append inReplyTo to existing references
