@@ -13,7 +13,7 @@ Proton Mail Bridge allows you to use neomd with ProtonMail accounts by running a
 
 ## neomd Configuration
 
-Add the following to your `~/.config/neomd/config.toml`:
+Add the following to your `~/.config/neomd/config.toml` - notice that you cannot use folder named `Scheduled` as  it's internally used for scheduled emails:
 
 ```toml
 [[accounts]]
@@ -25,6 +25,25 @@ Add the following to your `~/.config/neomd/config.toml`:
   from = "Your Name <your-proton-email@proton.me>"
   starttls = false  # Proton Bridge uses TLS on non-standard ports
   tls_cert_file = "~/ProtonBridge/cert.pem"  # optional: exported Bridge certificate
+
+
+[folders]
+  inbox = "INBOX"
+  sent = "Sent"
+  trash = "Trash"
+  drafts = "Drafts"
+  to_screen = "Folders/ToScreen"
+  feed = "Folders/Feed"
+  papertrail = "Folders/PaperTrail"
+  screened_out = "Folders/ScreenedOut"
+  archive = "Archive"
+  waiting = "Folders/Waiting"
+  scheduled = "Folders/sched"
+  someday = "Folders/Someday"
+  spam = "Spam"
+  work = ""
+  tab_order = ["inbox", "to_screen", "feed", "papertrail", "waiting", "sched", "someday", "archive", "sent", "drafts", "screened_out", "spam", "trash"]
+
 ```
 
 ## Key Configuration Details

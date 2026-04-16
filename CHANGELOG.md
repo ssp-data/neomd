@@ -1,5 +1,13 @@
 # Changelog
 
+# 2026-04-16
+- **Redesigned welcome screen** — new two-column layout with ASCII art logo, philosophy/getting started guide on the left, and essential shortcuts organized by category on the right; wider box (100 chars) with cleaner spacing; maintains kanagawa color scheme; more scannable and visually appealing for new users
+- **ASCII logo in help overlay** — pressing `?` now shows the neomd ASCII art logo overlaid on the top-right corner of the help screen; shortcuts start immediately at the top without vertical space taken by the logo; logo only appears when scrolled to the top
+- **`space+w` welcome shortcut** — press `space` then `w` to reopen the welcome screen anytime; useful for reviewing keybindings and getting started guide; documented in help overlay and keybindings reference
+- **`N` jump to next unread** — press `N` to jump to the next unread email in the current folder; wraps around to the beginning if no unread found after cursor; displays status message if no unread emails exist
+- **`z` toggle unread-only view** — press `z` to filter the inbox to show only unread emails (mnemonic: "zero in on unread"); press `z` again to show all emails; works alongside text filter (`/`) and can be cleared with `esc`; status bar indicates current view mode
+- **Fix: help menu search** — all keys (including `j`, `k`, `d`, `u`) are now available for typing when searching in help overlay (`?` then `/`); scroll keys only work when not in search mode
+
 # 2026-04-15
 - **Scheduled folder keybindings** — added `gc` (go to Scheduled, mnemonic: "calendar") and `Mc` (move to Scheduled) shortcuts; Scheduled folder now accessible via dedicated keybindings alongside existing tab navigation (`[]HL`, `space+1-9`); help overlay and generated keybindings documentation updated
 

@@ -511,6 +511,10 @@ type Model struct {
 	filterActive bool
 	filterText   string
 
+	// showUnreadOnly filters the inbox to show only unread emails when true.
+	// Toggled with 'v' key.
+	showUnreadOnly bool
+
 	// pendingResetUIDs holds ToScreen UIDs awaiting y/n confirmation before
 	// being bulk-moved back to Inbox.
 	pendingResetUIDs []uint32
@@ -2168,9 +2172,10 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "esc":
-		if m.filterText != "" {
+		if m.filterText != "" || m.showUnreadOnly {
 			m.filterActive = false
 			m.filterText = ""
+			m.showUnreadOnly = false
 			return m, m.applyFilter()
 		}
 		if m.imapSearchResults {
@@ -2199,7 +2204,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case " ": // leader key — wait for digit or shortcut
 		m.pendingKey = " "
-		m.status = "leader:  1-9 folder tab  / IMAP search  (esc to cancel)"
+		m.status = "leader:  1-9 folder tab  / IMAP search  w welcome  (esc to cancel)"
 		return m, nil
 
 	case "M":
@@ -2354,6 +2359,30 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, tea.Batch(m.spinner.Tick, m.batchToggleSeenCmd(targets))
 
+	case "N":
+		// Jump to next unread email
+		current := m.inbox.Index()
+		items := m.inbox.Items()
+		for i := current + 1; i < len(items); i++ {
+			if item, ok := items[i].(emailItem); ok {
+				if !item.email.Seen {
+					m.inbox.Select(i)
+					return m, nil
+				}
+			}
+		}
+		// Wrap around to beginning
+		for i := 0; i <= current; i++ {
+			if item, ok := items[i].(emailItem); ok {
+				if !item.email.Seen {
+					m.inbox.Select(i)
+					return m, nil
+				}
+			}
+		}
+		m.status = "No unread emails found."
+		return m, nil
+
 	// ── Navigation ──────────────────────────────────────────────────
 	case "tab", "L", "]":
 		m.activeFolderI = (m.activeFolderI + 1) % len(m.folders)
@@ -2396,6 +2425,16 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.filterActive = true
 		m.filterText = ""
+		return m, m.applyFilter()
+
+	case "z":
+		// Toggle unread-only filter
+		m.showUnreadOnly = !m.showUnreadOnly
+		if m.showUnreadOnly {
+			m.status = "Showing unread only · z to show all"
+		} else {
+			m.status = "Showing all emails"
+		}
 		return m, m.applyFilter()
 
 	case "ctrl+n": // mark all loaded emails in this folder as read
@@ -2583,20 +2622,35 @@ func addCmdHistory(history []string, input string) []string {
 	return result
 }
 
-// applyFilter filters m.emails by filterText and refreshes the list.
-// Call this whenever filterText changes.
+// applyFilter filters m.emails by filterText and showUnreadOnly and refreshes the list.
+// Call this whenever filterText or showUnreadOnly changes.
 func (m *Model) applyFilter() tea.Cmd {
-	if m.filterText == "" {
-		return setEmails(&m.inbox, m.emails, m.markedUIDs, m.shouldPrefixFolderInSubject(), m.sortField, m.sortReverse)
-	}
-	query := strings.ToLower(m.filterText)
 	var filtered []imap.Email
+
+	// Apply both text filter and unread filter
 	for _, e := range m.emails {
-		hay := strings.ToLower(e.From + " " + e.Subject)
-		if strings.Contains(hay, query) {
-			filtered = append(filtered, e)
+		// Skip if unread-only mode is on and email is read
+		if m.showUnreadOnly && e.Seen {
+			continue
 		}
+
+		// Skip if text filter is active and doesn't match
+		if m.filterText != "" {
+			query := strings.ToLower(m.filterText)
+			hay := strings.ToLower(e.From + " " + e.Subject)
+			if !strings.Contains(hay, query) {
+				continue
+			}
+		}
+
+		filtered = append(filtered, e)
 	}
+
+	// If no filters are active, use all emails
+	if m.filterText == "" && !m.showUnreadOnly {
+		filtered = m.emails
+	}
+
 	return setEmails(&m.inbox, filtered, m.markedUIDs, m.shouldPrefixFolderInSubject(), m.sortField, m.sortReverse)
 }
 
@@ -2608,6 +2662,10 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			m.imapSearchActive = true
 			m.imapSearchText = ""
 			m.imapSearchResults = false
+			return m, nil
+		}
+		if key == "w" {
+			m.state = stateWelcome
 			return m, nil
 		}
 		if len(key) == 1 && key >= "1" && key <= "9" {
@@ -4241,18 +4299,38 @@ func (m Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.helpSearchActive = true
 		}
 	case "j", "down":
-		if !m.helpSearchActive {
+		if m.helpSearchActive {
+			m.helpSearch += "j"
+			m.helpScroll = 0
+		} else {
 			m.helpScroll++
 		}
 	case "k", "up":
-		if !m.helpSearchActive && m.helpScroll > 0 {
+		if m.helpSearchActive {
+			m.helpSearch += "k"
+			m.helpScroll = 0
+		} else if m.helpScroll > 0 {
 			m.helpScroll--
 		}
-	case "d", "ctrl+d":
+	case "d":
+		if m.helpSearchActive {
+			m.helpSearch += "d"
+			m.helpScroll = 0
+		} else {
+			m.helpScroll += m.helpPageSize()
+		}
+	case "ctrl+d":
 		if !m.helpSearchActive {
 			m.helpScroll += m.helpPageSize()
 		}
-	case "u", "ctrl+u":
+	case "u":
+		if m.helpSearchActive {
+			m.helpSearch += "u"
+			m.helpScroll = 0
+		} else {
+			m.helpScroll -= m.helpPageSize()
+		}
+	case "ctrl+u":
 		if !m.helpSearchActive {
 			m.helpScroll -= m.helpPageSize()
 		}
@@ -4266,75 +4344,7 @@ func (m Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) viewWelcome() string {
-	boxWidth := 64
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorPrimary).
-		Padding(1, 3).
-		Width(boxWidth)
-
-	title := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
-	key := lipgloss.NewStyle().Foreground(colorAuthorUnread).Bold(true)
-	dim := lipgloss.NewStyle().Foreground(colorDateCol)
-
-	warn := lipgloss.NewStyle().Foreground(colorError)
-
-	content := title.Render("Welcome to neomd!") + "\n\n" +
-		"Your IMAP folders have been created automatically.\n\n" +
-		title.Render("Quick start") + "\n" +
-		key.Render("  j/k") + "  navigate    " + key.Render("enter") + "  open email\n" +
-		key.Render("  c") + "    compose      " + key.Render("r") + "      reply\n" +
-		key.Render("  f") + "    forward      " + key.Render("ctrl+r") + "  reply-all\n" +
-		key.Render("  ]") + " / " + key.Render("[") + "  next/prev tab  " + key.Render("?") + "  all keys\n\n" +
-		title.Render("How the Screener works") + "\n" +
-		"Your screener lists are empty, so " + warn.Render("auto-screening") + "\n" +
-		warn.Render("is paused") + " until you classify your first senders.\n\n" +
-		title.Render("Getting started") + "\n" +
-		"1. Go to " + key.Render("Inbox") + " tab; once screener is active, use " + key.Render("ToScreen") + " (" + key.Render("gk") + " or " + key.Render("Tab") + " or click)\n" +
-		"2. Screen each sender:\n" +
-		key.Render("   I") + "  screen " + title.Render("in") + "   " + dim.Render("sender stays in Inbox forever") + "\n" +
-		key.Render("   O") + "  screen " + title.Render("out") + "  " + dim.Render("sender never reaches Inbox again") + "\n" +
-		key.Render("   F") + "  feed        " + dim.Render("newsletters go to Feed tab") + "\n" +
-		key.Render("   P") + "  papertrail  " + dim.Render("receipts go to PaperTrail tab") + "\n" +
-		"3. Use " + key.Render("m") + " to mark multiple, then " + key.Render("I") + " to batch-approve\n" +
-		"4. Normal loads only screen the newest " + key.Render(strconv.Itoa(m.cfg.UI.InboxCount)) + " Inbox emails\n" +
-		"5. Use " + key.Render(":screen-all") + " for the full Inbox on the server " + dim.Render("(slower; mailbox-wide)") + "\n\n" +
-		dim.Render("Once classified, senders are remembered forever.") + "\n" +
-		dim.Render("New emails auto-sort on every load. You choose") + "\n" +
-		dim.Render("who lands in your inbox. Bye-bye spam.") + "\n\n" +
-		dim.Render("Inline <leader>a attachments in nvim require custom.lua + yazi.") + "\n" +
-		dim.Render("Disable auto-screen: auto_screen_on_load = false") + "\n" +
-		dim.Render("Diagnostics: :debug   All keys: ?") + "\n\n" +
-		dim.Render("Press any key to continue.")
-
-	rendered := box.Render(content)
-
-	// Center vertically and horizontally
-	lines := strings.Count(rendered, "\n") + 1
-	padTop := (m.height - lines) / 2
-	if padTop < 0 {
-		padTop = 0
-	}
-	padLeft := (m.width - boxWidth) / 2
-	if padLeft < 0 {
-		padLeft = 0
-	}
-	prefix := strings.Repeat(" ", padLeft)
-	var b strings.Builder
-	for i := 0; i < padTop; i++ {
-		b.WriteByte('\n')
-	}
-	for _, line := range strings.Split(rendered, "\n") {
-		b.WriteString(prefix + line + "\n")
-	}
-	return b.String()
-}
-
 func (m Model) viewHelp() string {
-	heading := styleHeader.Render("  Keyboard shortcuts")
-	sep := styleSeparator.Render(strings.Repeat("─", m.width))
-
 	keyStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true).Width(24)
 	titleStyle := lipgloss.NewStyle().Foreground(colorDateCol).Bold(true)
 	descStyle := lipgloss.NewStyle().Foreground(colorText)
@@ -4342,7 +4352,44 @@ func (m Model) viewHelp() string {
 
 	filter := strings.ToLower(m.helpSearch)
 
-	lines := []string{heading, sep}
+	// Build header with logo on the right (only if at top of scroll)
+	var headerLines []string
+	if m.helpScroll == 0 {
+		heading := styleHeader.Render("  Keyboard shortcuts")
+		logo := asciiLogoCompact(colorPrimary)
+		logoLines := strings.Split(strings.TrimPrefix(logo, "\n"), "\n")
+
+		// Shorten separator to fit left column only
+		leftColWidth := 70
+		sep := styleSeparator.Render(strings.Repeat("─", leftColWidth))
+
+		// Create header rows with logo on the right
+		leftStyle := lipgloss.NewStyle().Width(leftColWidth).Align(lipgloss.Left)
+
+		// First line: heading + logo line 1
+		headerLines = append(headerLines, lipgloss.JoinHorizontal(lipgloss.Top,
+			leftStyle.Render(heading),
+			logoLines[0]))
+
+		// Second line: separator + logo line 2
+		headerLines = append(headerLines, lipgloss.JoinHorizontal(lipgloss.Top,
+			leftStyle.Render(sep),
+			logoLines[1]))
+
+		// Remaining logo lines with empty left side
+		for i := 2; i < len(logoLines); i++ {
+			headerLines = append(headerLines, lipgloss.JoinHorizontal(lipgloss.Top,
+				leftStyle.Render(""),
+				logoLines[i]))
+		}
+	} else {
+		// When scrolled, just show normal header
+		heading := styleHeader.Render("  Keyboard shortcuts")
+		sep := styleSeparator.Render(strings.Repeat("─", m.width))
+		headerLines = []string{heading, sep}
+	}
+
+	lines := headerLines
 	for _, sec := range HelpSections {
 		var matched [][2]string
 		for _, row := range sec.Rows {

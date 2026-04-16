@@ -70,6 +70,7 @@ var HelpSections = []HelpSection{
 	{"Leader Key Mappings (space prefix)", [][2]string{
 		{"<space>1 … <space>9", "jump to folder tab by number (Inbox=1, ToScreen=2, …)"},
 		{"<space>/", "IMAP search ALL emails on server (From + Subject)"},
+		{"<space>w", "show welcome screen"},
 	}},
 	{"Sort  (, prefix)", [][2]string{
 		{",m", "date newest first (default)"},
@@ -83,6 +84,7 @@ var HelpSections = []HelpSection{
 	}},
 	{"Email actions", [][2]string{
 		{"n", "toggle read/unread  (marked or cursor)"},
+		{"N", "jump to next unread email"},
 		{"ctrl+n", "mark all in current folder as read"},
 		{"R", "reload / refresh folder"},
 		{"r", "reply  (from inbox or reader)"},
@@ -134,6 +136,7 @@ var HelpSections = []HelpSection{
 	}},
 	{"General", [][2]string{
 		{"/", "filter loaded emails (From + Subject, in-memory)"},
+		{"z", "toggle unread-only view (zoomed out/zero inbox)"},
 		{"<space>/  or  :search", "IMAP search ALL emails on server (From + Subject)"},
 		{"?", "toggle this help"},
 		{"q", "quit  (from inbox)"},
