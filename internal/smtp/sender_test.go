@@ -697,6 +697,7 @@ func TestBuildReactionMessage_ThreadingHeaders(t *testing.T) {
 		"",
 		"Re: Test",
 		markdown,
+		"",
 		inReplyTo,
 		references,
 	)
@@ -803,6 +804,7 @@ func TestPlainTextFormatting_ReplyVsReaction(t *testing.T) {
 		"",
 		"Re: Help needed",
 		reactionMarkdown,
+		"",
 		"<original@example.com>",
 		"<first@example.com>",
 	)

@@ -136,9 +136,13 @@ func ForwardPrelude(subject, from, originalFrom, originalDate, originalTo, origi
 // ReactionBody builds the markdown body for an emoji reaction.
 // Returns markdown that will be used for both text/plain and text/html parts (same as regular replies).
 // Includes the quoted original message using the same quoting logic as regular replies.
-func ReactionBody(emoji, fromName, originalFrom, originalBody string) string {
+func ReactionBody(emoji, signature, originalFrom, originalBody string) string {
 	quoted := buildQuotedReply(originalFrom, originalBody)
-	return fmt.Sprintf("%s\n\n_%s reacted via [neomd](https://neomd.ssp.sh)_\n\n%s", emoji, fromName, quoted)
+	sig := ""
+	if signature != "" {
+		sig = "\n\n--  \n" + signature
+	}
+	return fmt.Sprintf("%s%s\n\n%s", emoji, sig, quoted)
 }
 
 // ParseHeaders scans raw editor content for # [neomd: key: value] lines and
