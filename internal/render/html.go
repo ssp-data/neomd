@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
+	callout "github.com/VojtaStruhar/goldmark-obsidian-callout"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/renderer/html"
@@ -28,6 +29,19 @@ pre{background:#f6f8fa;padding:12px;border-radius:4px;overflow:auto;font-family:
 blockquote{border-left:3px solid #ddd;color:#666;margin:0 0 1em;padding-left:1em}
 hr{border:0;border-bottom:1px solid #eee;margin:20px 0}
 img{max-width:100%%;height:auto}
+.callout{border-left:3px solid;padding:8px 12px;margin:0.8em 0;border-radius:3px;background:#f6f8fa}
+.callout-title{font-weight:600;margin-bottom:4px;display:flex;align-items:center;font-size:15px}
+.callout-icon{font-size:15px;margin-right:6px}
+.callout-title-inner{line-height:1.3}
+.callout>:last-child{margin-bottom:0}
+.callout-note{border-left-color:#7E9CD8;background:#f0f3fc}
+.callout-tip{border-left-color:#98BB6C;background:#f2f7f0}
+.callout-important{border-left-color:#957FB8;background:#f4f2f7}
+.callout-warning{border-left-color:#E6C384;background:#fdf9f0}
+.callout-caution{border-left-color:#C34043;background:#fcf0f0}
+.callout-info{border-left-color:#7FB4CA;background:#f0f6f8}
+.callout-danger{border-left-color:#E82424;background:#fef0f0}
+.callout-success{border-left-color:#76946A;background:#f1f6f0}
 </style>
 </head>
 <body>
@@ -35,9 +49,12 @@ img{max-width:100%%;height:auto}
 </body>
 </html>`
 
-// md is the goldmark renderer with GFM extensions.
+// md is the goldmark renderer with GFM extensions and callout support.
 var md = goldmark.New(
-	goldmark.WithExtensions(extension.GFM),
+	goldmark.WithExtensions(
+		extension.GFM,
+		callout.ObsidianCallout,
+	),
 	goldmark.WithRendererOptions(html.WithHardWraps()),
 )
 

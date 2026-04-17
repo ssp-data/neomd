@@ -14,6 +14,73 @@ When attachments are present the MIME structure is upgraded automatically:
 - **Images** → `multipart/related` with `Content-ID` — displayed inline in the email body
 - **Other files** (PDF, zip, …) → `multipart/mixed` — shown as downloadable attachments
 
+## Callouts (Admonition)
+
+neomd supports GitHub/Obsidian-style [callouts](https://www.ssp.sh/brain/admonition-call-outs) through the [this extension (with my fork)](https://github.com/sspaeti/goldmark-obsidian-callout-for-neomd) for highlighted information boxes in your emails. Use the `> [!TYPE]` syntax to create styled alert boxes:
+
+This is how it looks at the recievers end:
+![neomd](images/callouts.png)
+
+```markdown
+> [!note]
+> This is a note callout with default styling
+
+> [!tip] Pro Tip
+> Use custom titles by adding text after the type
+
+> [!warning] Important
+> Callouts can have multiple paragraphs
+>
+> Just add blank blockquote lines between them
+
+> [!important]
+> Recipients see colored boxes with icons in HTML email clients
+> while plain text clients show it as a blockquote
+```
+
+**Available callout types:**
+- `[!note]` — Blue info box
+- `[!tip]` — Green success/tip box
+- `[!important]` — Purple important box
+- `[!warning]` — Yellow warning box
+- `[!caution]` — Red caution/danger box
+
+**Features:**
+- Custom titles — add text after the type: `> [!warning] Security Alert`
+- Multiple paragraphs — use `> ` (blockquote with space) for blank lines
+- Works in both syntaxes: `> [!note]` (with space) or `>[!note]` (without space)
+
+**What recipients see:**
+
+HTML email clients (Gmail, Outlook, Apple Mail) display callouts as colored boxes with:
+- Colored left border (4px solid)
+- Colored background
+- Bold title with icon
+- Proper spacing and padding
+
+>[!NOTE]
+> Plain text email clients show callouts as regular blockquotes (graceful degradation).
+
+**Example in composed email:**
+
+```markdown
+Hi team,
+
+Here's the update on the project:
+
+> [!tip] Good News
+> We're ahead of schedule! The new feature shipped yesterday.
+
+> [!warning] Action Required
+> Please review the security audit by Friday.
+>
+> Contact @security if you have questions.
+
+Thanks,
+Simon
+```
+
+
 ## Multiple From Addresses
 
 Add `[[senders]]` blocks to config to define extra identities that share an existing account's SMTP credentials:

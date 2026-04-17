@@ -66,3 +66,105 @@ func TestToANSI_Smoke(t *testing.T) {
 		t.Fatalf("ToANSI returned error: %v", err)
 	}
 }
+
+func TestToHTML_Callout_Note(t *testing.T) {
+	md := "> [!note]\n> This is a note callout\n"
+	out, err := ToHTML(md)
+	if err != nil {
+		t.Fatalf("ToHTML returned error: %v", err)
+	}
+	// Print actual HTML for debugging
+	t.Logf("Actual HTML output:\n%s", out)
+	if !strings.Contains(out, "callout") {
+		t.Errorf("expected 'callout' class in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "callout-note") {
+		t.Errorf("expected 'callout-note' class in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "This is a note callout") {
+		t.Errorf("expected callout content in output, got:\n%s", out)
+	}
+}
+
+func TestToHTML_Callout_WithTitle(t *testing.T) {
+	md := "> [!warning] Custom Warning Title\n> This is a warning\n"
+	out, err := ToHTML(md)
+	if err != nil {
+		t.Fatalf("ToHTML returned error: %v", err)
+	}
+	if !strings.Contains(out, "callout-warning") {
+		t.Errorf("expected 'callout-warning' class in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Custom Warning Title") {
+		t.Errorf("expected custom title in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "This is a warning") {
+		t.Errorf("expected callout content in output, got:\n%s", out)
+	}
+}
+
+func TestToHTML_Callout_MultiParagraph(t *testing.T) {
+	md := "> [!tip]\n> First paragraph\n> \n> Second paragraph\n"
+	out, err := ToHTML(md)
+	if err != nil {
+		t.Fatalf("ToHTML returned error: %v", err)
+	}
+	if !strings.Contains(out, "callout-tip") {
+		t.Errorf("expected 'callout-tip' class in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "First paragraph") {
+		t.Errorf("expected first paragraph in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Second paragraph") {
+		t.Errorf("expected second paragraph in output, got:\n%s", out)
+	}
+}
+
+func TestToHTML_Callout_Types(t *testing.T) {
+	tests := []struct {
+		name      string
+		callType  string
+		wantClass string
+	}{
+		{"note", "note", "callout-note"},
+		{"tip", "tip", "callout-tip"},
+		{"important", "important", "callout-important"},
+		{"warning", "warning", "callout-warning"},
+		{"caution", "caution", "callout-caution"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			md := "> [!" + tt.callType + "]\n> Test content\n"
+			out, err := ToHTML(md)
+			if err != nil {
+				t.Fatalf("ToHTML returned error: %v", err)
+			}
+			if !strings.Contains(out, tt.wantClass) {
+				t.Errorf("expected '%s' class in output, got:\n%s", tt.wantClass, out)
+			}
+		})
+	}
+}
+
+func TestToHTML_Callout_NoSpaceSyntax(t *testing.T) {
+	// Test if >[!note] works without space after >
+	md := ">[!note] No Space Test\n>This tests the syntax without space\n"
+	out, err := ToHTML(md)
+	if err != nil {
+		t.Fatalf("ToHTML returned error: %v", err)
+	}
+	// Check if it rendered as callout or as regular blockquote
+	if strings.Contains(out, "callout-note") {
+		// Success: >[!note] (no space) DOES work as callout
+		if !strings.Contains(out, "No Space Test") {
+			t.Errorf("expected title in callout output, got:\n%s", out)
+		}
+		if !strings.Contains(out, "This tests the syntax without space") {
+			t.Errorf("expected content in callout output, got:\n%s", out)
+		}
+	} else {
+		// Failure: rendered as blockquote instead
+		t.Errorf(">[!note] without space did not render as callout. Use '> [!note]' (with space) instead. Got:\n%s", out)
+	}
+}
