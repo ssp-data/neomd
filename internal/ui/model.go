@@ -1664,8 +1664,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Mark as seen: either immediately (if config = 0) or after timer
 		uid := msg.email.UID
 		folder := msg.email.Folder
-		if m.cfg.UI.MarkAsReadAfterSecs <= 0 {
-			// Immediate marking (config = 0)
+		markImmediately := func() {
 			go func() { _ = m.imapCli().MarkSeen(nil, folder, uid) }()
 			// Update local state immediately
 			for i := range m.emails {
@@ -1674,35 +1673,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+		}
+		if m.cfg.UI.MarkAsReadAfterSecs <= 0 {
+			// Immediate marking (config = 0)
+			markImmediately()
 		} else {
-			// Schedule timer-based marking
+			// Schedule timer-based marking (for normal reading flow only)
 			m.markAsReadUID = uid
 			m.markAsReadFolder = folder
 		}
-		if m.pendingForward {
-			m.pendingForward = false
-			return m.launchForwardCmd()
-		}
-		if m.pendingReply {
-			m.pendingReply = false
-			return m.launchReplyCmd()
-		}
-		if m.pendingReplyAll {
-			m.pendingReplyAll = false
-			return m.launchReplyAllCmd()
-		}
-		if m.pendingReaction {
-			m.pendingReaction = false
-			return m.enterReactionMode(msg.email)
+		// Handle pending actions - always mark immediately before launching
+		if m.pendingForward || m.pendingReply || m.pendingReplyAll || m.pendingReaction {
+			// Mark as read immediately when launching compose actions (preserves original behavior)
+			if m.cfg.UI.MarkAsReadAfterSecs > 0 {
+				markImmediately()
+			}
+			if m.pendingForward {
+				m.pendingForward = false
+				return m.launchForwardCmd()
+			}
+			if m.pendingReply {
+				m.pendingReply = false
+				return m.launchReplyCmd()
+			}
+			if m.pendingReplyAll {
+				m.pendingReplyAll = false
+				return m.launchReplyAllCmd()
+			}
+			if m.pendingReaction {
+				m.pendingReaction = false
+				return m.enterReactionMode(msg.email)
+			}
 		}
 		m.openLinks = extractLinks(msg.body)
 		_ = loadEmailIntoReader(&m.reader, msg.email, msg.body, msg.attachments, m.openLinks, m.cfg.UI.Theme, m.width)
 		m.state = stateReading
-		// Start mark-as-read timer if configured
-		if m.cfg.UI.MarkAsReadAfterSecs > 0 {
+		// Refresh inbox list if immediate mode, or start timer
+		if m.cfg.UI.MarkAsReadAfterSecs <= 0 {
+			return m, m.applyFilter()
+		} else {
 			return m, m.scheduleMarkAsReadTimer(uid, folder)
 		}
-		return m, nil
 
 	case sendDoneMsg:
 		m.loading = false

@@ -59,7 +59,7 @@ flowchart TD
     Process -->|< 2 min?<br/>Do it now| Action[Reply/Handle<br/>Immediately]
     Process -->|Waiting for others<br/>Press Mw| Waiting[⏳ Waiting]
     Process -->|Not now, later<br/>Press Mm| Someday[📅 Someday]
-    Process -->|Time-specific<br/>Press Mc then c| Scheduled[🗓️ Scheduled]
+    Process -->|Time-specific<br/>Press Mc| Scheduled[🗓️ Scheduled]
     Process -->|Delete<br/>Press x| Trash[🗑️ Trash]
     Process -->|Reference only<br/>Press Mp or P| PaperTrail
     Process -->|Newsletter<br/>Press F or Mf| Feed
