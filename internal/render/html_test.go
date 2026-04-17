@@ -171,7 +171,7 @@ func TestToHTML_Callout_NoSpaceSyntax(t *testing.T) {
 
 func TestFormatCalloutsForPlainText_WithTitle(t *testing.T) {
 	input := "> [!tip] Good News\n> We're ahead of schedule!\n"
-	expected := "> 💡 Good News\n> We're ahead of schedule!\n"
+	expected := "💡 Good News\nWe're ahead of schedule!\n"
 	got := FormatCalloutsForPlainText(input)
 	if got != expected {
 		t.Errorf("FormatCalloutsForPlainText with title:\nwant: %q\ngot:  %q", expected, got)
@@ -180,7 +180,7 @@ func TestFormatCalloutsForPlainText_WithTitle(t *testing.T) {
 
 func TestFormatCalloutsForPlainText_NoTitle(t *testing.T) {
 	input := "> [!note]\n> This is a note\n"
-	expected := "> 📘 Note\n> This is a note\n"
+	expected := "📘 Note\nThis is a note\n"
 	got := FormatCalloutsForPlainText(input)
 	if got != expected {
 		t.Errorf("FormatCalloutsForPlainText without title:\nwant: %q\ngot:  %q", expected, got)
@@ -189,7 +189,7 @@ func TestFormatCalloutsForPlainText_NoTitle(t *testing.T) {
 
 func TestFormatCalloutsForPlainText_MultipleCallouts(t *testing.T) {
 	input := "> [!warning] Action Required\n> Please review by Friday.\n\n> [!note]\n> Please read\n"
-	expected := "> ⚠️ Action Required\n> Please review by Friday.\n\n> 📘 Note\n> Please read\n"
+	expected := "⚠️ Action Required\nPlease review by Friday.\n\n📘 Note\nPlease read\n"
 	got := FormatCalloutsForPlainText(input)
 	if got != expected {
 		t.Errorf("FormatCalloutsForPlainText with multiple callouts:\nwant: %q\ngot:  %q", expected, got)
@@ -198,10 +198,16 @@ func TestFormatCalloutsForPlainText_MultipleCallouts(t *testing.T) {
 
 func TestFormatCalloutsForPlainText_NoSpaceAfterArrow(t *testing.T) {
 	input := ">[!tip] Title\n>Content here\n"
-	// Should still match because regex handles both "> " and ">"
 	got := FormatCalloutsForPlainText(input)
 	if !strings.Contains(got, "💡 Title") {
 		t.Errorf("FormatCalloutsForPlainText should handle >[!type] without space:\ngot: %q", got)
+	}
+	if !strings.Contains(got, "Content here") {
+		t.Errorf("FormatCalloutsForPlainText should unquote content:\ngot: %q", got)
+	}
+	// Should NOT contain > markers
+	if strings.Contains(got, ">") {
+		t.Errorf("FormatCalloutsForPlainText should remove blockquote markers:\ngot: %q", got)
 	}
 }
 
@@ -236,15 +242,40 @@ func TestFormatCalloutsForPlainText_PreservesNonCallouts(t *testing.T) {
 	input := "Regular text\n\n> Regular blockquote\n> without callout\n\n> [!note] Callout\n> With content\n"
 	got := FormatCalloutsForPlainText(input)
 
-	// Should preserve regular text and blockquotes
+	// Should preserve regular text and non-callout blockquotes
 	if !strings.Contains(got, "Regular text") {
 		t.Error("should preserve regular text")
 	}
 	if !strings.Contains(got, "> Regular blockquote") {
 		t.Error("should preserve regular blockquotes")
 	}
-	// Should format the callout
+	// Should format the callout (no blockquote marker)
 	if !strings.Contains(got, "📘 Callout") {
 		t.Error("should format callout syntax")
+	}
+	if !strings.Contains(got, "With content") {
+		t.Error("should include callout content")
+	}
+}
+
+func TestFormatCalloutsForPlainText_MultiParagraphCallout(t *testing.T) {
+	input := "> [!tip] Title\n> First paragraph\n> \n> Second paragraph\n"
+	got := FormatCalloutsForPlainText(input)
+
+	if !strings.Contains(got, "💡 Title") {
+		t.Errorf("should have emoji title, got: %q", got)
+	}
+	if !strings.Contains(got, "First paragraph") {
+		t.Errorf("should have first paragraph, got: %q", got)
+	}
+	if !strings.Contains(got, "Second paragraph") {
+		t.Errorf("should have second paragraph, got: %q", got)
+	}
+	// Should not have > markers
+	lines := strings.Split(got, "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" && strings.HasPrefix(strings.TrimSpace(line), ">") {
+			t.Errorf("should not have > markers in callout content, got line: %q", line)
+		}
 	}
 }

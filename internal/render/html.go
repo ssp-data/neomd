@@ -104,16 +104,19 @@ var calloutIconMap = map[string]string{
 // Captures: (optional space after >)(type)(optional: + or -)(optional title)
 var calloutRegex = regexp.MustCompile(`(?m)^(>\s*)\[!(\w+)\]([+-])?\s*(.*)?$`)
 
-// FormatCalloutsForPlainText converts callout markdown syntax to emoji-prefixed blockquotes.
-// Converts `> [!note] Title` to `> 📘 Title` (or `> 📘 Note` if no title).
-// This makes callouts readable in plain text email clients while preserving the blockquote structure.
+// FormatCalloutsForPlainText converts callout markdown syntax to emoji-prefixed text.
+// Converts `> [!note] Title` to `📘 Note` (or custom title if provided).
+// Removes blockquote markers since markdown renderers (glamour) would strip them anyway.
+// Content lines following the callout header are also unquoted for clean display.
 func FormatCalloutsForPlainText(markdown string) string {
 	lines := strings.Split(markdown, "\n")
+	inCallout := false
+
 	for i, line := range lines {
+		// Check if this line starts a new callout
 		if calloutRegex.MatchString(line) {
 			submatches := calloutRegex.FindStringSubmatch(line)
 			if len(submatches) >= 5 {
-				prefix := submatches[1]      // "> " or ">"
 				calloutType := submatches[2] // "note", "tip", etc.
 				customTitle := submatches[4] // optional custom title
 
@@ -130,8 +133,20 @@ func FormatCalloutsForPlainText(markdown string) string {
 					title = strings.ToUpper(calloutTypeLower[:1]) + calloutTypeLower[1:]
 				}
 
-				lines[i] = prefix + emoji + " " + title
+				// Replace with emoji title (no blockquote marker)
+				lines[i] = emoji + " " + title
+				inCallout = true
 			}
+		} else if inCallout && strings.HasPrefix(line, ">") {
+			// This is a content line of the callout - remove the blockquote marker
+			lines[i] = strings.TrimPrefix(line, ">")
+			lines[i] = strings.TrimPrefix(lines[i], " ") // Remove leading space after >
+		} else if inCallout && strings.TrimSpace(line) == "" {
+			// Empty line ends the callout
+			inCallout = false
+		} else if inCallout {
+			// Non-blockquote line also ends the callout
+			inCallout = false
 		}
 	}
 	return strings.Join(lines, "\n")

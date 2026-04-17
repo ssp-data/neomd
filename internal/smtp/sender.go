@@ -3,9 +3,10 @@
 // get clickable links and formatted output while you write pure Markdown.
 //
 // Email format separation: Markdown input is converted to TWO independent formats:
-//   - Plain text: Callouts formatted as emoji blockquotes (> [!note] → > 📘 Note)
+//   - Plain text: Callouts formatted as emoji text without blockquotes (> [!note] → 📘 Note)
 //   - HTML: Full goldmark rendering with styled callout boxes
 // These formats never mix - each is derived independently from the markdown source.
+// Plain text removes blockquote markers because terminal renderers would strip them anyway.
 package smtp
 
 import (
@@ -77,7 +78,8 @@ func (a *xoauth2Auth) Next(_ []byte, more bool) ([]byte, error) {
 // This separation ensures we never mix the two formats - plain text gets readable callout formatting,
 // HTML gets full goldmark rendering with styled callout boxes.
 func prepareEmailBodies(markdownBody string) (plainText, htmlBody string, err error) {
-	// Plain text part: Format callouts as emoji-prefixed blockquotes (> [!note] → > 📘 Note)
+	// Plain text part: Format callouts as emoji text without blockquotes (> [!note] → 📘 Note)
+	// Blockquote markers are removed because terminal renderers strip them during display anyway.
 	plainText = render.FormatCalloutsForPlainText(markdownBody)
 
 	// HTML part: Full goldmark rendering with styled callout boxes
