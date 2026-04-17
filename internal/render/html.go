@@ -3,6 +3,8 @@ package render
 import (
 	"bytes"
 	"fmt"
+	"regexp"
+	"strings"
 
 	callout "github.com/sspaeti/goldmark-obsidian-callout-for-neomd"
 	"github.com/yuin/goldmark"
@@ -65,4 +67,72 @@ func ToHTML(markdown string) (string, error) {
 		return "", fmt.Errorf("markdown to html: %w", err)
 	}
 	return fmt.Sprintf(htmlTemplate, fragment.String()), nil
+}
+
+// calloutIconMap maps callout types to their emoji icons (same as in the fork's ast.go).
+var calloutIconMap = map[string]string{
+	"note":      "📘",
+	"info":      "ℹ️",
+	"abstract":  "📋",
+	"summary":   "📋",
+	"tldr":      "📋",
+	"todo":      "☑️",
+	"tip":       "💡",
+	"hint":      "💡",
+	"important": "💡", // tip alias
+	"success":   "✅",
+	"check":     "✅",
+	"done":      "✅",
+	"question":  "❓",
+	"help":      "❓",
+	"faq":       "❓",
+	"warning":   "⚠️",
+	"caution":   "⚠️",
+	"attention": "⚠️",
+	"failure":   "❌",
+	"fail":      "❌",
+	"missing":   "❌",
+	"danger":    "🚨",
+	"error":     "🚨",
+	"bug":       "🐛",
+	"example":   "📝",
+	"quote":     "💬",
+	"cite":      "💬",
+}
+
+// calloutRegex matches callout syntax: > [!type] optional title
+// Captures: (optional space after >)(type)(optional: + or -)(optional title)
+var calloutRegex = regexp.MustCompile(`(?m)^(>\s*)\[!(\w+)\]([+-])?\s*(.*)?$`)
+
+// FormatCalloutsForPlainText converts callout markdown syntax to emoji-prefixed blockquotes.
+// Converts `> [!note] Title` to `> 📘 Title` (or `> 📘 Note` if no title).
+// This makes callouts readable in plain text email clients while preserving the blockquote structure.
+func FormatCalloutsForPlainText(markdown string) string {
+	lines := strings.Split(markdown, "\n")
+	for i, line := range lines {
+		if calloutRegex.MatchString(line) {
+			submatches := calloutRegex.FindStringSubmatch(line)
+			if len(submatches) >= 5 {
+				prefix := submatches[1]      // "> " or ">"
+				calloutType := submatches[2] // "note", "tip", etc.
+				customTitle := submatches[4] // optional custom title
+
+				// Get emoji for this type (default to note if unknown)
+				calloutTypeLower := strings.ToLower(calloutType)
+				emoji, ok := calloutIconMap[calloutTypeLower]
+				if !ok {
+					emoji = "📘" // default to note icon
+				}
+
+				// If there's a custom title, use it; otherwise use capitalized type name
+				title := customTitle
+				if strings.TrimSpace(title) == "" {
+					title = strings.ToUpper(calloutTypeLower[:1]) + calloutTypeLower[1:]
+				}
+
+				lines[i] = prefix + emoji + " " + title
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }

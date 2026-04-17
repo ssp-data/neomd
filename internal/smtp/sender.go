@@ -1,6 +1,11 @@
 // Package smtp handles outgoing email via SMTP.
 // Sends multipart/alternative (text/plain + text/html) so recipients
 // get clickable links and formatted output while you write pure Markdown.
+//
+// Email format separation: Markdown input is converted to TWO independent formats:
+//   - Plain text: Callouts formatted as emoji blockquotes (> [!note] → > 📘 Note)
+//   - HTML: Full goldmark rendering with styled callout boxes
+// These formats never mix - each is derived independently from the markdown source.
 package smtp
 
 import (
@@ -68,19 +73,36 @@ func (a *xoauth2Auth) Next(_ []byte, more bool) ([]byte, error) {
 	return nil, nil
 }
 
+// prepareEmailBodies converts markdown to both plain text and HTML for multipart/alternative emails.
+// This separation ensures we never mix the two formats - plain text gets readable callout formatting,
+// HTML gets full goldmark rendering with styled callout boxes.
+func prepareEmailBodies(markdownBody string) (plainText, htmlBody string, err error) {
+	// Plain text part: Format callouts as emoji-prefixed blockquotes (> [!note] → > 📘 Note)
+	plainText = render.FormatCalloutsForPlainText(markdownBody)
+
+	// HTML part: Full goldmark rendering with styled callout boxes
+	htmlBody, err = render.ToHTML(markdownBody)
+	if err != nil {
+		return "", "", fmt.Errorf("markdown to html: %w", err)
+	}
+
+	return plainText, htmlBody, nil
+}
+
 // Send composes and sends an email.
-// markdownBody is sent as text/plain (raw) and text/html (goldmark-rendered).
+// markdownBody is converted to both plain text and HTML (multipart/alternative).
 // cc and bcc may be empty. BCC recipients receive the email but are not visible
 // in the message headers (standard BCC privacy behaviour).
 // attachments is a list of local file paths (may be nil).
 func Send(cfg Config, to, cc, bcc, subject, markdownBody string, attachments []string) error {
-	htmlBody, err := render.ToHTML(markdownBody)
+	// Convert markdown to both formats (plain text with formatted callouts, HTML with styled boxes)
+	plainText, htmlBody, err := prepareEmailBodies(markdownBody)
 	if err != nil {
-		return fmt.Errorf("markdown to html: %w", err)
+		return err
 	}
 
 	// BCC is intentionally NOT passed to buildMessage — it must not appear in headers.
-	raw, err := buildMessage(cfg.From, to, cc, subject, markdownBody, htmlBody, attachments)
+	raw, err := buildMessage(cfg.From, to, cc, subject, plainText, htmlBody, attachments)
 	if err != nil {
 		return fmt.Errorf("build message: %w", err)
 	}
@@ -255,9 +277,10 @@ func BuildMessage(from, to, cc, subject, markdownBody string, attachments []stri
 // BuildMessageWithThreading builds a MIME message with optional threading headers (In-Reply-To, References).
 // Used for replies and forwards to maintain proper email conversation threading.
 func BuildMessageWithThreading(from, to, cc, subject, markdownBody string, attachments []string, htmlSignature, inReplyTo, references string) ([]byte, error) {
-	htmlBody, err := render.ToHTML(markdownBody)
+	// Convert markdown to both formats (plain text with formatted callouts, HTML with styled boxes)
+	plainText, htmlBody, err := prepareEmailBodies(markdownBody)
 	if err != nil {
-		return nil, fmt.Errorf("markdown to html: %w", err)
+		return nil, err
 	}
 	// Inject HTML signature before </body> tag if provided
 	if htmlSignature != "" {
@@ -277,7 +300,7 @@ func BuildMessageWithThreading(from, to, cc, subject, markdownBody string, attac
 			refChain = inReplyTo
 		}
 	}
-	return buildMessageWithBCC(from, to, cc, "", subject, markdownBody, htmlBody, attachments, inReplyTo, refChain)
+	return buildMessageWithBCC(from, to, cc, "", subject, plainText, htmlBody, attachments, inReplyTo, refChain)
 }
 
 // BuildDraftMessage constructs a raw MIME draft for IMAP APPEND.
@@ -292,14 +315,14 @@ func BuildDraftMessage(from, to, cc, bcc, subject, markdownBody string, attachme
 
 // BuildReactionMessage constructs a minimal reaction email with threading headers.
 // Used for emoji reactions sent as replies to emails.
-// markdownBody is used for both text/plain and text/html parts (same as BuildMessageWithThreading).
+// markdownBody is converted to both plain text and HTML (multipart/alternative).
 // inReplyTo is the Message-ID of the original email.
 // references is the References chain from the original email (may be empty).
 func BuildReactionMessage(from, to, cc, subject, markdownBody, inReplyTo, references string) ([]byte, error) {
-	// Convert markdown to HTML (same as regular replies)
-	htmlBody, err := render.ToHTML(markdownBody)
+	// Convert markdown to both formats (plain text with formatted callouts, HTML with styled boxes)
+	plainText, htmlBody, err := prepareEmailBodies(markdownBody)
 	if err != nil {
-		return nil, fmt.Errorf("markdown to html: %w", err)
+		return nil, err
 	}
 
 	// Build References chain: append inReplyTo to existing references
@@ -312,8 +335,8 @@ func BuildReactionMessage(from, to, cc, subject, markdownBody, inReplyTo, refere
 		}
 	}
 	// No attachments for reactions
-	// Use markdown for text/plain part, rendered HTML for text/html part (same as regular replies)
-	return buildMessageWithBCC(from, to, cc, "", subject, markdownBody, htmlBody, nil, inReplyTo, refChain)
+	// Use formatted plain text for text/plain part, rendered HTML for text/html part (same as regular replies)
+	return buildMessageWithBCC(from, to, cc, "", subject, plainText, htmlBody, nil, inReplyTo, refChain)
 }
 
 // inlineImage holds a local image path and its assigned Content-ID.
