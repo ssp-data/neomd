@@ -25,10 +25,68 @@ Also, we intentionally don't add more folders to the archive or file emails too,
 
 But we have two additional **Feed** and **Papertrail**, two dedicated folders from HEY where you can read newsletters (just hit F) on them automatically in their separate tab, or move all your receipts into the Papertrail. Once you mark them as feed or papertrail, they will moved there automatically going forward. So you decide whether to read emails or news by jumping to different tabs.
 
-
 {{< callout type="info" >}}
 neomd's **speed** depends entirely on your IMAP provider. On Hostpoint (the provider I use), a folder switch takes **~33ms** which feels instant. On Gmail, the same operation takes **~570ms** which is noticeably slow. See [Benchmark](#benchmark) for full details and how to test your provider.
 {{< /callout >}}
+
+
+### Email Processing Workflow
+
+Here's how neomd combines HEY-Screener + GTD + Feed/Papertrail to process your email:
+
+```mermaid
+flowchart TD
+    Start([New Email Arrives]) --> AutoScreen{Auto-Screener<br/>Known Sender?}
+
+    AutoScreen -->|screened_in.txt| Inbox["📥 Inbox (Next)"]
+    AutoScreen -->|screened_out.txt| ScreenedOut[🚫 ScreenedOut]
+    AutoScreen -->|feed.txt| Feed[📰 Feed]
+    AutoScreen -->|papertrail.txt| PaperTrail[🧾 PaperTrail]
+    AutoScreen -->|Unknown| ToScreen[❓ ToScreen]
+
+    ToScreen -->|Press I| ClassifyIn[Add to screened_in.txt]
+    ToScreen -->|Press O| ClassifyOut[Add to screened_out.txt]
+    ToScreen -->|Press F| ClassifyFeed[Add to feed.txt]
+    ToScreen -->|Press P| ClassifyPaper[Add to papertrail.txt]
+
+    ClassifyIn --> Inbox
+    ClassifyOut --> ScreenedOut
+    ClassifyFeed --> Feed
+    ClassifyPaper --> PaperTrail
+
+    Inbox --> Process{Process Email<br/>GTD Decision}
+
+    Process -->|< 2 min?<br/>Do it now| Action[Reply/Handle<br/>Immediately]
+    Process -->|Waiting for others<br/>Press Mw| Waiting[⏳ Waiting]
+    Process -->|Not now, later<br/>Press Mm| Someday[📅 Someday]
+    Process -->|Time-specific<br/>Press Mc then c| Scheduled[🗓️ Scheduled]
+    Process -->|Delete<br/>Press x| Trash[🗑️ Trash]
+    Process -->|Reference only<br/>Press Mp or P| PaperTrail
+    Process -->|Newsletter<br/>Press F or Mf| Feed
+
+    Action --> Done{Done?}
+    Waiting --> Review[Review Later]
+    Someday --> Review
+    Scheduled --> Review
+    Feed --> ReadLater[Read in<br/>Feed Tab]
+    PaperTrail --> SearchLater[Search when<br/>needed]
+
+    Done -->|Yes| Archive[📦 Archive]
+    Done -->|Not actionable| Archive
+    Review --> Archive
+    ReadLater --> Archive
+
+    classDef folderStyle fill:#54546d,stroke:#7fb4ca,stroke-width:2px,color:#dcd7ba
+    class ToScreen,Inbox,ScreenedOut,Feed,PaperTrail,Archive,Waiting,Someday,Scheduled,Trash folderStyle
+```
+*all colored boxes represent neomd folders*
+
+**Key principles:**
+- **Screener first**: Unknown senders never clutter your Inbox — they wait in ToScreen for classification
+- **One-time decision**: Once you classify a sender (`I/O/F/P`), all future emails from them are automatically routed
+- **GTD processing**: Emails in Inbox are processed once — if < 2 min, do it or keep it in inbox as doing *Next* otherwise move to Waiting, Someday, or Scheduled
+- **Minimal filing**: Only Archive when done; no complex folder hierarchies — use search to find old emails
+- **Separate contexts**: Feed for newsletters (read when you want), PaperTrail for receipts (search when needed)
 
 
 ## Screenshots

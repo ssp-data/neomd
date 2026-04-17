@@ -50,7 +50,7 @@ flowchart TD
     Inbox --> Process{Process Email<br/>GTD Decision}
 
     Process -->|< 2 min?<br/>Do it now| Action[Reply/Handle<br/>Immediately]
-    Process -->|Waiting for others<br/>Press mW| Waiting[⏳ Waiting]
+    Process -->|Waiting for others<br/>Press Mw| Waiting[⏳ Waiting]
     Process -->|Not now, later<br/>Press Mm| Someday[📅 Someday]
     Process -->|Time-specific<br/>Press Mc then c| Scheduled[🗓️ Scheduled]
     Process -->|Delete<br/>Press x| Trash[🗑️ Trash]
@@ -72,7 +72,7 @@ flowchart TD
     classDef folderStyle fill:#54546d,stroke:#7fb4ca,stroke-width:2px,color:#dcd7ba
     class ToScreen,Inbox,ScreenedOut,Feed,PaperTrail,Archive,Waiting,Someday,Scheduled,Trash folderStyle
 ```
-*Styled with Kanagawa colors - all boxes represent neomd folders*
+*all colored boxes represent neomd folders*
 
 **Key principles:**
 - **Screener first**: Unknown senders never clutter your Inbox — they wait in ToScreen for classification

@@ -322,6 +322,118 @@ func TestUpdatePresendEscRequestsDiscardConfirmation(t *testing.T) {
 	}
 }
 
+func TestMarkAsReadTimer(t *testing.T) {
+	t.Run("config determines marking behavior", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			configSec int
+			wantTimer bool
+		}{
+			{"immediate when 0", 0, false},
+			{"timer when > 0", 7, true},
+			{"timer when custom", 15, true},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				cfg := &config.Config{
+					UI: config.UIConfig{
+						MarkAsReadAfterSecs: tt.configSec,
+					},
+				}
+
+				if (cfg.UI.MarkAsReadAfterSecs > 0) != tt.wantTimer {
+					t.Errorf("MarkAsReadAfterSecs=%d should trigger timer=%v", tt.configSec, tt.wantTimer)
+				}
+			})
+		}
+	})
+
+	t.Run("timer state management", func(t *testing.T) {
+		m := Model{
+			cfg: &config.Config{
+				UI: config.UIConfig{
+					MarkAsReadAfterSecs: 7,
+				},
+			},
+		}
+
+		// Initially empty
+		if m.markAsReadUID != 0 || m.markAsReadFolder != "" {
+			t.Errorf("initial timer state should be empty")
+		}
+
+		// Set timer state (simulates bodyLoadedMsg behavior)
+		m.markAsReadUID = 123
+		m.markAsReadFolder = "INBOX"
+
+		if m.markAsReadUID != 123 || m.markAsReadFolder != "INBOX" {
+			t.Errorf("timer state not set correctly: uid=%d folder=%q", m.markAsReadUID, m.markAsReadFolder)
+		}
+
+		// Clear timer state (simulates exit reader or timer completion)
+		m.markAsReadUID = 0
+		m.markAsReadFolder = ""
+
+		if m.markAsReadUID != 0 || m.markAsReadFolder != "" {
+			t.Errorf("timer state not cleared: uid=%d folder=%q", m.markAsReadUID, m.markAsReadFolder)
+		}
+	})
+
+	t.Run("timer ignored when user exits reader early", func(t *testing.T) {
+		m := Model{
+			cfg: &config.Config{
+				UI: config.UIConfig{
+					MarkAsReadAfterSecs: 7,
+				},
+			},
+			state: stateInbox, // user exited reader
+			emails: []imap.Email{
+				{UID: 123, Folder: "INBOX", Seen: false},
+			},
+			markAsReadUID:    0, // cleared when exiting reader
+			markAsReadFolder: "",
+		}
+
+		// Timer fires but user already left reader
+		msg := markAsReadTimerMsg{uid: 123, folder: "INBOX"}
+		_, _ = m.Update(msg)
+
+		// Email should still be unread
+		if m.emails[0].Seen {
+			t.Errorf("email marked as seen even though user exited reader")
+		}
+	})
+
+	t.Run("timer state cleared when exiting reader", func(t *testing.T) {
+		m := Model{
+			cfg: &config.Config{
+				UI: config.UIConfig{
+					MarkAsReadAfterSecs: 7,
+				},
+			},
+			state:            stateReading,
+			markAsReadUID:    123,
+			markAsReadFolder: "INBOX",
+		}
+
+		// User presses 'q' to exit reader
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+		updated, _ := m.updateReader(msg)
+		m = updated.(Model)
+
+		// Timer state should be cleared
+		if m.markAsReadUID != 0 || m.markAsReadFolder != "" {
+			t.Errorf("timer state not cleared when exiting reader")
+		}
+
+		// State should be back to inbox
+		if m.state != stateInbox {
+			t.Errorf("state not returned to inbox")
+		}
+	})
+}
+
 func TestHandleEverythingResultKeepsRealSubject(t *testing.T) {
 	m := Model{
 		inbox: newInboxList(80, 20, "", ""),

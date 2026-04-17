@@ -1,5 +1,10 @@
 # Changelog
 
+# 2026-04-17
+- **Timer-based mark-as-read** — emails are no longer marked as read immediately when opened; instead, a configurable timer (default 7 seconds) starts when you enter the reader; if you stay for the full duration, the email is marked as `\Seen`; if you exit early (quick peek), it stays unread; prevents accidental marking when browsing through emails
+- **`mark_as_read_after_secs` config** — new `[ui]` option to control mark-as-read delay in seconds (default 7); set to `0` for immediate marking (old behavior); set to any value to customize the delay
+- **Fix: local UI state sync on mark-as-read** — inbox list now updates immediately when an email is marked as read, either via timer or manual toggle (`n`); previously the server was updated but the local UI showed stale unread indicators until manual refresh
+
 # 2026-04-16
 - **`B` move to Work/business** — press `B` to move marked or cursor email(s) to Work folder (similar to `A` for Archive); quick single-key action without screener list updates; shows friendly error if Work folder not configured; useful for rapid GTD-style email processing; complements existing `gb` (go to Work) and `Mb` (move to Work) shortcuts
 - **Redesigned welcome screen** — new two-column layout with ASCII art logo, philosophy/getting started guide on the left, and essential shortcuts organized by category on the right; wider box (100 chars) with cleaner spacing; maintains kanagawa color scheme; more scannable and visually appealing for new users

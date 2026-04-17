@@ -112,6 +112,11 @@ type (
 	bgSyncTickMsg     struct{}
 	bgInboxFetchedMsg struct{ emails []imap.Email }
 	bgScreenDoneMsg   struct{ moved, total int }
+	// mark-as-read timer (fires after N seconds in reader)
+	markAsReadTimerMsg struct {
+		uid    uint32
+		folder string
+	}
 	// attachPickDoneMsg carries paths selected via the file picker (yazi etc.)
 	attachPickDoneMsg struct{ paths []string }
 	// bulkProgressMsg is sent during long-running batch operations to update the status bar.
@@ -450,6 +455,9 @@ type Model struct {
 	openAttachments []imap.Attachment // attachments of the currently open email
 	openLinks       []emailLink       // extracted links from the email body
 	readerPending   string            // chord prefix in reader (space for link open)
+	// Mark-as-read timer tracking
+	markAsReadUID    uint32 // UID of email with pending mark-as-read timer
+	markAsReadFolder string // folder of email with pending mark-as-read timer
 
 	// Compose / pre-send
 	compose      composeModel
@@ -1434,6 +1442,18 @@ func (m Model) scheduleBgSync() tea.Cmd {
 	return tea.Tick(time.Duration(mins)*time.Minute, func(time.Time) tea.Msg { return bgSyncTickMsg{} })
 }
 
+// scheduleMarkAsReadTimer returns a Cmd that fires markAsReadTimerMsg after the configured
+// delay. Returns nil (no-op) when mark_as_read_after_secs = 0 (immediate marking).
+func (m Model) scheduleMarkAsReadTimer(uid uint32, folder string) tea.Cmd {
+	secs := m.cfg.UI.MarkAsReadAfterSecs
+	if secs <= 0 {
+		return nil // immediate marking handled elsewhere
+	}
+	return tea.Tick(time.Duration(secs)*time.Second, func(time.Time) tea.Msg {
+		return markAsReadTimerMsg{uid: uid, folder: folder}
+	})
+}
+
 // bgFetchInboxCmd silently fetches inbox headers for background screening.
 // Errors are swallowed — a transient network hiccup shouldn't disrupt the UI.
 func (m Model) bgFetchInboxCmd() tea.Cmd {
@@ -1641,10 +1661,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.email != nil {
 			msg.email.References = msg.references
 		}
-		// Mark as seen in background (best-effort)
+		// Mark as seen: either immediately (if config = 0) or after timer
 		uid := msg.email.UID
 		folder := msg.email.Folder
-		go func() { _ = m.imapCli().MarkSeen(nil, folder, uid) }()
+		if m.cfg.UI.MarkAsReadAfterSecs <= 0 {
+			// Immediate marking (config = 0)
+			go func() { _ = m.imapCli().MarkSeen(nil, folder, uid) }()
+			// Update local state immediately
+			for i := range m.emails {
+				if m.emails[i].UID == uid && m.emails[i].Folder == folder {
+					m.emails[i].Seen = true
+					break
+				}
+			}
+		} else {
+			// Schedule timer-based marking
+			m.markAsReadUID = uid
+			m.markAsReadFolder = folder
+		}
 		if m.pendingForward {
 			m.pendingForward = false
 			return m.launchForwardCmd()
@@ -1664,6 +1698,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.openLinks = extractLinks(msg.body)
 		_ = loadEmailIntoReader(&m.reader, msg.email, msg.body, msg.attachments, m.openLinks, m.cfg.UI.Theme, m.width)
 		m.state = stateReading
+		// Start mark-as-read timer if configured
+		if m.cfg.UI.MarkAsReadAfterSecs > 0 {
+			return m, m.scheduleMarkAsReadTimer(uid, folder)
+		}
 		return m, nil
 
 	case sendDoneMsg:
@@ -1743,6 +1781,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, m.applyFilter()
+
+	case markAsReadTimerMsg:
+		// Timer fired - mark email as read if user is still viewing it
+		if m.state == stateReading && m.markAsReadUID == msg.uid && m.markAsReadFolder == msg.folder {
+			// Still viewing the same email - mark it as read
+			go func() { _ = m.imapCli().MarkSeen(nil, msg.folder, msg.uid) }()
+			// Update local state immediately
+			for i := range m.emails {
+				if m.emails[i].UID == msg.uid && m.emails[i].Folder == msg.folder {
+					m.emails[i].Seen = true
+					break
+				}
+			}
+			// Clear timer state
+			m.markAsReadUID = 0
+			m.markAsReadFolder = ""
+			return m, m.applyFilter()
+		}
+		// User navigated away - ignore timer
+		return m, nil
 
 	case imapSearchResultMsg:
 		return m.handleIMAPSearchResult(msg)
@@ -2879,6 +2937,9 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "esc", "h":
 		m.state = stateInbox
 		m.readerPending = ""
+		// Clear mark-as-read timer state when exiting reader
+		m.markAsReadUID = 0
+		m.markAsReadFolder = ""
 		return m, nil
 	case "e":
 		return m.openInNeovim()
@@ -2914,6 +2975,9 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.openEmail != nil {
 			m.loading = true
 			m.state = stateInbox
+			// Clear mark-as-read timer state when switching to conversation view
+			m.markAsReadUID = 0
+			m.markAsReadFolder = ""
 			return m, tea.Batch(m.spinner.Tick, m.fetchConversationCmd(m.openEmail))
 		}
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":

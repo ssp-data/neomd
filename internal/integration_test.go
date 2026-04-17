@@ -664,6 +664,89 @@ func TestIntegration_ReplyAllPreservesRecipients(t *testing.T) {
 	t.Logf("Reply-all delivered: To=%s CC=%s", reply.To, reply.CC)
 }
 
+func TestIntegration_MarkAsRead(t *testing.T) {
+	env := loadEnv(t)
+	cli := env.imapClient()
+	defer cli.Close()
+
+	subject := uniqueSubject("mark-as-read")
+	body := "Testing mark-as-read functionality."
+
+	// Send test email to self
+	err := smtp.Send(env.smtpConfig(), env.user, "", "", subject, body, nil)
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	// Wait for delivery
+	email := waitForEmail(t, cli, "INBOX", subject, 30*time.Second)
+	defer cleanupEmail(t, cli, "INBOX", email.UID)
+
+	// Initially unread
+	if email.Seen {
+		t.Error("newly delivered email should be unread (Seen=false)")
+	}
+
+	// Mark as seen
+	ctx := context.Background()
+	err = cli.MarkSeen(ctx, "INBOX", email.UID)
+	if err != nil {
+		t.Fatalf("MarkSeen: %v", err)
+	}
+
+	// Re-fetch to verify flag changed
+	emails, err := cli.FetchHeaders(ctx, "INBOX", 20)
+	if err != nil {
+		t.Fatalf("FetchHeaders after MarkSeen: %v", err)
+	}
+
+	var found *goIMAP.Email
+	for i := range emails {
+		if emails[i].UID == email.UID {
+			found = &emails[i]
+			break
+		}
+	}
+
+	if found == nil {
+		t.Fatal("email not found after MarkSeen")
+	}
+
+	if !found.Seen {
+		t.Error("email still unread after MarkSeen call")
+	}
+
+	// Test MarkUnseen
+	err = cli.MarkUnseen(ctx, "INBOX", email.UID)
+	if err != nil {
+		t.Fatalf("MarkUnseen: %v", err)
+	}
+
+	// Re-fetch to verify flag cleared
+	emails, err = cli.FetchHeaders(ctx, "INBOX", 20)
+	if err != nil {
+		t.Fatalf("FetchHeaders after MarkUnseen: %v", err)
+	}
+
+	found = nil
+	for i := range emails {
+		if emails[i].UID == email.UID {
+			found = &emails[i]
+			break
+		}
+	}
+
+	if found == nil {
+		t.Fatal("email not found after MarkUnseen")
+	}
+
+	if found.Seen {
+		t.Error("email still marked as read after MarkUnseen call")
+	}
+
+	t.Logf("Mark-as-read round-trip successful: UID=%d", email.UID)
+}
+
 // --- Helpers ---
 
 func extractUser(from string) string {

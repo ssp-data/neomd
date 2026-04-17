@@ -103,6 +103,34 @@ Results display in a temporary "Thread" tab:
 
 Also available as `:thread` (alias `:t`) from the command line.
 
+## Mark as Read Behavior
+
+Neomd marks emails as read **after you've spent time viewing them**, not immediately when opened. This prevents accidental marking when quickly peeking at emails.
+
+**How it works:**
+
+- When you open an email (press `enter` or `l`), neomd fetches the full body from IMAP
+- Once the body loads, a **timer starts** (default: 7 seconds)
+- If you stay in the reader for the full duration, the email is marked as `\Seen` on the server
+- If you exit early (press `h`, `q`, `esc`, or `T`), the email **stays unread**
+
+**Configuration:**
+
+```toml
+[ui]
+mark_as_read_after_secs = 7   # wait 7 seconds (default)
+# mark_as_read_after_secs = 0   # immediate marking (no timer)
+# mark_as_read_after_secs = 10  # 10 seconds
+```
+
+Set to `0` for immediate marking (as soon as the body finishes loading). Set to any value in seconds to customize the delay.
+
+**UI behavior:**
+
+- The local inbox list updates immediately when an email is marked as read — no need to manually refresh
+- The unread indicator (`N`) disappears as soon as marking completes
+- Manual toggle with `n` still works to mark/unmark emails at any time
+
 ## Reply Indicator
 
 Emails you've replied to show a `·` dot in the inbox list. This uses the standard IMAP `\Answered` flag, so it works across clients — if you reply from webmail, neomd shows it too.

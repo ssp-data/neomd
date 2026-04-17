@@ -134,6 +134,7 @@ type UIConfig struct {
 	BgSyncInterval        int              `toml:"bg_sync_interval"`        // background sync interval in minutes (0 = disabled, default 5)
 	BulkProgressThreshold int              `toml:"bulk_progress_threshold"` // show progress counter for batches larger than this (default 10)
 	DraftBackupCount      int              `toml:"draft_backup_count"`      // rolling compose backups in ~/.cache/neomd/drafts/ (default 20, -1 = disabled)
+	MarkAsReadAfterSecs   int              `toml:"mark_as_read_after_secs"` // seconds in reader before marking as read (0 = immediate, default 7)
 }
 
 // TextSignature returns the text/markdown signature for editor and text/plain part.
@@ -360,10 +361,11 @@ func defaults() *Config {
 			Spam:        "Spam",
 		},
 		UI: UIConfig{
-			Theme:          "dark",
-			InboxCount:     200,
-			BgSyncInterval: 5,
-			Signature:      "*sent from [neomd](https://neomd.ssp.sh)*",
+			Theme:               "dark",
+			InboxCount:          200,
+			BgSyncInterval:      5,
+			MarkAsReadAfterSecs: 7,
+			Signature:           "*sent from [neomd](https://neomd.ssp.sh)*",
 		},
 	}
 }
