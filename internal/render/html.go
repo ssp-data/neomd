@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	callout "github.com/VojtaStruhar/goldmark-obsidian-callout"
+	callout "github.com/sspaeti/goldmark-obsidian-callout-for-neomd"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/renderer/html"

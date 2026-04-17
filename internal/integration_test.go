@@ -462,8 +462,17 @@ func TestIntegration_SignatureRenderedInHTML(t *testing.T) {
 	defer cli.Close()
 
 	subject := uniqueSubject("signature")
-	// Simulate a compose with signature (same format as editor.Prelude adds)
-	body := "Hi there,\n\nThis is the email body.\n\n" +
+	// Simulate a compose with signature and callouts (same format as editor.Prelude adds)
+	body := "Hi team,\n\n" +
+		"Here's the update on the project:\n\n" +
+		"> [!tip] Good News\n" +
+		"> We're ahead of schedule! The new feature shipped yesterday.\n\n" +
+		"> [!warning] Action Required\n" +
+		"> Please review the security audit by Friday.\n\n" +
+		"> [!note] note\n" +
+		"> Please read\n\n" +
+		"Thanks,\n" +
+		"Simon\n\n" +
 		"--  \n" +
 		"**Simon Späti**\n" +
 		"Data Engineer, [SSP Data](https://ssp.sh/)\n"
@@ -495,8 +504,31 @@ func TestIntegration_SignatureRenderedInHTML(t *testing.T) {
 	}
 
 	// Body content before signature should also be rendered
-	if !strings.Contains(rawHTML, "email body") {
+	if !strings.Contains(rawHTML, "update on the project") {
 		t.Errorf("HTML missing email body text, got: %s", truncate(rawHTML, 500))
+	}
+
+	// Callout rendering verification
+	if !strings.Contains(rawHTML, "callout callout-tip") {
+		t.Errorf("HTML missing tip callout class, got: %s", truncate(rawHTML, 800))
+	}
+	if !strings.Contains(rawHTML, "callout callout-warning") {
+		t.Errorf("HTML missing warning callout class, got: %s", truncate(rawHTML, 800))
+	}
+	if !strings.Contains(rawHTML, "callout callout-note") {
+		t.Errorf("HTML missing note callout class, got: %s", truncate(rawHTML, 800))
+	}
+	if !strings.Contains(rawHTML, "💡") { // Light bulb emoji for tip
+		t.Errorf("HTML missing tip callout icon, got: %s", truncate(rawHTML, 800))
+	}
+	if !strings.Contains(rawHTML, "⚠️") { // Warning sign emoji
+		t.Errorf("HTML missing warning callout icon, got: %s", truncate(rawHTML, 800))
+	}
+	if !strings.Contains(rawHTML, "Good News") {
+		t.Errorf("HTML missing custom callout title, got: %s", truncate(rawHTML, 800))
+	}
+	if !strings.Contains(rawHTML, "ahead of schedule") {
+		t.Errorf("HTML missing callout content, got: %s", truncate(rawHTML, 800))
 	}
 }
 
