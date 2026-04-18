@@ -1,5 +1,6 @@
 # Binary (root-level compiled binary only, not cmd/neomd/ source dir)
 /neomd
+/neomd-freebsd
 /neomd-android
 
 # Go build cache
