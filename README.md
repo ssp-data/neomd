@@ -75,11 +75,12 @@ flowchart TD
 *all colored boxes represent neomd folders*
 
 **Key principles:**
-- **Screener first**: Unknown senders never clutter your Inbox — they wait in ToScreen for classification
-- **One-time decision**: Once you classify a sender (`I/O/F/P`), all future emails from them are automatically routed
-- **GTD processing**: Emails in Inbox are processed once — if < 2 min, do it or keep it in inbox as doing *Next* otherwise move to Waiting, Someday, or Scheduled
-- **Minimal filing**: Only Archive when done; no complex folder hierarchies — use search to find old emails
-- **Separate contexts**: Feed for newsletters (read when you want), PaperTrail for receipts (search when needed)
+- **Screener first**: Unknown senders never clutter your Inbox — they wait in ToScreen for classification [[more](https://ssp-data.github.io/neomd/docs/screener/)]
+- **One-time decision**: Once you classify a sender (`I/O/F/P`), all future emails from them are automatically routed [[more](https://ssp-data.github.io/neomd/docs/screener/#how-classification-works)]
+- **GTD processing**: Emails in Inbox are processed once — if < 2 min, do it or keep it in inbox as doing *Next* otherwise move to Waiting, Someday, or Scheduled 
+- **Minimal filing**: Only Archive when done; no complex folder hierarchies — use search to find old emails 
+- **Separate contexts**: Feed for newsletters (read when you want), PaperTrail for receipts (search when needed) 
+- See full features list below.
 
 
 ## Screenshots
@@ -136,30 +137,30 @@ Or in Gmail:
 
 ## Features
 
-- **Write in Markdown, send beautifully** — compose in `$EDITOR` (defaults to `nvim`), send as `multipart/alternative`: raw Markdown as plain text + goldmark-rendered HTML so recipients get clickable links, bold, headers, inline code, and code blocks
-- **Pre-send review** — after closing the editor, review To/Subject/body before sending; attach files, save to Drafts, or re-open the editor — no accidental sends
-- **Attachments** — attach files from the pre-send screen via yazi (`a`); images appear inline in the email body, other files as attachments; also attach from within neovim via `<leader>a`; the reader lists all attachments (including inline images) and `1`–`9` downloads and opens them
-- **Link opener** — links in emails are numbered `[1]`-`[0]` in the reader header; press `space+digit` to open in `$BROWSER`
-- **CC, BCC, Reply-all** — optional Cc/Bcc fields (toggle with `ctrl+b`); `R` in the reader replies to sender + all CC recipients
-- **Emoji reactions** — press `ctrl+e` from inbox or reader to react with emoji (👍 ❤️ 😂 🎉 🙏 💯 👀 ✅); instant send with proper threading and quoted message history, no editor needed; reactions appear in conversation threads with neomd branding
-- **GitHub/Obsidian-style callouts in emails** — compose emails with callout syntax `> [!note]`, `> [!tip]`, `> [!warning]` for styled alert boxes in HTML emails; rendered with colored left borders, subtle backgrounds, and emoji icons 
-- **Drafts** — `d` in pre-send saves to Drafts (IMAP APPEND); `E` in the reader re-opens a draft as an editable compose; compose sessions are auto-backed up to `~/.cache/neomd/drafts/` so you never lose an unsent email (`:recover` to reopen)
-- **HTML signatures** — configure separate text and HTML signatures; text signature appears in editor and plain text part, HTML signature in HTML part only; use `[html-signature]` placeholder to control inclusion per-email
-- **Multiple From addresses** — define SMTP-only `[[senders]]` aliases (e.g. `s@ssp.sh` through an existing account); cycle with `ctrl+f` in compose and pre-send; sent copies always land in the Sent folder
-- **Undo** — `u` reverses the last move or delete (`x`, `A`, `M*`) using the UIDPLUS destination UID
-- **Search** — `/` filters loaded emails in-memory; `space /` or `:search` runs IMAP SEARCH across all folders (only fetching header capped at 100 per folder) with results in a temporary "Search" tab; supports `from:`, `subject:`, `to:` prefixes
-- **Address autocomplete** — To/Cc/Bcc fields autocomplete from screener lists; navigate with `ctrl+n`/`ctrl+p`, accept with `tab`
-- **Everything view** — `ge` or `:everything` shows the 50 most recent emails across all folders; find emails that were screened out, moved to spam, or otherwise hard to locate
-- **Threaded inbox** — related emails are grouped together in the inbox list with a vertical connector line (`│`/`╰`), Twitter-style; threads are detected via `In-Reply-To`/`Message-ID` headers with a subject+participant fallback; newest reply on top, root at bottom; `·` reply indicator shows which emails you've answered
-- **Conversation view** — `T` or `:thread` shows the full conversation across folders (Inbox, Sent, Archive, etc.) in a temporary tab with `[Folder]` prefix; see your replies alongside received emails
-- **Glamour reading** — incoming emails rendered as styled Markdown in the terminal
-- **HEY-style screener** — unknown senders land in `ToScreen`; press `I/O/F/P` to approve, block, mark as Feed, or mark as PaperTrail; reuses your existing `screened_in.txt` lists from neomutt
-- **Folder tabs** — Inbox, ToScreen, Feed, PaperTrail, Archive, Waiting, Someday, Scheduled, Sent, Trash, ScreenedOut
-- **Multi-select** — `m` marks emails, then batch-delete, move, or screen them all at once
-- **Auto-screen on load** — screener runs automatically every time the Inbox loads (startup, `R`); keeps your inbox clean without pressing `S` (configurable, on by default)
-- **Background sync** — while neomd is open, inbox is fetched and screened every 5 minutes in the background; interval configurable, set to `0` to disable
+- **Write in Markdown, send beautifully** — compose in `$EDITOR` (defaults to `nvim`), send as `multipart/alternative`: raw Markdown as plain text + goldmark-rendered HTML so recipients get clickable links, bold, headers, inline code, and code blocks [[more](https://ssp-data.github.io/neomd/docs/sending/)]
+- **Pre-send review** — after closing the editor, review To/Subject/body before sending; attach files, save to Drafts, or re-open the editor — no accidental sends [[more](https://ssp-data.github.io/neomd/docs/sending/#pre-send-review)]
+- **Attachments** — attach files from the pre-send screen via yazi (`a`); images appear inline in the email body, other files as attachments; also attach from within neovim via `<leader>a`; the reader lists all attachments (including inline images) and `1`–`9` downloads and opens them [[more](https://ssp-data.github.io/neomd/docs/sending/#attachments)]
+- **Link opener** — links in emails are numbered `[1]`-`[0]` in the reader header; press `space+digit` to open in `$BROWSER` [[more](https://ssp-data.github.io/neomd/docs/reading/#links)]
+- **CC, BCC, Reply-all** — optional Cc/Bcc fields (toggle with `ctrl+b`); `R` in the reader replies to sender + all CC recipients [[more](https://ssp-data.github.io/neomd/docs/sending/#cc-bcc-reply-all-and-forward)]
+- **Drafts** — `d` in pre-send saves to Drafts (IMAP APPEND); `E` in the reader re-opens a draft as an editable compose; compose sessions are auto-backed up to `~/.cache/neomd/drafts/` so you never lose an unsent email (`:recover` to reopen) [[more](https://ssp-data.github.io/neomd/docs/sending/#drafts)]
+- **HTML signatures** — configure separate text and HTML signatures; text signature appears in editor and plain text part, HTML signature in HTML part only; use `[html-signature]` placeholder to control inclusion per-email [[more](https://ssp-data.github.io/neomd/docs/configuration/#html-signatures)]
+- **Multiple From addresses** — define SMTP-only `[[senders]]` aliases (e.g. `s@ssp.sh` through an existing account); cycle with `ctrl+f` in compose and pre-send; sent copies always land in the Sent folder [[more](https://ssp-data.github.io/neomd/docs/sending/#multiple-from-addresses)]
+- **Undo** — `u` reverses the last move or delete (`x`, `A`, `M*`) using the UIDPLUS destination UID [[more](https://ssp-data.github.io/neomd/docs/keybindings/#multi-select--undo)]
+- **Search** — `/` filters loaded emails in-memory; `space /` or `:search` runs IMAP SEARCH across all folders (only fetching header capped at 100 per folder) with results in a temporary "Search" tab; supports `from:`, `subject:`, `to:` prefixes [[more](https://ssp-data.github.io/neomd/docs/keybindings/#leader-key-mappings-space-prefix)]
+- **Address autocomplete** — To/Cc/Bcc fields autocomplete from screener lists; navigate with `ctrl+n`/`ctrl+p`, accept with `tab` 
+- **Everything view** — `ge` or `:everything` shows the 50 most recent emails across all folders; find emails that were screened out, moved to spam, or otherwise hard to locate [[more](https://ssp-data.github.io/neomd/docs/keybindings/#folders)]
+- **Threaded inbox** — related emails are grouped together in the inbox list with a vertical connector line (`│`/`╰`), Twitter-style; threads are detected via `In-Reply-To`/`Message-ID` headers with a subject+participant fallback; newest reply on top, root at bottom; `·` reply indicator shows which emails you've answered [[more](https://ssp-data.github.io/neomd/docs/reading/#threaded-inbox)]
+- **Conversation view** — `T` or `:thread` shows the full conversation across folders (Inbox, Sent, Archive, etc.) in a temporary tab with `[Folder]` prefix; see your replies alongside received emails [[more](https://ssp-data.github.io/neomd/docs/reading/#conversation-view)]
+- **Glamour reading** — incoming emails rendered as styled Markdown in the terminal [[more](https://ssp-data.github.io/neomd/docs/reading/)]
+- **HEY-style screener** — unknown senders land in `ToScreen`; press `I/O/F/P` to approve, block, mark as Feed, or mark as PaperTrail; reuses your existing `screened_in.txt` lists from neomutt [[more](https://ssp-data.github.io/neomd/docs/screener/)]
+- **Folder tabs** — Inbox, ToScreen, Feed, PaperTrail, Archive, Waiting, Someday, Scheduled, Sent, Trash, ScreenedOut [[more](https://ssp-data.github.io/neomd/docs/keybindings/#folders)]
+- **Emoji reactions** — press `ctrl+e` from inbox or reader to react with emoji (👍 ❤️ 😂 🎉 🙏 💯 👀 ✅); instant send with proper threading and quoted message history, no editor needed; reactions appear in conversation threads with neomd branding [[more](https://ssp-data.github.io/neomd/docs/sending/#emoji-reactions)]
+- **GitHub/Obsidian-style callouts in emails** — compose emails with callout syntax `> [!note]`, `> [!tip]`, `> [!warning]` for styled alert boxes in HTML emails; rendered with colored left borders, subtle backgrounds, and emoji icons [[more](https://ssp-data.github.io/neomd/docs/sending/#callouts-admonition)]
+- **Multi-select** — `m` marks emails, then batch-delete, move, or screen them all at once [[more](https://ssp-data.github.io/neomd/docs/keybindings/#multi-select--undo)]
+- **Auto-screen on load** — screener runs automatically every time the Inbox loads (startup, `R`); keeps your inbox clean without pressing `S` (configurable, on by default) [[more](https://ssp-data.github.io/neomd/docs/screener/#auto-screen-and-background-sync)]
+- **Background sync** — while neomd is open, inbox is fetched and screened every 5 minutes in the background; interval configurable, set to `0` to disable [[more](https://ssp-data.github.io/neomd/docs/screener/#auto-screen-and-background-sync)]
 - **Kanagawa theme** — colors from the [kanagawa.nvim](https://github.com/rebelot/kanagawa.nvim) palette
-- **IMAP + SMTP** — direct connection via RFC 6851 MOVE, no local sync daemon required and keeps it in sync if you use it on mobile or different device
+- **IMAP + SMTP** — direct connection via RFC 6851 MOVE, no local sync daemon required and keeps it in sync if you use it on mobile or different device [[more](https://ssp-data.github.io/neomd/docs/configuration/)]
 
 ## Install
 
