@@ -12,6 +12,7 @@ require (
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/sspaeti/goldmark-obsidian-callout-for-neomd v0.1.1
 	github.com/yuin/goldmark v1.7.8
 	golang.org/x/oauth2 v0.35.0
