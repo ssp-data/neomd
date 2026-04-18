@@ -6,14 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - `make build` — compile to `./neomd` (also regenerates `docs/keybindings.md` from `internal/ui/keys.go`)
 - `make run ARGS="..."` — build and run
-- `make install` — install to `~/.local/bin/neomd`
-- `make test` — `go test ./...`
+- `make install` — install to `~/.local/bin/neomd` (default target)
+- `make test` — `go test ./...` (unit tests, no network)
+- `make test-integration` — integration tests against real IMAP/SMTP (requires demo account env vars)
 - `make vet` / `make fmt` / `make tidy`
-- `make docs` — regenerate keybindings doc from `internal/ui/keys.go` (runs as part of `build`)
+- `make docs` — regenerate keybindings doc from `internal/ui/keys.go` (runs as part of `build`) and sync README to docs site
+- `make docs-serve` — serve Hugo docs locally at http://localhost:1313
+- `make docs-build` — build Hugo docs site to `docs/public/`
 - `make send-test TO=addr` — run `./cmd/sendtest` to send a test email
 - `make demo` / `make demo-hp` — run with demo configs at `~/.config/neomd-demo/` and `~/.config/neomd-demo-hostpoint/`
 - `make benchmark` — IMAP latency benchmark (requires `IMAP_PASS_SIMU`, `IMAP_APPPASS_GMAIL_NEOMD` env vars)
 - `make android` — cross-compile ARM64 for Termux
+- `make release VERSION=v0.1.0` — tag and push a new release (runs docs build, GitHub Actions handles publishing)
 - Single test: `go test ./internal/smtp -run TestBuildMessage`
 
 Requires Go 1.22+. Binary version is injected via `-ldflags -X main.version=$(git describe)`.
@@ -51,7 +55,20 @@ Folder operations prefer RFC 6851 MOVE; `u` undo uses UIDPLUS destination UIDs c
 
 **Screener** (`internal/screener/`) reads line-based lists of email addresses from paths defined in config. Default paths are under `~/.config/neomd/lists/`. Classification (`I`/`O`/`F`/`P`) appends to the corresponding list file and moves the message to the matching folder. Auto-screening runs on Inbox load and on a 5-minute background timer (`ui.background_sync_interval`).
 
-**Config** (`internal/config/`) — TOML at `~/.config/neomd/config.toml`, auto-created with placeholders. Supports multiple `[[accounts]]` and SMTP-only `[[senders]]` aliases (cycled with `ctrl+f` in compose/pre-send). `-config PATH` flag overrides location.
+**Config** (`internal/config/`) — TOML at `~/.config/neomd/config.toml`, auto-created with placeholders. Supports multiple `[[accounts]]` and SMTP-only `[[senders]]` aliases (cycled with `ctrl+f` in compose/pre-send). OAuth2 authentication supported via `oauth2_client_id`, `oauth2_client_secret`, `oauth2_issuer_url`, `oauth2_scopes` fields. `-config PATH` flag overrides location.
+
+**Documentation** — Hugo site in `docs/` served at https://ssp-data.github.io/neomd/. README.md is synced to `docs/content/overview.md` via `scripts/sync-readme-to-docs.sh`. Keybindings are auto-generated from `internal/ui/keys.go` via `cmd/docs/main.go` — never hand-edit the markdown tables.
+
+**Package structure:**
+- `internal/ui/` — bubbletea TUI: model.go (state machine), inbox.go, reader.go, compose.go, keys.go (single source of truth for keybindings)
+- `internal/imap/` — IMAP client wrapper using go-imap/v2
+- `internal/smtp/` — email sender, MIME builder (`BuildMessage` is the main entry point)
+- `internal/screener/` — HEY-style sender classification
+- `internal/config/` — TOML config parsing
+- `internal/editor/` — spawns $EDITOR with neomd-*.md temp files
+- `internal/render/` — glamour-based Markdown rendering for terminal
+- `internal/mailtls/` — TLS/STARTTLS connection helpers
+- `internal/oauth2/` — OAuth2 flow for Gmail/Office365
 
 ## Project-Specific Conventions
 
