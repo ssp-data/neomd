@@ -4,7 +4,7 @@ INSTALL := $(HOME)/.local/bin
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: build run install clean test test-integration send-test vet fmt tidy release docs help check-go demo demo-reset demo-hp demo-hp-reset benchmark
+.PHONY: build run install daemon clean test test-integration send-test vet fmt tidy release docs help check-go demo demo-reset demo-hp demo-hp-reset benchmark
 
 
 .DEFAULT_GOAL := install
@@ -29,7 +29,7 @@ check-go:
 ## build: compile ./neomd (version from git tag)
 build: check-go docs
 	go build $(LDFLAGS) -o $(BINARY) $(CMD)
-
+	CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -o neomd-freebsd ./cmd/neomd   # Build static binary for FreeBSD
 ## run: build and run
 run: build
 	./$(BINARY) $(ARGS)
@@ -39,6 +39,9 @@ install: build
 	install -Dm755 $(BINARY) $(INSTALL)/$(BINARY)
 	@echo "Installed to $(INSTALL)/$(BINARY)"
 
+## daemon: run in headless daemon mode
+daemon: build
+	./$(BINARY) --headless
 
 ## demo: run neomd with demo account (~/.config/neomd-demo/config.toml)
 demo: build
@@ -139,6 +142,9 @@ docs-build:
 ## docs-clean: remove generated Hugo files
 docs-clean:
 	$(MAKE) -C docs clean
+
+sync-headless:
+	scp neomd-freebsd ti:~/neomd
 
 ## help: print this list
 help:

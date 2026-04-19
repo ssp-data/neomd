@@ -159,6 +159,7 @@ Or in Gmail:
 - **Multi-select** — `m` marks emails, then batch-delete, move, or screen them all at once [[more](https://ssp-data.github.io/neomd/docs/keybindings/#multi-select--undo)]
 - **Auto-screen on load** — screener runs automatically every time the Inbox loads (startup, `R`); keeps your inbox clean without pressing `S` (configurable, on by default) [[more](https://ssp-data.github.io/neomd/docs/screener/#auto-screen-and-background-sync)]
 - **Background sync** — while neomd is open, inbox is fetched and screened every 5 minutes in the background; interval configurable, set to `0` to disable [[more](https://ssp-data.github.io/neomd/docs/screener/#auto-screen-and-background-sync)]
+- **Headless daemon mode** — run `neomd --headless` on a server to continuously screen emails in the background without the TUI; watches screener list files for changes via Syncthing; emails are auto-screened every `bg_sync_interval` minutes so mobile apps see correctly filtered IMAP folders; perfect for running on a NAS while using the TUI on laptop/Android [[more](https://ssp-data.github.io/neomd/docs/configurations/headless/)]
 - **Kanagawa theme** — colors from the [kanagawa.nvim](https://github.com/rebelot/kanagawa.nvim) palette
 - **IMAP + SMTP** — direct connection via RFC 6851 MOVE, no local sync daemon required and keeps it in sync if you use it on mobile or different device [[more](https://ssp-data.github.io/neomd/docs/configuration/)]
 

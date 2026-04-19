@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sspaeti/neomd/internal/config"
+	"github.com/sspaeti/neomd/internal/daemon"
 	goIMAP "github.com/sspaeti/neomd/internal/imap"
 	"github.com/sspaeti/neomd/internal/oauth2"
 	"github.com/sspaeti/neomd/internal/screener"
@@ -23,6 +24,7 @@ var version = "dev"
 func main() {
 	cfgPath := flag.String("config", "", "path to config.toml (default: ~/.config/neomd/config.toml)")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	headless := flag.Bool("headless", false, "run in headless daemon mode (no TUI)")
 	flag.Parse()
 
 	if *showVersion {
@@ -119,17 +121,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	ui.Version = version
-	model := ui.New(cfg, imapClients, sc)
+	// Fork: run either headless daemon or TUI
+	if *headless {
+		// Headless daemon mode: run background screening loop
+		d := daemon.New(*cfg, imapClients[0], sc)
+		if err := d.Run(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "neomd: daemon error: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		// TUI mode: run interactive interface
+		ui.Version = version
+		model := ui.New(cfg, imapClients, sc)
 
-	p := tea.NewProgram(
-		model,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "neomd: %v\n", err)
-		os.Exit(1)
+		p := tea.NewProgram(
+			model,
+			tea.WithAltScreen(),
+			tea.WithMouseCellMotion(),
+		)
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "neomd: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }
 

@@ -995,20 +995,9 @@ func writeAttachmentsTemp(files []imap.Attachment) ([]string, error) {
 	return paths, nil
 }
 
+// validateScreenerSafety wraps the shared screener validation logic.
 func (m Model) validateScreenerSafety() error {
-	dests := map[string]string{
-		"ToScreen":    m.cfg.Folders.ToScreen,
-		"ScreenedOut": m.cfg.Folders.ScreenedOut,
-		"Feed":        m.cfg.Folders.Feed,
-		"PaperTrail":  m.cfg.Folders.PaperTrail,
-		"Spam":        m.cfg.Folders.Spam,
-	}
-	for name, folder := range dests {
-		if folder != "" && folder == m.cfg.Folders.Trash {
-			return fmt.Errorf("unsafe folder config: %s points to Trash (%s); refusing to screen until config is fixed", name, folder)
-		}
-	}
-	return nil
+	return screener.ValidateScreenerSafety(m.cfg.Folders)
 }
 
 func (m Model) inboxPageStep() int {
@@ -1272,30 +1261,14 @@ func (m Model) batchToggleSeenCmd(emails []imap.Email) tea.Cmd {
 // lookups) and returns planned moves. emails must live at least as long as the
 // returned moves (pointers into the slice are stored).
 func (m Model) classifyForScreen(emails []imap.Email) []autoScreenMove {
-	if m.validateScreenerSafety() != nil {
+	screenMoves, err := screener.ClassifyForScreen(m.screener, emails, m.cfg.Folders)
+	if err != nil {
 		return nil
 	}
-	inboxFolder := m.cfg.Folders.Inbox
-	var moves []autoScreenMove
-	for i := range emails {
-		e := &emails[i]
-		cat := m.screener.Classify(e.From)
-		var dst string
-		switch cat {
-		case screener.CategorySpam:
-			dst = m.cfg.Folders.Spam
-		case screener.CategoryScreenedOut:
-			dst = m.cfg.Folders.ScreenedOut
-		case screener.CategoryFeed:
-			dst = m.cfg.Folders.Feed
-		case screener.CategoryPaperTrail:
-			dst = m.cfg.Folders.PaperTrail
-		case screener.CategoryToScreen:
-			dst = m.cfg.Folders.ToScreen
-		}
-		if dst != "" && dst != inboxFolder {
-			moves = append(moves, autoScreenMove{email: e, dst: dst})
-		}
+	// Convert screener.ScreenMove to UI autoScreenMove
+	moves := make([]autoScreenMove, len(screenMoves))
+	for i, sm := range screenMoves {
+		moves[i] = autoScreenMove{email: sm.Email, dst: sm.Dst}
 	}
 	return moves
 }
