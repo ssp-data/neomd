@@ -145,34 +145,48 @@ func (s *Screener) ClassifyDebug(from string) (Category, string) {
 	return s.Classify(from), addr
 }
 
-// Approve adds addr to screened_in.txt and removes it from screened_out/spam.
+// Approve adds addr to screened_in.txt and removes it from all conflicting lists.
 func (s *Screener) Approve(from string) error {
 	_ = s.removeFromList(s.cfg.ScreenedOut, s.screenedOut, from)
+	_ = s.removeFromList(s.cfg.Feed, s.feed, from)
+	_ = s.removeFromList(s.cfg.PaperTrail, s.paperTrail, from)
 	_ = s.removeFromList(s.cfg.Spam, s.spam, from)
 	return s.addToList(s.cfg.ScreenedIn, s.screenedIn, from)
 }
 
-// Block adds addr to screened_out.txt and removes it from screened_in/spam.
+// Block adds addr to screened_out.txt and removes it from all conflicting lists.
 func (s *Screener) Block(from string) error {
 	_ = s.removeFromList(s.cfg.ScreenedIn, s.screenedIn, from)
+	_ = s.removeFromList(s.cfg.Feed, s.feed, from)
+	_ = s.removeFromList(s.cfg.PaperTrail, s.paperTrail, from)
 	_ = s.removeFromList(s.cfg.Spam, s.spam, from)
 	return s.addToList(s.cfg.ScreenedOut, s.screenedOut, from)
 }
 
-// MarkSpam adds addr to spam.txt and removes it from screened_in/screened_out.
+// MarkSpam adds addr to spam.txt and removes it from all conflicting lists.
 func (s *Screener) MarkSpam(from string) error {
 	_ = s.removeFromList(s.cfg.ScreenedIn, s.screenedIn, from)
 	_ = s.removeFromList(s.cfg.ScreenedOut, s.screenedOut, from)
+	_ = s.removeFromList(s.cfg.Feed, s.feed, from)
+	_ = s.removeFromList(s.cfg.PaperTrail, s.paperTrail, from)
 	return s.addToList(s.cfg.Spam, s.spam, from)
 }
 
-// MarkFeed adds addr to feed.txt and updates the in-memory set.
+// MarkFeed adds addr to feed.txt and removes it from all conflicting lists.
 func (s *Screener) MarkFeed(from string) error {
+	_ = s.removeFromList(s.cfg.ScreenedIn, s.screenedIn, from)
+	_ = s.removeFromList(s.cfg.ScreenedOut, s.screenedOut, from)
+	_ = s.removeFromList(s.cfg.PaperTrail, s.paperTrail, from)
+	_ = s.removeFromList(s.cfg.Spam, s.spam, from)
 	return s.addToList(s.cfg.Feed, s.feed, from)
 }
 
-// MarkPaperTrail adds addr to papertrail.txt and updates the in-memory set.
+// MarkPaperTrail adds addr to papertrail.txt and removes it from all conflicting lists.
 func (s *Screener) MarkPaperTrail(from string) error {
+	_ = s.removeFromList(s.cfg.ScreenedIn, s.screenedIn, from)
+	_ = s.removeFromList(s.cfg.ScreenedOut, s.screenedOut, from)
+	_ = s.removeFromList(s.cfg.Feed, s.feed, from)
+	_ = s.removeFromList(s.cfg.Spam, s.spam, from)
 	return s.addToList(s.cfg.PaperTrail, s.paperTrail, from)
 }
 

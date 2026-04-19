@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -422,5 +423,171 @@ func TestFilePermissions(t *testing.T) {
 		if perm := info.Mode().Perm(); perm != 0600 {
 			t.Errorf("removeFromList file perm = %04o, want 0600", perm)
 		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Cross-list cleanup regression test
+// ---------------------------------------------------------------------------
+
+func TestCrossListCleanup_Reclassification(t *testing.T) {
+	makeCfg := func(dir string) Config {
+		return Config{
+			ScreenedIn:  filepath.Join(dir, "screened_in.txt"),
+			ScreenedOut: filepath.Join(dir, "screened_out.txt"),
+			Feed:        filepath.Join(dir, "feed.txt"),
+			PaperTrail:  filepath.Join(dir, "papertrail.txt"),
+			Spam:        filepath.Join(dir, "spam.txt"),
+		}
+	}
+
+	verifyOnlyInList := func(t *testing.T, s *Screener, cfg Config, addr string, expectedCat Category) {
+		t.Helper()
+		// Verify in-memory classification
+		if got := s.Classify(addr); got != expectedCat {
+			t.Errorf("Classify(%q) = %v, want %v", addr, got, expectedCat)
+		}
+
+		// Verify on-disk: email should exist in ONLY the expected file
+		files := map[Category]string{
+			CategoryInbox:       cfg.ScreenedIn,
+			CategoryScreenedOut: cfg.ScreenedOut,
+			CategoryFeed:        cfg.Feed,
+			CategoryPaperTrail:  cfg.PaperTrail,
+			CategorySpam:        cfg.Spam,
+		}
+
+		for cat, path := range files {
+			data, err := os.ReadFile(path)
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatalf("ReadFile(%s): %v", path, err)
+			}
+			contains := false
+			if len(data) > 0 {
+				for _, line := range strings.Split(string(data), "\n") {
+					if normalise(line) == normalise(addr) {
+						contains = true
+						break
+					}
+				}
+			}
+
+			if cat == expectedCat {
+				if !contains {
+					t.Errorf("%s should contain %q but doesn't; file contents: %q", path, addr, data)
+				}
+			} else {
+				if contains {
+					t.Errorf("%s should NOT contain %q but does; file contents: %q", path, addr, data)
+				}
+			}
+		}
+	}
+
+	t.Run("Feed to ScreenedOut removes from feed.txt", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := makeCfg(dir)
+		addr := "reclassify@example.com"
+
+		s, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Start: mark as Feed
+		if err := s.MarkFeed(addr); err != nil {
+			t.Fatalf("MarkFeed: %v", err)
+		}
+		verifyOnlyInList(t, s, cfg, addr, CategoryFeed)
+
+		// Reclassify: mark as ScreenedOut
+		if err := s.Block(addr); err != nil {
+			t.Fatalf("Block: %v", err)
+		}
+		verifyOnlyInList(t, s, cfg, addr, CategoryScreenedOut)
+	})
+
+	t.Run("PaperTrail to Feed removes from papertrail.txt", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := makeCfg(dir)
+		addr := "newsletter@example.com"
+
+		s, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Start: mark as PaperTrail
+		if err := s.MarkPaperTrail(addr); err != nil {
+			t.Fatalf("MarkPaperTrail: %v", err)
+		}
+		verifyOnlyInList(t, s, cfg, addr, CategoryPaperTrail)
+
+		// Reclassify: mark as Feed
+		if err := s.MarkFeed(addr); err != nil {
+			t.Fatalf("MarkFeed: %v", err)
+		}
+		verifyOnlyInList(t, s, cfg, addr, CategoryFeed)
+	})
+
+	t.Run("Full reclassification chain", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := makeCfg(dir)
+		addr := "chain@example.com"
+
+		s, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Chain: Inbox → Feed → PaperTrail → ScreenedOut → Spam → Inbox
+		steps := []struct {
+			fn  func(string) error
+			cat Category
+		}{
+			{s.Approve, CategoryInbox},
+			{s.MarkFeed, CategoryFeed},
+			{s.MarkPaperTrail, CategoryPaperTrail},
+			{s.Block, CategoryScreenedOut},
+			{s.MarkSpam, CategorySpam},
+			{s.Approve, CategoryInbox},
+		}
+
+		for i, step := range steps {
+			if err := step.fn(addr); err != nil {
+				t.Fatalf("step %d: %v", i, err)
+			}
+			verifyOnlyInList(t, s, cfg, addr, step.cat)
+		}
+	})
+
+	t.Run("Reclassification persists after reload", func(t *testing.T) {
+		dir := t.TempDir()
+		cfg := makeCfg(dir)
+		addr := "persist@example.com"
+
+		s, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Start in Feed
+		if err := s.MarkFeed(addr); err != nil {
+			t.Fatal(err)
+		}
+
+		// Reclassify to ScreenedOut
+		if err := s.Block(addr); err != nil {
+			t.Fatal(err)
+		}
+
+		// Reload from disk
+		s2, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Verify cleanup persisted
+		verifyOnlyInList(t, s2, cfg, addr, CategoryScreenedOut)
 	})
 }
