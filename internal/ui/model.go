@@ -1963,23 +1963,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.bgFetchInboxCmd(), m.scheduleBgSync())
 
 	case bgInboxFetchedMsg:
-		m.bgSyncInProgress = false // clear flag regardless of success/failure
+		// Keep bgSyncInProgress set until the entire fetch-and-screen cycle completes.
+		// Clear it only on early-exit paths where no follow-up work is scheduled.
 		if msg.emails == nil {
 			// Error case (network down, etc.) - silently skip until next tick
+			m.bgSyncInProgress = false
 			return m, nil
 		}
 		if err := m.validateScreenerSafety(); err != nil {
 			m.status = err.Error()
 			m.isError = true
+			m.bgSyncInProgress = false
 			return m, nil
 		}
 		moves := m.classifyForScreen(msg.emails)
 		if len(moves) == 0 {
+			// No moves needed - background sync is complete
+			m.bgSyncInProgress = false
 			return m, nil
 		}
+		// bgSyncInProgress stays set - will be cleared in bgScreenDoneMsg
 		return m, m.bgExecAutoScreenCmd(moves)
 
 	case bgScreenDoneMsg:
+		// Background sync cycle complete - clear the guard flag
+		m.bgSyncInProgress = false
 		if msg.moved > 0 {
 			if msg.moved < msg.total {
 				m.status = fmt.Sprintf("Background sync: screened %d/%d — press R to retry", msg.moved, msg.total)
@@ -3899,8 +3907,15 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 
 	cc := ""
 	if replyAll {
-		// Collect original To + CC, exclude all own addresses
+		// Collect original To + CC, exclude all own addresses.
+		// Build exclusion set from both account User (IMAP login) and From (send-as)
+		// to handle setups where they differ (e.g., user123@provider vs simon@domain).
 		ownAddrs := make(map[string]bool)
+		// Add all account User addresses (IMAP login)
+		for _, acc := range m.accounts {
+			ownAddrs[strings.ToLower(extractEmailAddr(acc.User))] = true
+		}
+		// Add all From addresses (accounts + sender aliases)
 		for _, from := range m.presendFroms() {
 			ownAddrs[strings.ToLower(extractEmailAddr(from))] = true
 		}

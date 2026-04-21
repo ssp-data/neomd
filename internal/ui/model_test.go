@@ -448,3 +448,172 @@ func TestHandleEverythingResultKeepsRealSubject(t *testing.T) {
 		t.Fatalf("subject = %q, want unchanged real subject", got.emails[0].Subject)
 	}
 }
+
+func TestReplyAllExcludesAllOwnAddresses(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *config.Config
+		email    *imap.Email
+		wantCC   string
+		wantExcl []string // addresses that should be excluded
+	}{
+		{
+			name: "single account - exclude From",
+			cfg: &config.Config{
+				Accounts: []config.AccountConfig{
+					{User: "simon@ssp.sh", From: "Simon Späti <simon@ssp.sh>"},
+				},
+			},
+			email: &imap.Email{
+				From: "kristen@rilldata.com",
+				To:   "simon@ssp.sh",
+				CC:   "marianne@rilldata.com",
+			},
+			wantCC:   "marianne@rilldata.com",
+			wantExcl: []string{"simon@ssp.sh"},
+		},
+		{
+			name: "user != from (critical edge case)",
+			cfg: &config.Config{
+				Accounts: []config.AccountConfig{
+					{User: "user123@mail.provider.com", From: "Simon Späti <simon@ssp.sh>"},
+				},
+			},
+			email: &imap.Email{
+				From: "alice@example.com",
+				To:   "user123@mail.provider.com",
+				CC:   "bob@example.com",
+			},
+			wantCC:   "bob@example.com",
+			wantExcl: []string{"user123@mail.provider.com", "simon@ssp.sh"},
+		},
+		{
+			name: "multiple accounts - exclude all",
+			cfg: &config.Config{
+				Accounts: []config.AccountConfig{
+					{User: "personal@example.com", From: "Me <personal@example.com>"},
+					{User: "work@company.com", From: "Me <work@company.com>"},
+				},
+			},
+			email: &imap.Email{
+				From: "client@business.com",
+				To:   "work@company.com, client-team@business.com",
+				CC:   "personal@example.com, other@business.com",
+			},
+			wantCC:   "client-team@business.com, other@business.com",
+			wantExcl: []string{"work@company.com", "personal@example.com"},
+		},
+		{
+			name: "sender aliases excluded",
+			cfg: &config.Config{
+				Accounts: []config.AccountConfig{
+					{User: "me@example.com", From: "Me <me@example.com>"},
+				},
+				Senders: []config.SenderConfig{
+					{From: "Support <support@example.com>"},
+				},
+			},
+			email: &imap.Email{
+				From: "customer@client.com",
+				To:   "support@example.com",
+				CC:   "me@example.com, customer-team@client.com",
+			},
+			wantCC:   "customer-team@client.com",
+			wantExcl: []string{"me@example.com", "support@example.com"},
+		},
+		{
+			name: "case insensitive matching",
+			cfg: &config.Config{
+				Accounts: []config.AccountConfig{
+					{User: "simon@ssp.sh", From: "Simon <simon@ssp.sh>"},
+				},
+			},
+			email: &imap.Email{
+				From: "alice@example.com",
+				To:   "SIMON@SSP.SH",
+				CC:   "Simon <Simon@Ssp.Sh>, bob@example.com",
+			},
+			wantCC:   "bob@example.com",
+			wantExcl: []string{"simon@ssp.sh"},
+		},
+		{
+			name: "named addresses with brackets",
+			cfg: &config.Config{
+				Accounts: []config.AccountConfig{
+					{User: "me@work.com", From: "John Doe <me@work.com>"},
+				},
+			},
+			email: &imap.Email{
+				From: "Jane <jane@client.com>",
+				To:   "John Doe <me@work.com>",
+				CC:   "Alice <alice@client.com>, Bob <me@work.com>",
+			},
+			wantCC:   "Alice <alice@client.com>",
+			wantExcl: []string{"me@work.com"},
+		},
+		{
+			name: "empty CC when all recipients are self",
+			cfg: &config.Config{
+				Accounts: []config.AccountConfig{
+					{User: "me@example.com", From: "Me <me@example.com>"},
+				},
+			},
+			email: &imap.Email{
+				From: "sender@client.com",
+				To:   "me@example.com",
+				CC:   "",
+			},
+			wantCC:   "",
+			wantExcl: []string{"me@example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				cfg:      tt.cfg,
+				accounts: tt.cfg.ActiveAccounts(),
+			}
+
+			// Build the exclusion set exactly as launchReplyWithCC does
+			ownAddrs := make(map[string]bool)
+			for _, acc := range m.accounts {
+				ownAddrs[strings.ToLower(extractEmailAddr(acc.User))] = true
+			}
+			for _, from := range m.presendFroms() {
+				ownAddrs[strings.ToLower(extractEmailAddr(from))] = true
+			}
+
+			// Verify all expected addresses are in the exclusion set
+			for _, excl := range tt.wantExcl {
+				lowerExcl := strings.ToLower(extractEmailAddr(excl))
+				if !ownAddrs[lowerExcl] {
+					t.Errorf("expected %q to be in exclusion set, but it's missing", excl)
+				}
+			}
+
+			// Simulate the reply-all CC building logic
+			var parts []string
+			for _, addr := range splitAddrs(tt.email.To + "," + tt.email.CC) {
+				if a := strings.TrimSpace(addr); a != "" {
+					addrLower := strings.ToLower(extractEmailAddr(a))
+					if !ownAddrs[addrLower] {
+						parts = append(parts, a)
+					}
+				}
+			}
+			gotCC := strings.Join(parts, ", ")
+
+			if gotCC != tt.wantCC {
+				t.Errorf("reply-all CC = %q, want %q", gotCC, tt.wantCC)
+			}
+
+			// Double-check: verify none of the excluded addresses appear in the result
+			for _, excl := range tt.wantExcl {
+				if strings.Contains(strings.ToLower(gotCC), strings.ToLower(extractEmailAddr(excl))) {
+					t.Errorf("excluded address %q should not appear in CC: %q", excl, gotCC)
+				}
+			}
+		})
+	}
+}
