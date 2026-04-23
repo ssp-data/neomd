@@ -23,7 +23,7 @@ E.g. **bold** or _italic_.
 this is a text before a h3.
 
 here's an image in-line:
-[attach] /home/sspaeti/git/email/neomd/images/overview-email-feed.png
+[attach] /home/sspaeti/git/email/neomd/docs/static/images/overview-email-feed.png
 
 ### H3 header
 
@@ -78,7 +78,7 @@ func main() {
 
 	for _, to := range recipients {
 		fmt.Printf("sending to %s via %s...\n", to, acc.SMTP)
-		attachments := []string{"images/overview-email-feed.png"}
+		attachments := []string{"docs/static/images/overview-email-feed.png"}
 		if err := smtp.Send(smtpCfg, to, "", "", "test neomd HTML rendering", testBody, attachments); err != nil {
 			fmt.Fprintf(os.Stderr, "sendtest: %s: %v\n", to, err)
 			os.Exit(1)

@@ -82,13 +82,13 @@ flowchart TD
 ### Overview: List-View
 
 Feed view with all Newsletters - also workflow with differnt tabs and unread counter only for certain tabs (not all):
-![neomd](images/overview-email-feed.png)
+![neomd](docs/static/images/overview-email-feed.png)
 
 ### Reading Panel
 
 Reading an email with Markdown 💙:
 
-![neomd](images/reading-email.png)
+![neomd](docs/static/images/reading-email.png)
 
 ### Sent emails
 This is the markdown sent:
@@ -116,10 +116,10 @@ Best regards
 
 Which looks like this:
 
-![neomd](images/sent-email.png)
+![neomd](docs/static/images/sent-email.png)
 
 Or in Gmail:
-![neomd](images/gmail.png)
+![neomd](docs/static/images/gmail.png)
 
 
 ### Video
