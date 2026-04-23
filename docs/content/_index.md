@@ -9,23 +9,24 @@ toc: false
   A minimal terminal email client&nbsp;<br class="sm:hx-block hx-hidden" />for people who read & write in Markdown
 {{< /hextra/hero-headline >}}
 </div>
-
+<br>
 <div class="hx-mb-12">
 {{< hextra/hero-subtitle >}}
   Compose in Neovim, navigate with Vim motions, screen emails like HEY,&nbsp;<br class="sm:hx-block hx-hidden" />process your inbox with GTD — all from the terminal
 {{< /hextra/hero-subtitle >}}
 </div>
-
+<br>
 <div class="hx-mb-6">
 {{< hextra/hero-button text="Overview and Philosophy" link="docs" >}}
 </div>
-
+<br>
 <div class="hx-mt-6"></div>
+<br>
 
 <div class="hx-mt-12 hx-mb-8">
 <h2 class="hx-text-4xl hx-font-bold hx-tracking-tight hx-text-gray-900 dark:hx-text-gray-50">What Makes neomd Different?</h2>
 </div>
-
+<br>
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
     title="HEY-Style Screener"
@@ -75,6 +76,7 @@ YouTube rundown of most features:
 [![neomd demo](https://img.youtube.com/vi/lpmHqIrCC-w/maxresdefault.jpg)](https://youtu.be/8aKkldYLWV8)
 
 
+<br>
 <div class="hx-mt-12 hx-mb-8">
 <h2 class="hx-text-4xl hx-font-bold hx-tracking-tight hx-text-gray-900 dark:hx-text-gray-50">Documentation</h2>
 </div>
@@ -86,6 +88,7 @@ YouTube rundown of most features:
   {{< card link="docs/screener" title="Screener Workflow" subtitle="How to classify emails, bulk operations, and screener lists" >}}
   {{< card link="docs/reading" title="Reading Emails" subtitle="Navigation, images, links, attachments, threading" >}}
   {{< card link="docs/sending" title="Sending Emails" subtitle="Compose, attachments, CC/BCC, drafts, HTML signatures" >}}
+  {{< card link="docs/integrations/" title="Integrations" subtitle="Integrations with Newsletter such as Listmonk" >}}
   {{< card link="docs/faq" title="FAQ" subtitle="Frequently asked questions" >}}
 {{< /cards >}}
 

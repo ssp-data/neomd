@@ -67,8 +67,12 @@ Folder operations prefer RFC 6851 MOVE; `u` undo uses UIDPLUS destination UIDs c
 - `internal/config/` — TOML config parsing
 - `internal/editor/` — spawns $EDITOR with neomd-*.md temp files
 - `internal/render/` — glamour-based Markdown rendering for terminal
+- `internal/daemon/` — headless background mode (`--headless`): screener loop without TUI
 - `internal/mailtls/` — TLS/STARTTLS connection helpers
 - `internal/oauth2/` — OAuth2 flow for Gmail/Office365
+- `internal/integration_test.go` — integration tests (live IMAP/SMTP); lives at package level, not in a sub-package
+
+**CI:** GitHub Actions runs `go test ./...` + `go vet ./...` on every PR.
 
 ## Project-Specific Conventions
 

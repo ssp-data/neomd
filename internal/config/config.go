@@ -201,6 +201,28 @@ type Config struct {
 	// Format: "addr@example.com" or "Name <addr@example.com>". Shown in the
 	// composer and pre-send review so it's never a silent BCC.
 	AutoBCC string `toml:"auto_bcc"`
+
+	Listmonk ListmonkConfig `toml:"listmonk"`
+}
+
+// ListmonkTrigger maps a virtual email address to Listmonk list IDs.
+type ListmonkTrigger struct {
+	Address string `toml:"address"`
+	ListIDs []int  `toml:"list_ids"`
+}
+
+// ListmonkConfig holds settings for the Listmonk newsletter integration.
+type ListmonkConfig struct {
+	URL          string            `toml:"url"`
+	APIUser      string            `toml:"api_user"`
+	APIToken     string            `toml:"api_token"`
+	DelayMinutes int               `toml:"delay_minutes"`
+	Triggers     []ListmonkTrigger `toml:"triggers"`
+}
+
+// ListmonkEnabled returns true if Listmonk integration is configured.
+func (c *Config) ListmonkEnabled() bool {
+	return c.Listmonk.URL != "" && len(c.Listmonk.Triggers) > 0
 }
 
 // ActiveAccounts returns the list of configured accounts.
@@ -323,6 +345,8 @@ func Load(path string) (*Config, error) {
 	cfg.Account.Password = expandEnv(cfg.Account.Password)
 	cfg.Account.User = expandEnv(cfg.Account.User)
 	cfg.Account.TLSCertFile = expandPath(expandEnv(cfg.Account.TLSCertFile))
+
+	cfg.Listmonk.APIToken = expandEnv(cfg.Listmonk.APIToken)
 
 	return cfg, nil
 }

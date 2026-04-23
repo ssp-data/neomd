@@ -21,6 +21,7 @@ import (
 	"github.com/sspaeti/neomd/internal/config"
 	"github.com/sspaeti/neomd/internal/editor"
 	"github.com/sspaeti/neomd/internal/imap"
+	"github.com/sspaeti/neomd/internal/listmonk"
 	"github.com/sspaeti/neomd/internal/render"
 	"github.com/sspaeti/neomd/internal/screener"
 	"github.com/sspaeti/neomd/internal/smtp"
@@ -56,6 +57,7 @@ type (
 	sendDoneMsg struct {
 		err           error
 		warning       string
+		info          string // non-error informational message (e.g. Listmonk success)
 		replyToUID    uint32 // set \Answered on this email after send
 		replyToFolder string
 	}
@@ -792,6 +794,39 @@ func (m Model) sendEmailCmd(smtpAcct config.AccountConfig, from, to, cc, bcc, su
 			_ = replyCli.MarkAnswered(nil, replyToFolder, replyToUID)
 		}
 		return sendDoneMsg{replyToUID: replyToUID, replyToFolder: replyToFolder}
+	}
+}
+
+// listmonkTriggers converts config triggers to listmonk.Trigger slice.
+func (m Model) listmonkTriggers() []listmonk.Trigger {
+	triggers := make([]listmonk.Trigger, len(m.cfg.Listmonk.Triggers))
+	for i, t := range m.cfg.Listmonk.Triggers {
+		triggers[i] = listmonk.Trigger{Address: t.Address, ListIDs: t.ListIDs}
+	}
+	return triggers
+}
+
+func (m Model) sendListmonkCmd(subject, markdownBody string, listIDs []int) tea.Cmd {
+	cfg := m.cfg.Listmonk
+	delay := time.Duration(cfg.DelayMinutes) * time.Minute
+	if delay == 0 {
+		delay = 30 * time.Minute
+	}
+	return func() tea.Msg {
+		client := listmonk.NewClient(listmonk.Config{
+			URL:      cfg.URL,
+			APIUser:  cfg.APIUser,
+			APIToken: cfg.APIToken,
+		})
+		campaignID, err := client.CreateAndSchedule(subject, markdownBody, listIDs, delay)
+		if err != nil {
+			return sendDoneMsg{err: fmt.Errorf("listmonk: %w", err)}
+		}
+		mins := cfg.DelayMinutes
+		if mins == 0 {
+			mins = 30
+		}
+		return sendDoneMsg{info: fmt.Sprintf("Campaign #%d scheduled via Listmonk (sends in %d min)", campaignID, mins)}
 	}
 }
 
@@ -1701,6 +1736,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.warning != "" {
 			m.status = msg.warning
 			m.isError = true // show in red so user notices
+			m.state = stateInbox
+		} else if msg.info != "" {
+			m.status = msg.info
+			m.isError = false
 			m.state = stateInbox
 		} else {
 			m.status = "Sent!"
@@ -3455,6 +3494,12 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		includeHTMLSig, cleanBody := extractHTMLSignatureMarker(ps.body)
 		m.attachments = nil
 		m.pendingSend = nil
+		// Route to Listmonk if the To address matches a configured trigger.
+		if m.cfg.ListmonkEnabled() {
+			if listIDs := listmonk.ResolveListIDs(m.listmonkTriggers(), ps.to); len(listIDs) > 0 {
+				return m, tea.Batch(m.spinner.Tick, m.sendListmonkCmd(ps.subject, cleanBody, listIDs))
+			}
+		}
 		return m, tea.Batch(m.spinner.Tick, m.sendEmailCmd(smtpAcct, from, ps.to, ps.cc, ps.bcc, ps.subject, cleanBody, attachments, includeHTMLSig, replyUID, replyFolder, ps.replyToAccount, ps.inReplyTo, ps.references))
 	case "ctrl+f":
 		froms := m.presendFroms()
@@ -4179,9 +4224,21 @@ func (m Model) viewPresend() string {
 	if ps == nil {
 		return ""
 	}
+	isListmonk := m.cfg.ListmonkEnabled() && listmonk.IsTriggerAddress(m.listmonkTriggers(), ps.to)
 	var b strings.Builder
-	b.WriteString(styleHeader.Render("  Ready to send") + "\n")
-	b.WriteString(styleSeparator.Render(strings.Repeat("─", m.width)) + "\n\n")
+	if isListmonk {
+		b.WriteString(styleHeader.Render("  Newsletter via Listmonk") + "\n")
+		b.WriteString(styleSeparator.Render(strings.Repeat("─", m.width)) + "\n")
+		listIDs := listmonk.ResolveListIDs(m.listmonkTriggers(), ps.to)
+		delay := m.cfg.Listmonk.DelayMinutes
+		if delay == 0 {
+			delay = 30
+		}
+		b.WriteString(styleHelp.Render(fmt.Sprintf("  Lists: %v · Schedule: in %d min", listIDs, delay)) + "\n\n")
+	} else {
+		b.WriteString(styleHeader.Render("  Ready to send") + "\n")
+		b.WriteString(styleSeparator.Render(strings.Repeat("─", m.width)) + "\n\n")
+	}
 
 	lbl := styleInputLabel.Render
 	fromLine := m.presendFrom()
@@ -4222,7 +4279,11 @@ func (m Model) viewPresend() string {
 	if m.status != "" {
 		b.WriteString(statusBar(m.status, m.isError))
 	} else {
-		b.WriteString(styleHelp.Render("  enter send · e edit · p preview · a attach · D remove attach · ctrl+f from · ctrl+b cc/bcc · d draft · esc cancel · x discard"))
+		if isListmonk {
+			b.WriteString(styleHelp.Render("  enter schedule campaign · e edit · p preview · ctrl+f from · d draft · esc cancel · x discard"))
+		} else {
+			b.WriteString(styleHelp.Render("  enter send · e edit · p preview · a attach · D remove attach · ctrl+f from · ctrl+b cc/bcc · d draft · esc cancel · x discard"))
+		}
 	}
 	return b.String()
 }
