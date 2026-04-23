@@ -758,6 +758,39 @@ func (c *Client) FetchBody(ctx context.Context, folder string, uid uint32) (stri
 	return markdown, rawHTML, webURL, attachments, references, err
 }
 
+// FetchRaw fetches the full raw MIME source (EML) for a single message.
+func (c *Client) FetchRaw(ctx context.Context, folder string, uid uint32) ([]byte, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var raw []byte
+	err := c.withConn(ctx, func(conn *imapclient.Client) error {
+		if err := c.selectMailbox(folder); err != nil {
+			return err
+		}
+
+		var fetchSet imap.UIDSet
+		fetchSet.AddNum(imap.UID(uid))
+
+		msgs, err := conn.Fetch(fetchSet, &imap.FetchOptions{
+			UID:         true,
+			BodySection: []*imap.FetchItemBodySection{{Peek: true}},
+		}).Collect()
+		if err != nil {
+			return fmt.Errorf("FETCH raw uid=%d: %w", uid, err)
+		}
+		if len(msgs) == 0 {
+			return fmt.Errorf("message uid=%d not found in %s", uid, folder)
+		}
+
+		if len(msgs[0].BodySection) > 0 {
+			raw = msgs[0].BodySection[0].Bytes
+		}
+		return nil
+	})
+	return raw, err
+}
+
 // MoveMessage moves uid from src to dst using the IMAP MOVE command (RFC 6851).
 // Returns the UID assigned at the destination (may differ from src UID on some
 // servers). Falls back to the original uid if the server does not report UIDPLUS

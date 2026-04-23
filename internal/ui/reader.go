@@ -139,7 +139,7 @@ func readerHelp(isDraft bool, hasLinks bool) string {
 	if isDraft {
 		keys = append(keys, "E draft")
 	}
-	keys = append(keys, "o w3m", "O browser", "ctrl+o web", "1-9 attach")
+	keys = append(keys, "o w3m", "O browser", "ctrl+o web", "1-9 attach", "space+d eml")
 	if hasLinks {
 		keys = append(keys, "space+1-0 links", "space+l11-99 links 11+")
 	}

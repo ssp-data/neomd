@@ -131,6 +131,10 @@ type (
 		path string
 		err  error
 	}
+	emlDownloadedMsg struct {
+		path string
+		err  error
+	}
 	editorDoneMsg struct {
 		to, cc, bcc, from, subject, body string
 		err                              error
@@ -1770,6 +1774,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case emlDownloadedMsg:
+		if msg.err != nil {
+			m.status = "Download error: " + msg.err.Error()
+			m.isError = true
+		} else {
+			m.status = "Saved EML to " + msg.path
+			m.isError = false
+		}
+		return m, nil
+
 	case saveDraftDoneMsg:
 		if msg.err != nil {
 			m.status = "Draft error: " + msg.err.Error()
@@ -2948,6 +2962,12 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.status = "link number (11-99): l__"
 				return m, nil
 			}
+			// space + d = download raw EML source
+			if key == "d" {
+				m.status = "Downloading EML…"
+				m.isError = false
+				return m, m.downloadEMLCmd()
+			}
 			// Not a digit or 'l' — fall through
 		case "l": // l + first digit (waiting for second digit)
 			if len(key) == 1 && key >= "0" && key <= "9" {
@@ -3241,6 +3261,61 @@ func (m Model) downloadOpenAttachmentCmd(a imap.Attachment) tea.Cmd {
 		}
 		_ = exec.Command("xdg-open", dst).Start()
 		return attachOpenDoneMsg{path: dst}
+	}
+}
+
+// downloadEMLCmd fetches the raw MIME source and saves it as .eml to ~/Downloads.
+func (m Model) downloadEMLCmd() tea.Cmd {
+	e := m.openEmail
+	if e == nil {
+		return nil
+	}
+	cli := m.imapCli()
+	folder := e.Folder
+	uid := e.UID
+	subject := e.Subject
+	emailDate := e.Date
+	return func() tea.Msg {
+		raw, err := cli.FetchRaw(nil, folder, uid)
+		if err != nil {
+			return emlDownloadedMsg{err: err}
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return emlDownloadedMsg{err: err}
+		}
+		dir := filepath.Join(home, "Downloads")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return emlDownloadedMsg{err: fmt.Errorf("create Downloads: %w", err)}
+		}
+		// Sanitize subject for filename
+		safe := strings.Map(func(r rune) rune {
+			if r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|' {
+				return '_'
+			}
+			return r
+		}, subject)
+		if len(safe) > 80 {
+			safe = safe[:80]
+		}
+		if safe == "" {
+			safe = "email"
+		}
+		datePart := emailDate.Format("20060102")
+		base := fmt.Sprintf("neomd-%s-%s.eml", datePart, safe)
+		dst := filepath.Join(dir, base)
+		if _, err := os.Stat(dst); err == nil {
+			for i := 1; ; i++ {
+				dst = filepath.Join(dir, fmt.Sprintf("neomd-%s-%s_%d.eml", datePart, safe, i))
+				if _, err := os.Stat(dst); os.IsNotExist(err) {
+					break
+				}
+			}
+		}
+		if err := os.WriteFile(dst, raw, 0644); err != nil {
+			return emlDownloadedMsg{err: fmt.Errorf("save EML: %w", err)}
+		}
+		return emlDownloadedMsg{path: dst}
 	}
 }
 
@@ -4357,7 +4432,11 @@ func (m Model) viewReader() string {
 		b.WriteString(m.reader.View())
 	}
 	isDraft := m.openEmail != nil && m.openEmail.Folder == m.cfg.Folders.Drafts
-	b.WriteString("\n" + readerHelp(isDraft, len(m.openLinks) > 0))
+	if m.status != "" {
+		b.WriteString("\n" + statusBar(m.status, m.isError))
+	} else {
+		b.WriteString("\n" + readerHelp(isDraft, len(m.openLinks) > 0))
+	}
 	return b.String()
 }
 

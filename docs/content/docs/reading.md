@@ -52,6 +52,12 @@ Attach:  [1] report.pdf  [2] photo.png
 
 Press `1`–`9` to download attachment N to `~/Downloads/` and open it with `xdg-open`. Filenames are deduplicated automatically if a file already exists.
 
+## Download Raw Email Source
+
+Press `space` then `d` in the reader to download the full raw email source (`.eml` file) to `~/Downloads/`. The file is named `neomd-YYYYMMDD-<subject>.eml` using the email's date and sanitized subject line.
+
+This is useful for archiving emails, debugging headers, or importing into other email clients. The status bar shows a green confirmation when the download completes.
+
 ## Threaded Inbox
 
 Related emails are automatically grouped together in the inbox list. Threads are detected using a hybrid approach:

@@ -96,6 +96,7 @@ To update both the help overlay and this document at once, edit that file and ru
 |-----|--------|
 | `<space>1 … <space>9` | jump to folder tab by number (Inbox=1, ToScreen=2, …) |
 | `<space>/` | IMAP search ALL emails on server (From + Subject) |
+| `<space>d  (reader)` | download raw email source (.eml) to ~/Downloads |
 | `<space>w` | show welcome screen |
 
 

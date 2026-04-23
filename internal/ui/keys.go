@@ -71,6 +71,7 @@ var HelpSections = []HelpSection{
 	{"Leader Key Mappings (space prefix)", [][2]string{
 		{"<space>1 … <space>9", "jump to folder tab by number (Inbox=1, ToScreen=2, …)"},
 		{"<space>/", "IMAP search ALL emails on server (From + Subject)"},
+		{"<space>d  (reader)", "download raw email source (.eml) to ~/Downloads"},
 		{"<space>w", "show welcome screen"},
 	}},
 	{"Sort  (, prefix)", [][2]string{

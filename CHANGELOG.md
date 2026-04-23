@@ -1,6 +1,7 @@
 # Changelog
 
 # 2026-04-23
+- **Download raw email source (`space+d` in reader)** — saves the full raw MIME source as `.eml` to `~/Downloads/` with filename `neomd-YYYYMMDD-<subject>.eml`; useful for archiving, debugging email headers, or importing into other clients; status bar shows download progress and completion; filenames deduplicated automatically
 - **Listmonk newsletter integration** — send newsletters to subscribers by composing an email to a virtual trigger address (e.g. `listmonk@ssp.sh`); neomd intercepts the send and creates a scheduled campaign in [Listmonk](https://listmonk.app) via its REST API instead of delivering via SMTP; configure multiple trigger addresses in `[[listmonk.triggers]]` to target different subscriber lists (newsletter, book, all); pre-send screen shows "Newsletter via Listmonk" with target list IDs and schedule delay; campaigns are created as draft then set to `scheduled` status with configurable delay (default 30 minutes); authentication via HTTP Basic Auth with environment variable expansion for API token; new self-contained `internal/listmonk/` package with full test coverage (httptest mocks); documented in `docs/integrations/listmonk.md`
 
 # 2026-04-21

@@ -68,7 +68,7 @@ END {
   -e 's|docs/screener\.md|screener|g' \
   -e 's|docs/sending\.md|sending|g' \
   -e 's|docs/reading\.md|reading|g' \
-  -e 's|images/|/images/|g' \
+  -e 's|docs/static/images/|/images/|g' \
   >> "$DOCS_OVERVIEW"
 
 echo "✅ Synced README.md → docs/content/docs/_index.md"
