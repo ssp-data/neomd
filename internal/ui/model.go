@@ -84,13 +84,15 @@ type (
 	}
 	// resetToScreenReadyMsg is returned once we know how many emails are in ToScreen.
 	resetToScreenReadyMsg struct{ uids []uint32 }
-	// spyScanProgressMsg reports progress during :scan-spy-pixels.
+	// spyScanProgressMsg reports results of :scan-spy-pixels.
 	spyScanProgressMsg struct {
-		scanned int
-		total   int
-		found   int
-		done    bool
-		err     error
+		spyKeys     []string // keys where spy pixels were found
+		scannedKeys []string // all keys that were scanned (for cache)
+		scanned     int
+		total       int
+		found       int
+		done        bool
+		err         error
 	}
 	// folderCountsMsg carries unseen counts for watched folder tabs.
 	folderCountsMsg struct{ counts map[string]int }
@@ -512,6 +514,9 @@ type Model struct {
 	// Populated on body load, used to show ⊙ indicator in inbox list.
 	// Keyed by folder+UID to avoid collisions across mailboxes (UIDs are only unique per folder).
 	spyPixelKeys map[string]bool
+	// spyScannedKeys tracks which emails have been scanned (positive or negative).
+	// Used to skip already-scanned emails in :scan-spy-pixels.
+	spyScannedKeys map[string]bool
 
 	// Undo stack: each entry is a batch of moves that can be reversed with u.
 	// Screener operations (I/O/F/P/$) are not undoable — they also modify .txt files.
@@ -597,6 +602,7 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 		mp = mailto[0]
 	}
 
+	spyKeys, scannedKeys := loadSpyPixelCache()
 	return Model{
 		cfg:        cfg,
 		accounts:   cfg.ActiveAccounts(),
@@ -608,14 +614,15 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 		cmdHistory: loadCmdHistory(config.HistoryPath()),
 		cmdHistI:   -1,
 		// Note: Spam is intentionally excluded from tabs — use :go-spam to visit.
-		compose:       compose,
-		spinner:       sp,
-		markedUIDs:    make(map[uint32]bool),
-		spyPixelKeys:  loadSpyPixelCache(),
-		startupNotice: detectStartupNotice(),
-		sortField:     "date",
-		sortReverse:   true, // newest first
-		mailto:        mp,
+		compose:        compose,
+		spinner:        sp,
+		markedUIDs:     make(map[uint32]bool),
+		spyPixelKeys:   spyKeys,
+		spyScannedKeys: scannedKeys,
+		startupNotice:  detectStartupNotice(),
+		sortField:      "date",
+		sortReverse:    true, // newest first
+		mailto:         mp,
 	}
 }
 
@@ -1394,50 +1401,56 @@ func (m Model) deepScreenClassifyCmd(accumulated []imap.Email, remaining []uint3
 	}
 }
 
-// spyScanCmd scans emails in the current folder for spy pixels in the background.
-// Skips UIDs already in the cache. Uses Peek so read status is unchanged.
+// spyScanCmd scans all emails in the current folder for spy pixels.
+// Fetches the full UID list from the server, skips already-scanned UIDs,
+// and returns results via message for the Update loop to merge.
 func (m Model) spyScanCmd() tea.Cmd {
 	folder := m.activeFolder()
-	// Collect UIDs to scan: all emails in current view minus already-cached ones.
-	var uids []uint32
-	for _, e := range m.emails {
-		if e.Folder != "" && e.Folder != folder {
-			continue
-		}
-		key := spyPixelKey(folder, e.UID)
-		if !m.spyPixelKeys[key] {
-			uids = append(uids, e.UID)
-		}
-	}
-	if len(uids) == 0 {
-		return func() tea.Msg {
-			return spyScanProgressMsg{done: true}
-		}
-	}
-	total := len(uids)
 	cli := m.imapCli()
-	spyKeys := m.spyPixelKeys // shared ref, only written from main goroutine via messages
+	// Copy scanned set to avoid concurrent read.
+	alreadyScanned := make(map[string]bool, len(m.spyScannedKeys))
+	for k, v := range m.spyScannedKeys {
+		alreadyScanned[k] = v
+	}
 
 	return func() tea.Msg {
+		// Fetch all UIDs in the folder from the server.
+		allUIDs, err := cli.SearchUIDs(nil, folder)
+		if err != nil {
+			return spyScanProgressMsg{err: err}
+		}
+		// Filter to only unscanned UIDs.
+		var uids []uint32
+		for _, uid := range allUIDs {
+			if !alreadyScanned[spyPixelKey(folder, uid)] {
+				uids = append(uids, uid)
+			}
+		}
+		if len(uids) == 0 {
+			return spyScanProgressMsg{done: true}
+		}
+
+		total := len(uids)
+		var spyFound []string
+		var allScanned []string
 		found := 0
 		for i, uid := range uids {
 			spy, err := cli.ScanSpyPixels(nil, folder, uid)
 			if err != nil {
-				return spyScanProgressMsg{err: err, scanned: i, total: total, found: found}
+				return spyScanProgressMsg{err: err, scanned: i, total: total, found: found,
+					spyKeys: spyFound, scannedKeys: allScanned}
 			}
+			key := spyPixelKey(folder, uid)
+			allScanned = append(allScanned, key)
 			if spy.Count > 0 {
 				found++
-				spyKeys[spyPixelKey(folder, uid)] = true
-			}
-			// Report progress every 10 emails
-			if (i+1)%10 == 0 {
-				// We can't send intermediate messages from a single Cmd,
-				// so we just let it run and report at the end.
-				_ = i
+				spyFound = append(spyFound, key)
 			}
 		}
-		saveSpyPixelCache(spyKeys)
-		return spyScanProgressMsg{scanned: total, total: total, found: found, done: true}
+		return spyScanProgressMsg{
+			scanned: total, total: total, found: found, done: true,
+			spyKeys: spyFound, scannedKeys: allScanned,
+		}
 	}
 }
 
@@ -1789,9 +1802,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.openAttachments = msg.attachments
 		m.openSpyPixels = msg.spyPixels
 		// Track spy pixel presence for inbox indicator
-		if msg.spyPixels.Count > 0 && msg.email != nil {
-			m.spyPixelKeys[spyPixelKey(msg.email.Folder, msg.email.UID)] = true
-			go saveSpyPixelCache(m.spyPixelKeys)
+		if msg.email != nil {
+			key := spyPixelKey(msg.email.Folder, msg.email.UID)
+			if msg.spyPixels.Count > 0 {
+				m.spyPixelKeys[key] = true
+			}
+			if !m.spyScannedKeys[key] {
+				m.spyScannedKeys[key] = true
+				go saveSpyPixelCache(copyMap(m.spyPixelKeys), copyMap(m.spyScannedKeys))
+			}
 		}
 		// Store References header in the email struct for threading
 		if msg.email != nil {
@@ -2027,14 +2046,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
 
 	case spyScanProgressMsg:
+		// Merge results into maps on the main goroutine (no concurrency).
+		for _, k := range msg.spyKeys {
+			m.spyPixelKeys[k] = true
+		}
+		for _, k := range msg.scannedKeys {
+			m.spyScannedKeys[k] = true
+		}
 		if msg.err != nil {
 			m.status = "Spy scan error: " + msg.err.Error()
 			m.isError = true
+		} else if msg.done && msg.total == 0 {
+			m.status = "Spy scan: all emails already scanned"
+			m.isError = false
 		} else if msg.done {
 			m.status = fmt.Sprintf("Spy scan complete: %d/%d emails had tracking pixels", msg.found, msg.scanned)
 			m.isError = false
 		}
-		// Rebuild inbox list to show newly discovered ⊙ indicators
+		// Save cache and rebuild inbox on the main goroutine.
+		if len(msg.scannedKeys) > 0 {
+			go saveSpyPixelCache(copyMap(m.spyPixelKeys), copyMap(m.spyScannedKeys))
+		}
 		return m, m.applyFilter()
 
 	case deepScreenCountMsg:
@@ -2861,28 +2893,51 @@ func saveCmdHistory(path string, history []string) {
 }
 
 // loadSpyPixelCache reads the spy pixel cache from disk.
-// Each line is "folder\x00uid".
-func loadSpyPixelCache() map[string]bool {
+// Lines prefixed with "+" have spy pixels, "-" were scanned clean.
+func loadSpyPixelCache() (spyKeys, scannedKeys map[string]bool) {
+	spyKeys = make(map[string]bool)
+	scannedKeys = make(map[string]bool)
 	data, err := os.ReadFile(config.SpyPixelCachePath())
 	if err != nil {
-		return make(map[string]bool)
+		return
 	}
-	m := make(map[string]bool)
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-		if line != "" {
-			m[line] = true
+		if len(line) < 2 {
+			continue
+		}
+		key := line[1:]
+		switch line[0] {
+		case '+':
+			spyKeys[key] = true
+			scannedKeys[key] = true
+		case '-':
+			scannedKeys[key] = true
 		}
 	}
-	return m
+	return
 }
 
-// saveSpyPixelCache writes the spy pixel cache to disk.
-func saveSpyPixelCache(keys map[string]bool) {
+// saveSpyPixelCache writes a snapshot of the spy pixel cache to disk.
+// Takes copied maps to avoid concurrent access.
+func saveSpyPixelCache(spyKeys, scannedKeys map[string]bool) {
 	var lines []string
-	for k := range keys {
-		lines = append(lines, k)
+	for k := range scannedKeys {
+		if spyKeys[k] {
+			lines = append(lines, "+"+k)
+		} else {
+			lines = append(lines, "-"+k)
+		}
 	}
 	_ = os.WriteFile(config.SpyPixelCachePath(), []byte(strings.Join(lines, "\n")+"\n"), 0600)
+}
+
+// copyMap returns a shallow copy of a map, safe for passing to goroutines.
+func copyMap(m map[string]bool) map[string]bool {
+	c := make(map[string]bool, len(m))
+	for k, v := range m {
+		c[k] = v
+	}
+	return c
 }
 
 func (m Model) shouldPrefixFolderInSubject() bool {

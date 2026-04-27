@@ -85,13 +85,14 @@ neomd automatically detects and blocks tracking pixels (1x1 invisible images emb
 
 **How it works:**
 - The TUI renders emails as styled Markdown via glamour — **no HTTP requests** are made during rendering, so tracking servers are never contacted. Senders cannot tell if you read their email.
-- `cleanMarkdown()` detects empty-alt-text images (the signature of tracking pixels), counts them, extracts the tracker domains, and strips them from the rendered output.
-- The inbox list shows a `⊙` indicator (orange) for emails that contained tracking pixels, visible after first read.
+- `detectSpyPixels()` scans raw HTML for `<img>` tags with empty alt AND at least one of: tiny dimensions (width/height 0–1), CSS hiding, or known tracker URL patterns. This runs before markdown conversion so size/style info is preserved.
+- The inbox list shows a `⊙` indicator (orange) for emails that contained tracking pixels, visible after first read or after running `<space>S` / `:scan-spy-pixels`.
 - The reader header shows `⊙ N spy pixel(s) blocked (domain.com, ...)` with the tracker domains.
+- Scan results are cached in `~/.cache/neomd/spy_pixels` and persist across restarts. Both positive (has tracker) and negative (scanned clean) results are cached so repeat scans are instant.
 
-**Browser view (`O`):** When you explicitly open an email in the browser, remote images are loaded — this is intentional, as you're choosing to see the full email. Tracking pixels are only blocked in the TUI.
+**Browser view (`O`):** When you open an email in the browser, a Content-Security-Policy is injected that blocks JavaScript, iframes, and embedded objects (`script-src 'none'; frame-src 'none'; object-src 'none'`). Remote images are intentionally allowed — you're choosing to see the full email. This prevents script execution while preserving the visual experience.
 
-**Code:** [`internal/imap/client.go`](https://github.com/ssp-data/neomd/blob/main/internal/imap/client.go) — `detectSpyPixels()`, `SpyPixelInfo` · [`internal/ui/inbox.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/inbox.go) — `⊙` indicator · [`internal/ui/reader.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/reader.go) — `renderEmailHeader()`
+**Code:** [`internal/imap/client.go`](https://github.com/ssp-data/neomd/blob/main/internal/imap/client.go) — `detectSpyPixels()`, `ScanSpyPixels()` · [`internal/render/html.go`](https://github.com/ssp-data/neomd/blob/main/internal/render/html.go) — `SanitizeForBrowser()` · [`internal/ui/inbox.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/inbox.go) — `⊙` indicator · [`internal/ui/reader.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/reader.go) — `renderEmailHeader()`
 
 ---
 
