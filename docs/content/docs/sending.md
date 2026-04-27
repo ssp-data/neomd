@@ -248,3 +248,86 @@ Simon
 ```
 
 
+
+## Mailto Handler
+
+neomd can be your system's default `mailto:` handler. When you click a `mailto:` link in a browser, neomd opens in a terminal with the compose form pre-filled.
+
+**Setup on Linux:**
+
+```bash
+# Register neomd as the default mailto handler
+xdg-mime default neomd-mailto.desktop x-scheme-handler/mailto
+```
+
+The `.desktop` file at `~/.local/share/applications/neomd-mailto.desktop`:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=neomd (mailto)
+Comment=Compose email in neomd terminal email client
+Exec=foot -e /path/to/neomd-mailto.sh %u
+Icon=mail-send
+Terminal=false
+NoDisplay=true
+MimeType=x-scheme-handler/mailto;
+```
+
+Replace `foot` with your terminal emulator (`alacritty`, `kitty`, `ghostty`, etc.). See the [wrapper script](#wrapper-script) section below for why a wrapper is needed.
+
+**Usage:**
+
+```bash
+# From the CLI (flag or positional argument)
+neomd --mailto "mailto:user@example.com?subject=Hello&body=Check%20this%20out"
+neomd "mailto:user@example.com?subject=Hello"
+
+# Test the xdg handler
+xdg-open "mailto:user@example.com?subject=Test&body=Hello%20world"
+```
+
+Supported mailto fields: `to` (path), `cc`, `bcc`, `subject`, `body`. neomd opens the compose form with all fields pre-filled — proceed through the normal compose flow (To → Subject → editor → pre-send → send).
+
+
+### Browser setup (Brave/Chrome)
+
+Chromium-based browsers maintain their own protocol handler list that can override the system default. To use neomd for mailto links in Brave:
+
+1. Go to `brave://settings/handlers` (or `chrome://settings/handlers` for Chrome)
+2. Remove any existing mailto handler (e.g. `office.hostpoint.ch`, `mail.google.com`)
+3. Next time you click a mailto link, Brave will show a dialog asking to open neomd
+
+Check "Always allow" in the dialog to skip the prompt in the future.
+
+### Wrapper script
+
+Since neomd is a TUI app, it needs a login shell to access environment variables (e.g. IMAP passwords). The `.desktop` file uses a wrapper script:
+
+`~/.local/bin/neomd-mailto.sh`:
+
+```bash
+#!/bin/zsh
+source ~/.zshrc 2>/dev/null
+/home/sspaeti/.local/bin/neomd "$1" 2>/tmp/neomd-mailto.log
+if [ $? -ne 0 ]; then
+    echo "neomd failed. Log:"
+    cat /tmp/neomd-mailto.log
+    read -p "Press enter to close."
+fi
+```
+
+Make it executable: `chmod +x ~/.local/bin/neomd-mailto.sh`
+
+Then reference it in the `.desktop` file:
+
+```ini
+Exec=foot -e /home/sspaeti/.local/bin/neomd-mailto.sh %u
+```
+
+Replace `zsh`/`.zshrc` with `bash`/`.bashrc` if you use bash. Replace `foot` with your terminal emulator.
+
+### How it looks
+
+![mailto](/images/mailto-open.png)
+

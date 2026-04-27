@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -25,7 +26,14 @@ func main() {
 	cfgPath := flag.String("config", "", "path to config.toml (default: ~/.config/neomd/config.toml)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	headless := flag.Bool("headless", false, "run in headless daemon mode (no TUI)")
+	mailtoFlag := flag.String("mailto", "", "open compose with a mailto: URI (e.g. mailto:user@example.com?subject=Hello)")
 	flag.Parse()
+
+	// Also accept mailto: URI as a positional argument (for xdg-open / .desktop handler).
+	mailtoURI := *mailtoFlag
+	if mailtoURI == "" && flag.NArg() > 0 && strings.HasPrefix(flag.Arg(0), "mailto:") {
+		mailtoURI = flag.Arg(0)
+	}
 
 	if *showVersion {
 		fmt.Println("neomd", version)
@@ -132,7 +140,11 @@ func main() {
 	} else {
 		// TUI mode: run interactive interface
 		ui.Version = version
-		model := ui.New(cfg, imapClients, sc)
+		var mailto *ui.MailtoParams
+		if mailtoURI != "" {
+			mailto = parseMailto(mailtoURI)
+		}
+		model := ui.New(cfg, imapClients, sc, mailto)
 
 		p := tea.NewProgram(
 			model,
@@ -161,6 +173,32 @@ func splitAddr(addr string) (host, port string) {
 //   - If userSTARTTLS is true: always use STARTTLS (user explicitly enabled it)
 //   - Standard ports: 993 → TLS, 143 → STARTTLS
 //   - Non-standard ports: default to TLS (e.g., Proton Mail Bridge on 1143)
+// parseMailto parses a mailto: URI into MailtoParams.
+// Format: mailto:addr?subject=S&cc=C&bcc=B&body=B
+func parseMailto(raw string) *ui.MailtoParams {
+	// url.Parse chokes on mailto: without //, so fix up.
+	u, err := url.Parse(raw)
+	if err != nil {
+		return &ui.MailtoParams{To: raw}
+	}
+	to := u.Opaque // everything before ?
+	if to == "" {
+		to = u.Path
+	}
+	// Percent-decode the "to" field (some mailers encode spaces/commas).
+	if decoded, err := url.PathUnescape(to); err == nil {
+		to = decoded
+	}
+	q := u.Query()
+	return &ui.MailtoParams{
+		To:      to,
+		CC:      q.Get("cc"),
+		BCC:     q.Get("bcc"),
+		Subject: q.Get("subject"),
+		Body:    q.Get("body"),
+	}
+}
+
 func inferIMAPSecurity(port string, userSTARTTLS bool) (useTLS, useSTARTTLS bool) {
 	if userSTARTTLS {
 		// User explicitly set starttls=true in config — honor it.

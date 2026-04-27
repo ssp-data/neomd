@@ -174,6 +174,16 @@ func (m *Model) startBulk(label string, total int) {
 // Version is set by main.go at startup (from build-time ldflags).
 var Version = "dev"
 
+// MailtoParams holds pre-filled compose fields from a mailto: URI.
+// When non-nil, the TUI starts directly in compose mode.
+type MailtoParams struct {
+	To      string
+	CC      string
+	BCC     string
+	Subject string
+	Body    string
+}
+
 // neomdTempDir returns /tmp/neomd/, creating it if needed.
 // Using a dedicated subdirectory keeps temp files discoverable (e.g. recovering
 // a draft after a crash) and avoids cluttering /tmp/.
@@ -551,15 +561,25 @@ type Model struct {
 	// Default: date descending (newest first).
 	sortField   string
 	sortReverse bool
+
+	// mailto holds pre-filled compose fields from a mailto: URI.
+	// When set, the TUI opens compose immediately after init.
+	mailto     *MailtoParams
+	mailtoBody string // body from mailto URI, consumed by launchEditorCmd
 }
 
 // New creates and initialises the TUI model.
-func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener) Model {
+func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mailto ...*MailtoParams) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
 	compose := newComposeModel()
 	compose.knownAddrs = sc.AllAddresses()
+
+	var mp *MailtoParams
+	if len(mailto) > 0 {
+		mp = mailto[0]
+	}
 
 	return Model{
 		cfg:        cfg,
@@ -578,6 +598,7 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener) Mode
 		startupNotice: detectStartupNotice(),
 		sortField:     "date",
 		sortReverse:   true, // newest first
+		mailto:        mp,
 	}
 }
 
@@ -1611,6 +1632,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.startupNotice = ""
 		}
 		sortCmd := m.sortEmails() // applies sort and sets list items
+
+		// mailto: open compose with pre-filled fields on first inbox load.
+		if m.mailto != nil {
+			mp := m.mailto
+			m.mailto = nil // consume once
+			m.attachments = nil
+			m.compose.reset()
+			m.presendFromI = 0
+			if mp.To != "" {
+				m.compose.to.SetValue(mp.To)
+			}
+			if mp.CC != "" {
+				m.compose.cc.SetValue(mp.CC)
+				m.compose.extraVisible = true
+			}
+			if mp.BCC != "" {
+				m.compose.bcc.SetValue(mp.BCC)
+				m.compose.extraVisible = true
+			}
+			if mp.Subject != "" {
+				m.compose.subject.SetValue(mp.Subject)
+			}
+			m.state = stateCompose
+			m.status = ""
+			m.isError = false
+			m.mailtoBody = mp.Body
+			return m, tea.Batch(sortCmd, m.fetchFolderCountsCmd())
+		}
 
 		// First-run welcome: show a brief intro popup.
 		if config.IsFirstRun() {
@@ -3774,6 +3823,10 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 	subject := m.compose.subject.Value()
 	prelude := editor.Prelude(to, cc, bcc, m.presendFrom(), subject, m.cfg.UI.TextSignature())
 
+	// Consume any mailto body (pre-filled from --mailto flag).
+	body := m.mailtoBody
+	m.mailtoBody = ""
+
 	// Write temp file
 	f, err := os.CreateTemp(neomdTempDir(), "neomd-*.md")
 	if err != nil {
@@ -3783,7 +3836,7 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	tmpPath := f.Name()
-	f.WriteString(prelude) //nolint
+	f.WriteString(prelude + body) //nolint
 	f.Close()
 
 	editorBin := os.Getenv("EDITOR")

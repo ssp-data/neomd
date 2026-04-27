@@ -1,5 +1,8 @@
 # Changelog
 
+# 2026-04-27
+- **Mailto handler (`--mailto` / positional URI)** — neomd can now be used as the system default `mailto:` handler; clicking a `mailto:` link in any browser opens a foot terminal with neomd in compose mode, pre-filled with To, CC, BCC, Subject, and Body from the URI; supports both `neomd --mailto "mailto:user@example.com?subject=Hello"` and `neomd "mailto:..."` (positional, for `.desktop` integration); registered via `xdg-mime` with a `neomd-mailto.desktop` file; after sending or cancelling, neomd continues as normal
+
 # 2026-04-24
 - **Disable threading in Sent folder** — the Sent tab now shows each email individually without thread grouping, ordered by date; threading remains active in all other folders; useful because Sent emails are your own outgoing messages and don't benefit from conversation grouping
 
