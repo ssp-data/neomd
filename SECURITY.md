@@ -73,9 +73,34 @@ The `:` command history is written to `~/.cache/neomd/cmd_history` (cache dir, `
 
 ## URL handling
 
-Email-extracted URLs (from `ctrl+o` / `List-Post` header) are validated before being passed to the browser: only `http://` and `https://` schemes are allowed. URLs with any other scheme (e.g. `javascript:`) are blocked and shown as an error in the status bar.
+All email-extracted URLs — both numbered inline links (`space+digit`) and `ctrl+o` / `List-Post` web version links — are validated before being passed to the browser. Only `http://`, `https://`, and `mailto:` schemes are allowed. URLs with any other scheme (e.g. `javascript:`, `data:`) are blocked and shown as an error in the status bar.
 
-**Code:** [`internal/ui/model.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/model.go) — `openWebVersion()`
+**Code:** [`internal/ui/model.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/model.go) — `openLinkCmd()`, `openWebVersion()`
+
+---
+
+## Spy pixel blocking
+
+neomd automatically detects and blocks tracking pixels (1x1 invisible images embedded by newsletter services like Mailchimp, HubSpot, and SendGrid to track email opens).
+
+**How it works:**
+- The TUI renders emails as styled Markdown via glamour — **no HTTP requests** are made during rendering, so tracking servers are never contacted. Senders cannot tell if you read their email.
+- `cleanMarkdown()` detects empty-alt-text images (the signature of tracking pixels), counts them, extracts the tracker domains, and strips them from the rendered output.
+- The inbox list shows a `⊙` indicator (orange) for emails that contained tracking pixels, visible after first read.
+- The reader header shows `⊙ N spy pixel(s) blocked (domain.com, ...)` with the tracker domains.
+
+**Browser view (`O`) protection:**
+- The HTML template includes a `Content-Security-Policy` meta tag that restricts image sources to `file:`, `data:`, and `cid:` only. Remote images (including tracking pixels) are blocked even when viewing the full HTML version in a browser.
+
+**Code:** [`internal/imap/client.go`](https://github.com/ssp-data/neomd/blob/main/internal/imap/client.go) — `cleanMarkdown()`, `SpyPixelInfo` · [`internal/render/html.go`](https://github.com/ssp-data/neomd/blob/main/internal/render/html.go) — `htmlTemplate` (CSP) · [`internal/ui/inbox.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/inbox.go) — `⊙` indicator · [`internal/ui/reader.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/reader.go) — `renderEmailHeader()`
+
+---
+
+## Attachment safety
+
+Attachments are saved to `~/Downloads/` and opened with `xdg-open`. To prevent accidental execution of malicious files, neomd maintains a blocklist of dangerous file extensions (`.sh`, `.exe`, `.desktop`, `.bat`, `.py`, `.jar`, etc.). Files with these extensions are **saved but not auto-opened** — the status bar warns that the file type is dangerous and the user must open it manually.
+
+**Code:** [`internal/ui/model.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/model.go) — `dangerousExts`, `downloadOpenAttachmentCmd()`
 
 ---
 

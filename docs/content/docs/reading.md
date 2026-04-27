@@ -32,6 +32,25 @@ Remote images appear as `[Image: alt]` placeholders, keeping the reading experie
 
 When you press `O` to open in the browser, inline images are extracted from the email and saved to temp files. The HTML `cid:` references are rewritten to `file://` paths so the browser renders them — including images sent by other people (not just your own).
 
+## Spy Pixel Blocking
+
+neomd automatically detects and blocks tracking pixels (1x1 invisible images used by newsletter services like Mailchimp, HubSpot, and SendGrid to track email opens). Since the TUI renders emails as styled Markdown, remote images are never fetched — senders cannot tell if you read their email.
+
+When tracking pixels are detected, neomd shows:
+- `⊙` indicator in the inbox list (orange, next to the attachment `@` column)
+- `⊙ N spy pixel(s) blocked (domain.com)` in the reader header with tracker domains
+
+The browser view (`O`) also blocks remote images via a Content-Security-Policy header, so tracking pixels are blocked even when viewing the full HTML version.
+
+### This is how it looks:
+
+In overview:
+![spy](/images/spy-pixel.png)
+
+And within an email open:
+
+![spy](/images/spy-pixel-mail.png)
+
 ## Links
 
 Links in emails are automatically numbered inline where they appear in the body. A link like `Check out our blog` renders as `Check out our blog [1]` in the terminal.
@@ -81,6 +100,7 @@ Threads display with a Twitter-style vertical connector line:
 - `·╰ ` reply indicator within a thread
 - `│` connects thread members (newest on top)
 - `╰` marks the root/oldest email at the bottom of each thread
+- `⊙` spy pixel indicator — tracking pixels were detected and blocked (shown after first read)
 - Non-threaded emails show no connector (clean, no visual noise)
 - Threads are sorted by their most recent email, so active conversations float to the top
 

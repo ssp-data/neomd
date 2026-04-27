@@ -725,12 +725,13 @@ func (c *Client) FetchHeadersByUID(ctx context.Context, folder string, uids []ui
 
 // FetchBody fetches the body of a single message.
 // Returns (markdownBody, rawHTML, webURL, attachments, references, error).
-func (c *Client) FetchBody(ctx context.Context, folder string, uid uint32) (string, string, string, []Attachment, string, error) {
+func (c *Client) FetchBody(ctx context.Context, folder string, uid uint32) (string, string, string, []Attachment, string, SpyPixelInfo, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	var markdown, rawHTML, webURL, references string
 	var attachments []Attachment
+	var spyPixels SpyPixelInfo
 	err := c.withConn(ctx, func(conn *imapclient.Client) error {
 		if err := c.selectMailbox(folder); err != nil {
 			return err
@@ -751,11 +752,11 @@ func (c *Client) FetchBody(ctx context.Context, folder string, uid uint32) (stri
 		}
 
 		if len(msgs[0].BodySection) > 0 {
-			markdown, rawHTML, webURL, attachments, references = parseBody(msgs[0].BodySection[0].Bytes)
+			markdown, rawHTML, webURL, attachments, references, spyPixels = parseBody(msgs[0].BodySection[0].Bytes)
 		}
 		return nil
 	})
-	return markdown, rawHTML, webURL, attachments, references, err
+	return markdown, rawHTML, webURL, attachments, references, spyPixels, err
 }
 
 // FetchRaw fetches the full raw MIME source (EML) for a single message.
@@ -1014,10 +1015,10 @@ func (c *Client) SaveDraft(ctx context.Context, folder string, raw []byte) error
 //   - rawHTML:      original HTML part verbatim (empty for plain-text emails)
 //   - webURL:       "view online" URL extracted from List-Post header or plain-text
 //     preamble (e.g. Substack's "View this post on the web at https://…")
-func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Attachment, references string) {
+func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Attachment, references string, spyPixels SpyPixelInfo) {
 	e, err := message.Read(bytes.NewReader(raw))
 	if err != nil && !message.IsUnknownCharset(err) {
-		return string(raw), "", "", nil, ""
+		return string(raw), "", "", nil, "", SpyPixelInfo{}
 	}
 
 	// Check if this is a neomd-authored draft. Drafts use the X-Neomd-Draft header
@@ -1130,18 +1131,19 @@ func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Atta
 	// text/plain part is typically a stripped dump with raw redirect URLs.
 	// Fall back to plain text for plain-text-only emails (e.g. direct replies).
 	if htmlText != "" {
-		return htmlToMarkdown(htmlText), htmlText, webURL, attachments, references
+		md, spy := htmlToMarkdown(htmlText)
+		return md, htmlText, webURL, attachments, references, spy
 	}
 	if plainText != "" {
 		// For neomd drafts, return the raw markdown without normalization.
 		// Normalization adds trailing spaces for hard line breaks, which would
 		// mutate the draft content on each save/reopen cycle.
 		if isDraft {
-			return plainText, "", webURL, attachments, references
+			return plainText, "", webURL, attachments, references, SpyPixelInfo{}
 		}
-		return normalizePlainText(plainText), "", webURL, attachments, references
+		return normalizePlainText(plainText), "", webURL, attachments, references, SpyPixelInfo{}
 	}
-	return "(no body)", "", webURL, attachments, references
+	return "(no body)", "", webURL, attachments, references, SpyPixelInfo{}
 }
 
 // extractPlainTextWebURL looks for a "View … on the web at https://…" line
@@ -1198,7 +1200,7 @@ func injectCIDAlt(html string, cidToName map[string]string) string {
 // htmlToMarkdown converts an HTML email body to Markdown so glamour can render
 // it with proper formatting: bold, italic, links, headings, lists, and image
 // placeholders (![alt](url) → [Image: alt] in the terminal).
-func htmlToMarkdown(h string) string {
+func htmlToMarkdown(h string) (string, SpyPixelInfo) {
 	// Remove <wbr> tags and join newlines inside href/src attribute values.
 	// Newsletter services (Substack, Mailchimp) insert line breaks inside URLs
 	// for HTML rendering; html-to-markdown preserves them, breaking link syntax.
@@ -1217,24 +1219,44 @@ func htmlToMarkdown(h string) string {
 	converter := htmlmd.NewConverter("", true, nil)
 	result, err := converter.ConvertString(h)
 	if err != nil {
-		return stripHTMLFallback(h)
+		return stripHTMLFallback(h), SpyPixelInfo{}
 	}
 	return cleanMarkdown(strings.TrimSpace(result))
 }
 
+// SpyPixelInfo holds the results of tracking pixel detection.
+type SpyPixelInfo struct {
+	Count   int      // number of tracking pixels stripped
+	Domains []string // unique tracker domains extracted from pixel URLs
+}
+
+// reEmptyImg matches empty markdown image tags produced from tracking pixels.
+var reEmptyImg = regexp.MustCompile(`!\[\s*\]\(([^)]*)\)`)
+
 // cleanMarkdown post-processes html-to-markdown output to remove newsletter
 // noise: invisible Unicode spacers, tracking pixels, bare URL lines, and
-// excessive blank lines.
-func cleanMarkdown(s string) string {
+// excessive blank lines. Returns the cleaned string and spy pixel info.
+func cleanMarkdown(s string) (string, SpyPixelInfo) {
 	// 1. Strip invisible Unicode characters used as email preheader spacers:
 	//    U+034F COMBINING GRAPHEME JOINER, U+00AD SOFT HYPHEN,
 	//    U+200B ZERO WIDTH SPACE, U+200C/D ZWNJ/ZWJ, U+FEFF BOM
 	reInvis := regexp.MustCompile(`[\x{034F}\x{00AD}\x{200B}\x{200C}\x{200D}\x{FEFF}]+`)
 	s = reInvis.ReplaceAllString(s, "")
 
-	// 2. Remove empty image tags (tracking pixels): ![](...) or ![  ](...)
-	reEmptyImg := regexp.MustCompile(`!\[\s*\]\([^)]*\)`)
-	s = reEmptyImg.ReplaceAllString(s, "")
+	// 2. Detect and remove empty image tags (tracking pixels): ![](...) or ![  ](...)
+	var spy SpyPixelInfo
+	matches := reEmptyImg.FindAllStringSubmatch(s, -1)
+	spy.Count = len(matches)
+	if spy.Count > 0 {
+		seen := make(map[string]bool)
+		for _, m := range matches {
+			if d := extractDomain(m[1]); d != "" && !seen[d] {
+				seen[d] = true
+				spy.Domains = append(spy.Domains, d)
+			}
+		}
+		s = reEmptyImg.ReplaceAllString(s, "")
+	}
 
 	// 3. Remove empty link anchors left behind when image-only links are cleaned:
 	//    [](url) or [  ](url)
@@ -1256,7 +1278,28 @@ func cleanMarkdown(s string) string {
 	reExcessBlank := regexp.MustCompile(`\n{4,}`)
 	s = reExcessBlank.ReplaceAllString(s, "\n\n\n")
 
-	return strings.TrimSpace(s)
+	return strings.TrimSpace(s), spy
+}
+
+// extractDomain pulls the hostname from a URL string, returning "" on failure.
+func extractDomain(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if !strings.HasPrefix(rawURL, "http") {
+		return ""
+	}
+	// Simple extraction: skip past "://" and take until next "/" or end.
+	after := rawURL
+	if i := strings.Index(rawURL, "://"); i >= 0 {
+		after = rawURL[i+3:]
+	}
+	if i := strings.IndexByte(after, '/'); i >= 0 {
+		after = after[:i]
+	}
+	// Strip port if present.
+	if i := strings.LastIndexByte(after, ':'); i >= 0 {
+		after = after[:i]
+	}
+	return after
 }
 
 // normalizePlainText prepares a plain-text email body for glamour rendering.

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/sspaeti/neomd/internal/imap"
 	"github.com/sspaeti/neomd/internal/render"
 )
@@ -82,8 +83,8 @@ func numberLinks(body string, links []emailLink) string {
 }
 
 // loadEmailIntoReader renders the email and sets the viewport content.
-func loadEmailIntoReader(vp *viewport.Model, email *imap.Email, body string, attachments []imap.Attachment, links []emailLink, theme string, width int) error {
-	header := renderEmailHeader(email, attachments, width)
+func loadEmailIntoReader(vp *viewport.Model, email *imap.Email, body string, attachments []imap.Attachment, spyPixels imap.SpyPixelInfo, links []emailLink, theme string, width int) error {
+	header := renderEmailHeader(email, attachments, spyPixels, width)
 
 	// Inject link numbers inline before glamour rendering
 	numbered := numberLinks(body, links)
@@ -98,7 +99,7 @@ func loadEmailIntoReader(vp *viewport.Model, email *imap.Email, body string, att
 	return nil
 }
 
-func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, width int) string {
+func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, spyPixels imap.SpyPixelInfo, width int) string {
 	if e == nil {
 		return ""
 	}
@@ -124,6 +125,15 @@ func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, width int) 
 			parts = append(parts, fmt.Sprintf("[%d] %s", i+1, a.Filename))
 		}
 		lines = append(lines, styleHelp.Render("Attach:  ")+strings.Join(parts, "  "))
+	}
+
+	if spyPixels.Count > 0 {
+		spyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")) // orange
+		label := fmt.Sprintf("%d spy pixel(s) blocked", spyPixels.Count)
+		if len(spyPixels.Domains) > 0 {
+			label += " (" + strings.Join(spyPixels.Domains, ", ") + ")"
+		}
+		lines = append(lines, spyStyle.Render("⊙ "+label))
 	}
 
 	content := strings.Join(lines, "\n")

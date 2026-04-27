@@ -53,6 +53,7 @@ type (
 		webURL      string // canonical "view online" URL (List-Post header or plain-text preamble)
 		attachments []imap.Attachment
 		references  string // References header for email threading
+		spyPixels   imap.SpyPixelInfo
 	}
 	sendDoneMsg struct {
 		err           error
@@ -128,8 +129,9 @@ type (
 	}
 	saveDraftDoneMsg  struct{ err error }
 	attachOpenDoneMsg struct {
-		path string
-		err  error
+		path      string
+		err       error
+		dangerous bool // true if file was saved but NOT auto-opened due to risky extension
 	}
 	emlDownloadedMsg struct {
 		path string
@@ -468,9 +470,10 @@ type Model struct {
 	openBody        string            // markdown body used by the TUI reader
 	openHTMLBody    string            // original HTML part; used by openInExternalViewer when available
 	openWebURL      string            // canonical "view online" URL for ctrl+o (may be empty)
-	openAttachments []imap.Attachment // attachments of the currently open email
-	openLinks       []emailLink       // extracted links from the email body
-	readerPending   string            // chord prefix in reader (space for link open)
+	openAttachments []imap.Attachment  // attachments of the currently open email
+	openLinks       []emailLink        // extracted links from the email body
+	openSpyPixels   imap.SpyPixelInfo  // spy pixels detected in the currently open email
+	readerPending   string             // chord prefix in reader (space for link open)
 	// Mark-as-read timer tracking
 	markAsReadUID    uint32 // UID of email with pending mark-as-read timer
 	markAsReadFolder string // folder of email with pending mark-as-read timer
@@ -496,6 +499,10 @@ type Model struct {
 
 	// Marked emails for batch operations (UID → true)
 	markedUIDs map[uint32]bool
+
+	// Spy pixel tracking: UID → true when email body contained tracking pixels.
+	// Populated on body load, used to show ⊙ indicator in inbox list.
+	spyPixelUIDs map[uint32]bool
 
 	// Undo stack: each entry is a batch of moves that can be reversed with u.
 	// Screener operations (I/O/F/P/$) are not undoable — they also modify .txt files.
@@ -595,6 +602,7 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 		compose:       compose,
 		spinner:       sp,
 		markedUIDs:    make(map[uint32]bool),
+		spyPixelUIDs:  make(map[uint32]bool),
 		startupNotice: detectStartupNotice(),
 		sortField:     "date",
 		sortReverse:   true, // newest first
@@ -772,11 +780,11 @@ func (m Model) fetchFolderCmd(folder string) tea.Cmd {
 
 func (m Model) fetchBodyCmd(e *imap.Email) tea.Cmd {
 	return func() tea.Msg {
-		body, rawHTML, webURL, attachments, references, err := m.imapCli().FetchBody(nil, e.Folder, e.UID)
+		body, rawHTML, webURL, attachments, references, spyPixels, err := m.imapCli().FetchBody(nil, e.Folder, e.UID)
 		if err != nil {
 			return errMsg{err}
 		}
-		return bodyLoadedMsg{email: e, body: body, rawHTML: rawHTML, webURL: webURL, attachments: attachments, references: references}
+		return bodyLoadedMsg{email: e, body: body, rawHTML: rawHTML, webURL: webURL, attachments: attachments, references: references, spyPixels: spyPixels}
 	}
 }
 
@@ -1723,6 +1731,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.openHTMLBody = msg.rawHTML
 		m.openWebURL = msg.webURL
 		m.openAttachments = msg.attachments
+		m.openSpyPixels = msg.spyPixels
+		// Track spy pixel presence for inbox indicator
+		if msg.spyPixels.Count > 0 && msg.email != nil {
+			m.spyPixelUIDs[msg.email.UID] = true
+		}
 		// Store References header in the email struct for threading
 		if msg.email != nil {
 			msg.email.References = msg.references
@@ -1772,7 +1785,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.openLinks = extractLinks(msg.body)
-		_ = loadEmailIntoReader(&m.reader, msg.email, msg.body, msg.attachments, m.openLinks, m.cfg.UI.Theme, m.width)
+		_ = loadEmailIntoReader(&m.reader, msg.email, msg.body, msg.attachments, m.openSpyPixels, m.openLinks, m.cfg.UI.Theme, m.width)
 		m.state = stateReading
 		// Refresh inbox list if immediate mode, or start timer
 		if m.cfg.UI.MarkAsReadAfterSecs <= 0 {
@@ -1816,6 +1829,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case attachOpenDoneMsg:
 		if msg.err != nil {
 			m.status = "Attachment error: " + msg.err.Error()
+			m.isError = true
+		} else if msg.dangerous {
+			m.status = "Saved to " + msg.path + " — not auto-opened (dangerous file type)"
 			m.isError = true
 		} else {
 			m.status = "Saved to " + msg.path + " — opening…"
@@ -2834,7 +2850,7 @@ func (m *Model) applyFilter() tea.Cmd {
 	}
 
 	noThread := len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent
-	return setEmails(&m.inbox, filtered, m.markedUIDs, m.shouldPrefixFolderInSubject(), m.sortField, m.sortReverse, noThread)
+	return setEmails(&m.inbox, filtered, m.markedUIDs, m.spyPixelUIDs, m.shouldPrefixFolderInSubject(), m.sortField, m.sortReverse, noThread)
 }
 
 // handleChord dispatches two-key sequences (g<x>, M<x>, space<x>).
@@ -3056,6 +3072,10 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Clear mark-as-read timer state when exiting reader
 		m.markAsReadUID = 0
 		m.markAsReadFolder = ""
+		// Rebuild inbox list so ⊙ spy pixel indicator appears immediately
+		if m.openSpyPixels.Count > 0 {
+			return m, m.applyFilter()
+		}
 		return m, nil
 	case "e":
 		return m.openInNeovim()
@@ -3124,7 +3144,14 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // openLinkCmd opens a URL in $BROWSER (or xdg-open).
+// Only http://, https://, and mailto: schemes are allowed to prevent
+// javascript:, data:, or other potentially dangerous URL schemes.
 func (m Model) openLinkCmd(url string) tea.Cmd {
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "mailto:") {
+		return func() tea.Msg {
+			return errMsg{fmt.Errorf("blocked unsafe URL scheme: %s", url)}
+		}
+	}
 	browser := os.Getenv("BROWSER")
 	if browser == "" {
 		browser = "xdg-open"
@@ -3281,8 +3308,19 @@ func (m Model) openWebVersion() (tea.Model, tea.Cmd) {
 	}
 }
 
+// dangerousExts lists file extensions that should not be auto-opened with xdg-open
+// because they could execute arbitrary code.
+var dangerousExts = map[string]bool{
+	".sh": true, ".bash": true, ".zsh": true, ".fish": true,
+	".exe": true, ".bat": true, ".cmd": true, ".com": true, ".scr": true, ".msi": true,
+	".desktop": true, ".app": true, ".command": true, ".action": true,
+	".py": true, ".rb": true, ".pl": true, ".ps1": true,
+	".jar": true, ".class": true,
+}
+
 // downloadOpenAttachmentCmd saves the attachment to ~/Downloads and opens it
 // with xdg-open (non-blocking — does not suspend the TUI).
+// Dangerous file types are saved but NOT auto-opened.
 func (m Model) downloadOpenAttachmentCmd(a imap.Attachment) tea.Cmd {
 	return func() tea.Msg {
 		home, err := os.UserHomeDir()
@@ -3308,6 +3346,10 @@ func (m Model) downloadOpenAttachmentCmd(a imap.Attachment) tea.Cmd {
 		}
 		if err := os.WriteFile(dst, a.Data, 0644); err != nil {
 			return attachOpenDoneMsg{err: fmt.Errorf("save attachment: %w", err)}
+		}
+		ext := strings.ToLower(filepath.Ext(base))
+		if dangerousExts[ext] {
+			return attachOpenDoneMsg{path: dst, dangerous: true}
 		}
 		_ = exec.Command("xdg-open", dst).Start()
 		return attachOpenDoneMsg{path: dst}
@@ -3821,11 +3863,24 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 	cc := m.compose.cc.Value()
 	bcc := m.compose.bcc.Value()
 	subject := m.compose.subject.Value()
-	prelude := editor.Prelude(to, cc, bcc, m.presendFrom(), subject, m.cfg.UI.TextSignature())
-
 	// Consume any mailto body (pre-filled from --mailto flag).
-	body := m.mailtoBody
+	mailtoBody := m.mailtoBody
 	m.mailtoBody = ""
+
+	// When a mailto body is present, insert it before the signature so
+	// the signature always appears at the bottom of the composed message.
+	sig := m.cfg.UI.TextSignature()
+	var prelude string
+	if mailtoBody != "" {
+		// Build headers without signature, append body, then signature.
+		prelude = editor.Prelude(to, cc, bcc, m.presendFrom(), subject, "")
+		prelude += mailtoBody
+		if sig != "" {
+			prelude += "\n\n--  \n" + sig + "\n"
+		}
+	} else {
+		prelude = editor.Prelude(to, cc, bcc, m.presendFrom(), subject, sig)
+	}
 
 	// Write temp file
 	f, err := os.CreateTemp(neomdTempDir(), "neomd-*.md")
@@ -3836,7 +3891,7 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	tmpPath := f.Name()
-	f.WriteString(prelude + body) //nolint
+	f.WriteString(prelude) //nolint
 	f.Close()
 
 	editorBin := os.Getenv("EDITOR")

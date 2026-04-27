@@ -19,6 +19,7 @@ type emailItem struct {
 	marked       bool   // selected for batch operation
 	displaySubj  string // rendered subject (may include folder prefix in temporary views)
 	threadPrefix string // tree chars e.g. "┌─>" for threaded display
+	hasSpyPixel  bool   // tracking pixels were detected when body was loaded
 }
 
 func (e emailItem) FilterValue() string {
@@ -46,6 +47,7 @@ const (
 	colThreadWidth = 2 // "│ " or "╰ " or "  "
 	colDateWidth   = 7 // "Feb 03 "
 	colAttachWidth = 2 // "@ " or "  "
+	colSpyWidth    = 1 // "⊙" or " " — spy pixel indicator
 	colSizeWidth   = 7 // "(38.2K)"
 )
 
@@ -90,9 +92,13 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	if e.email.HasAttachment {
 		attachStr = "@ "
 	}
+	spyStr := " "
+	if e.hasSpyPixel {
+		spyStr = "⊙"
+	}
 	sizeStr := fmtSize(e.email.Size)
 
-	fixed := colNumWidth + colFlagWidth + colReplyWidth + colThreadWidth + colDateWidth + colAttachWidth + colSizeWidth + 2 // 2 spaces padding
+	fixed := colNumWidth + colFlagWidth + colReplyWidth + colThreadWidth + colDateWidth + colAttachWidth + colSpyWidth + colSizeWidth + 2 // 2 spaces padding
 	fromMax := 20
 	subjectMax := width - fixed - fromMax - 2
 	if subjectMax < 8 {
@@ -113,8 +119,8 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	subject := truncate(subjectText, subjectMax)
 
 	if isSelected {
-		row := fmt.Sprintf("%s%s%s%s%s%s%-*s  %-*s  %s",
-			num, flag, replyStr, threadStr, dateStr, attachStr,
+		row := fmt.Sprintf("%s%s%s%s%s%s%s%-*s  %-*s  %s",
+			num, flag, replyStr, threadStr, dateStr, attachStr, spyStr,
 			fromMax, from,
 			subjectMax, subject,
 			sizeStr,
@@ -141,6 +147,10 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	threadS := lipgloss.NewStyle().Foreground(colorBorder).Render(threadStr)
 	dateS := lipgloss.NewStyle().Foreground(colorDateCol).Render(dateStr)
 	attachS := lipgloss.NewStyle().Foreground(colorDateCol).Render(attachStr)
+	spyS := lipgloss.NewStyle().Foreground(colorMuted).Render(spyStr)
+	if e.hasSpyPixel {
+		spyS = lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render(spyStr) // orange warning
+	}
 
 	fromStyle := lipgloss.NewStyle().Foreground(colorAuthorRead)
 	subStyle := lipgloss.NewStyle().Foreground(colorSubjectRead)
@@ -152,7 +162,7 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	subS := subStyle.Render(fmt.Sprintf("%-*s", subjectMax, subject))
 	sizeS := lipgloss.NewStyle().Foreground(colorSizeCol).Render(sizeStr)
 
-	fmt.Fprint(w, numS+flagS+replyS+threadS+dateS+attachS+fromS+"  "+subS+"  "+sizeS)
+	fmt.Fprint(w, numS+flagS+replyS+threadS+dateS+attachS+spyS+fromS+"  "+subS+"  "+sizeS)
 }
 
 // cleanFrom strips the <addr> part when a display name is present.
@@ -238,7 +248,7 @@ func newInboxList(width, height int, sentFolder, draftFolder string) list.Model 
 // It threads emails before display — grouped conversations appear together
 // with tree-drawing prefixes (┌─>) on reply rows.
 // Sorting respects the user's chosen sortField and sortReverse preferences.
-func setEmails(l *list.Model, emails []imap.Email, marked map[uint32]bool, prefixFolders bool, sortField string, sortReverse bool, disableThreading bool) tea.Cmd {
+func setEmails(l *list.Model, emails []imap.Email, marked, spyPixels map[uint32]bool, prefixFolders bool, sortField string, sortReverse bool, disableThreading bool) tea.Cmd {
 	var threaded []threadedEmail
 	if disableThreading {
 		threaded = flatEmails(emails, sortField, sortReverse)
@@ -257,6 +267,7 @@ func setEmails(l *list.Model, emails []imap.Email, marked map[uint32]bool, prefi
 			marked:       marked[te.email.UID],
 			displaySubj:  displaySubj,
 			threadPrefix: te.threadPrefix,
+			hasSpyPixel:  spyPixels[te.email.UID],
 		}
 	}
 	return l.SetItems(items)

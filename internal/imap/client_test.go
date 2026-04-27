@@ -228,7 +228,7 @@ func TestParseBody_InlineImageContentID(t *testing.T) {
 		"iVBORw0KGgo=\r\n" +
 		"--" + boundary + "--\r\n"
 
-	_, _, _, attachments, _ := parseBody([]byte(raw))
+	_, _, _, attachments, _, _ := parseBody([]byte(raw))
 
 	if len(attachments) == 0 {
 		t.Fatal("expected at least 1 attachment, got 0")
@@ -273,7 +273,7 @@ func TestParseBody_NoContentID(t *testing.T) {
 		"JVBERi0=\r\n" +
 		"--" + boundary + "--\r\n"
 
-	_, _, _, attachments, _ := parseBody([]byte(raw))
+	_, _, _, attachments, _, _ := parseBody([]byte(raw))
 
 	if len(attachments) == 0 {
 		t.Fatal("expected at least 1 attachment, got 0")
@@ -334,7 +334,7 @@ Signature line 2`
 		originalBody
 
 	// First parse (simulating draft reopen)
-	body1, _, _, _, _ := parseBody([]byte(draftMIME))
+	body1, _, _, _, _, _ := parseBody([]byte(draftMIME))
 
 	// Verify the body matches exactly (no trailing spaces added)
 	if body1 != originalBody {
@@ -351,7 +351,7 @@ Signature line 2`
 		"\r\n" +
 		body1 // Use the result from first parse
 
-	body2, _, _, _, _ := parseBody([]byte(draftMIME2))
+	body2, _, _, _, _, _ := parseBody([]byte(draftMIME2))
 
 	// Verify still matches exactly (no accumulation of trailing spaces)
 	if body2 != originalBody {
@@ -378,7 +378,7 @@ func TestParseBody_NonDraftGetsNormalized(t *testing.T) {
 		"\r\n" +
 		originalBody
 
-	body, _, _, _, _ := parseBody([]byte(regularMIME))
+	body, _, _, _, _, _ := parseBody([]byte(regularMIME))
 
 	// Normalization should add two trailing spaces before the newline
 	expectedNormalized := "Line 1  \nLine 2"
@@ -399,11 +399,55 @@ func TestParseBody_ReferencesExtraction(t *testing.T) {
 		"\r\n" +
 		"Test body"
 
-	_, _, _, _, references := parseBody([]byte(raw))
+	_, _, _, _, references, _ := parseBody([]byte(raw))
 
 	wantReferences := "<msg1@example.com> <msg2@example.com>"
 	if references != wantReferences {
 		t.Errorf("References = %q, want %q", references, wantReferences)
+	}
+}
+
+func TestSpyPixelDetection(t *testing.T) {
+	// HTML email with 2 tracking pixels from different domains.
+	raw := "MIME-Version: 1.0\r\n" +
+		"Content-Type: text/html; charset=utf-8\r\n" +
+		"\r\n" +
+		`<html><body>` +
+		`<p>Hello world</p>` +
+		`<img src="https://open.mailchimp.com/track/abc123" alt="" width="1" height="1">` +
+		`<img src="https://pixel.sendinblue.com/log/open?id=xyz" alt="">` +
+		`<img src="cid:logo" alt="Company Logo">` +
+		`</body></html>`
+
+	_, _, _, _, _, spy := parseBody([]byte(raw))
+
+	if spy.Count < 2 {
+		t.Errorf("SpyPixelInfo.Count = %d, want >= 2", spy.Count)
+	}
+	// Check that domains were extracted
+	found := make(map[string]bool)
+	for _, d := range spy.Domains {
+		found[d] = true
+	}
+	if !found["open.mailchimp.com"] {
+		t.Errorf("expected domain open.mailchimp.com in spy.Domains, got %v", spy.Domains)
+	}
+	if !found["pixel.sendinblue.com"] {
+		t.Errorf("expected domain pixel.sendinblue.com in spy.Domains, got %v", spy.Domains)
+	}
+}
+
+func TestSpyPixelPlainTextEmail(t *testing.T) {
+	// Plain-text emails should never report spy pixels.
+	raw := "MIME-Version: 1.0\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n" +
+		"\r\n" +
+		"Just a normal text email."
+
+	_, _, _, _, _, spy := parseBody([]byte(raw))
+
+	if spy.Count != 0 {
+		t.Errorf("plain-text email SpyPixelInfo.Count = %d, want 0", spy.Count)
 	}
 }
 
