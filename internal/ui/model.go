@@ -3271,7 +3271,7 @@ func (m Model) openInBrowser() (tea.Model, tea.Cmd) {
 
 	var htmlBody string
 	if m.openHTMLBody != "" {
-		htmlBody = m.openHTMLBody
+		htmlBody = render.SanitizeForBrowser(m.openHTMLBody)
 	} else {
 		var err error
 		htmlBody, err = render.ToHTML(m.openBody)
@@ -3348,7 +3348,7 @@ func (m Model) openInW3m() (tea.Model, tea.Cmd) {
 
 	var htmlBody string
 	if m.openHTMLBody != "" {
-		htmlBody = m.openHTMLBody
+		htmlBody = render.SanitizeForBrowser(m.openHTMLBody)
 	} else {
 		var err error
 		htmlBody, err = render.ToHTML(m.openBody)

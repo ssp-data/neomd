@@ -20,6 +20,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="script-src 'none'; frame-src 'none'; object-src 'none';">
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.6;color:#333;margin:0;padding:8px 16px;text-align:left}
 a{color:#3150AA;text-decoration:underline}
@@ -59,6 +60,22 @@ var md = goldmark.New(
 	),
 	goldmark.WithRendererOptions(html.WithHardWraps()),
 )
+
+// browserCSP is injected into raw HTML emails to block scripts, frames, and objects
+// while still allowing remote images (user explicitly chose to open in browser).
+const browserCSP = `<meta http-equiv="Content-Security-Policy" content="script-src 'none'; frame-src 'none'; object-src 'none';">`
+
+// SanitizeForBrowser injects a restrictive CSP into raw HTML to block scripts
+// and frames while allowing images. For use when opening untrusted email HTML.
+func SanitizeForBrowser(html string) string {
+	// Insert after <head> if present, otherwise prepend.
+	lower := strings.ToLower(html)
+	if idx := strings.Index(lower, "<head>"); idx >= 0 {
+		insert := idx + len("<head>")
+		return html[:insert] + "\n" + browserCSP + "\n" + html[insert:]
+	}
+	return browserCSP + "\n" + html
+}
 
 // ToHTML converts a Markdown string to a complete HTML email document.
 func ToHTML(markdown string) (string, error) {
