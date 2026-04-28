@@ -1344,9 +1344,9 @@ func detectSpyPixels(html string) SpyPixelInfo {
 			spy.Count++
 			src := reSpyPixel.FindStringSubmatch(tag)
 			if len(src) >= 2 {
-				if d := extractDomain(src[1]); d != "" && !seen[d] {
-					seen[d] = true
-					spy.Domains = append(spy.Domains, d)
+				if label := domainPathLabel(src[1]); label != "" && !seen[label] {
+					seen[label] = true
+					spy.Domains = append(spy.Domains, label)
 				}
 			}
 		}
@@ -1412,6 +1412,43 @@ func extractDomain(rawURL string) string {
 		after = after[:i]
 	}
 	return after
+}
+
+// domainPathLabel returns "domain/../lastSegment" for a URL, e.g.
+// "https://Sync.us7.list-manage.com/track/open.php?u=..." → "Sync.us7.list-manage.com/../open.php"
+func domainPathLabel(rawURL string) string {
+	domain := extractDomain(rawURL)
+	if domain == "" {
+		return ""
+	}
+	// Extract path: everything after domain, before query.
+	after := rawURL
+	if i := strings.Index(rawURL, "://"); i >= 0 {
+		after = rawURL[i+3:]
+	}
+	path := ""
+	if i := strings.IndexByte(after, '/'); i >= 0 {
+		path = after[i:]
+	}
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		path = path[:i]
+	}
+	// Get last meaningful path segment.
+	path = strings.TrimRight(path, "/")
+	if path == "" {
+		return domain
+	}
+	last := path
+	if i := strings.LastIndexByte(path, '/'); i >= 0 {
+		last = path[i+1:]
+	}
+	if last == "" {
+		return domain
+	}
+	if len(last) > 10 {
+		last = "…" + last[len(last)-10:]
+	}
+	return domain + "/../" + last
 }
 
 // normalizePlainText prepares a plain-text email body for glamour rendering.

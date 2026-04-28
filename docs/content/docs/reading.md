@@ -39,8 +39,8 @@ neomd automatically detects and blocks tracking pixels (1x1 invisible images use
 **Detection method:** neomd scans the raw HTML for `<img>` tags with empty `alt` attributes AND at least one of: tiny dimensions (width/height 0 or 1), CSS hiding (`display:none`), or known tracker URL patterns (`/track/open`, `/pixel`, `/beacon`, etc.). Legitimate decorative images with empty alt text but normal dimensions are not flagged.
 
 When tracking pixels are detected, neomd shows:
-- `⊙` indicator in the inbox list (orange, next to the attachment `@` column)
-- `⊙ N spy pixel(s) blocked (domain.com)` in the reader header with tracker domains
+- `°` indicator in the inbox list (orange, next to the attachment `@` column)
+- `° N spy pixel(s) blocked (domain.com)` in the reader header with tracker domains
 
 **Scanning:** Spy pixels are detected when you read an email. To scan all emails in the current folder at once, press `<space>S` or run `:scan-spy-pixels` (alias `:ssp`). The scan runs in the background, skips already-scanned emails, and uses IMAP PEEK (won't mark emails as read). Results are cached in `~/.cache/neomd/spy_pixels` and persist across restarts.
 
@@ -104,7 +104,7 @@ Threads display with a Twitter-style vertical connector line:
 - `·╰ ` reply indicator within a thread
 - `│` connects thread members (newest on top)
 - `╰` marks the root/oldest email at the bottom of each thread
-- `⊙` spy pixel indicator — tracking pixels were detected and blocked (shown after first read)
+- `°` spy pixel indicator — tracking pixels were detected and blocked (shown after first read)
 - Non-threaded emails show no connector (clean, no visual noise)
 - Threads are sorted by their most recent email, so active conversations float to the top
 

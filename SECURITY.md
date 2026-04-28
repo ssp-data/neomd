@@ -86,21 +86,43 @@ neomd automatically detects and blocks tracking pixels (1x1 invisible images emb
 **How it works:**
 - The TUI renders emails as styled Markdown via glamour — **no HTTP requests** are made during rendering, so tracking servers are never contacted. Senders cannot tell if you read their email.
 - `detectSpyPixels()` scans raw HTML for `<img>` tags with empty alt AND at least one of: tiny dimensions (width/height 0–1), CSS hiding, or known tracker URL patterns. This runs before markdown conversion so size/style info is preserved.
-- The inbox list shows a `⊙` indicator (orange) for emails that contained tracking pixels, visible after first read or after running `<space>S` / `:scan-spy-pixels`.
-- The reader header shows `⊙ N spy pixel(s) blocked (domain.com, ...)` with the tracker domains.
+- The inbox list shows a `°` indicator (orange) for emails that contained tracking pixels, visible after first read or after running `<space>S` / `:scan-spy-pixels`.
+- The reader header shows `° N spy pixel(s) blocked (domain.com, ...)` with the tracker domains.
 - Scan results are cached in `~/.cache/neomd/spy_pixels` and persist across restarts. Both positive (has tracker) and negative (scanned clean) results are cached so repeat scans are instant.
 
 **Browser view (`O`):** When you open an email in the browser, a Content-Security-Policy is injected that blocks JavaScript, iframes, and embedded objects (`script-src 'none'; frame-src 'none'; object-src 'none'`). Remote images are intentionally allowed — you're choosing to see the full email. This prevents script execution while preserving the visual experience.
 
-**Code:** [`internal/imap/client.go`](https://github.com/ssp-data/neomd/blob/main/internal/imap/client.go) — `detectSpyPixels()`, `ScanSpyPixels()` · [`internal/render/html.go`](https://github.com/ssp-data/neomd/blob/main/internal/render/html.go) — `SanitizeForBrowser()` · [`internal/ui/inbox.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/inbox.go) — `⊙` indicator · [`internal/ui/reader.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/reader.go) — `renderEmailHeader()`
+**Code:** [`internal/imap/client.go`](https://github.com/ssp-data/neomd/blob/main/internal/imap/client.go) — `detectSpyPixels()`, `ScanSpyPixels()` · [`internal/render/html.go`](https://github.com/ssp-data/neomd/blob/main/internal/render/html.go) — `SanitizeForBrowser()` · [`internal/ui/inbox.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/inbox.go) — `°` indicator · [`internal/ui/reader.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/reader.go) — `renderEmailHeader()`
 
 ---
 
 ## Attachment safety
 
-Attachments are saved to `~/Downloads/` and opened with `xdg-open`. To prevent accidental execution of malicious files, neomd maintains a blocklist of dangerous file extensions (`.sh`, `.exe`, `.desktop`, `.bat`, `.py`, `.jar`, etc.). Files with these extensions are **saved but not auto-opened** — the status bar warns that the file type is dangerous and the user must open it manually.
+Attachments are saved to `~/Downloads/` and opened with `xdg-open`. Two layers of protection prevent accidental execution of malicious files:
 
-**Code:** [`internal/ui/model.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/model.go) — `dangerousExts`, `downloadOpenAttachmentCmd()`
+1. **Extension blocklist** — files with dangerous extensions (`.sh`, `.exe`, `.desktop`, `.bat`, `.py`, `.jar`, etc.) are saved but **not auto-opened**. The status bar warns about the dangerous file type.
+
+2. **Magic-byte verification** — before opening, neomd inspects the actual file content using Go's `net/http.DetectContentType()` (WHATWG MIME sniffing, first 512 bytes) and compares it against what the file extension claims. If there's a mismatch — e.g. a shell script disguised as `photo.png` (detected as `text/plain`, expected `image/`) — the file is saved but **not auto-opened**. This catches attackers who rename executable files to look like images, PDFs, or other safe types.
+
+| Scenario | Extension | Magic bytes | Result |
+|---|---|---|---|
+| `malware.sh` | `.sh` → blocked | — | Saved, not opened |
+| `malware.sh` → `photo.png` | `.png` → safe | `text/plain` ≠ `image/` | Saved, not opened |
+| Real `photo.png` | `.png` → safe | `image/png` ✓ | Opened normally |
+
+**Code:** [`internal/ui/model.go`](https://github.com/ssp-data/neomd/blob/main/internal/ui/model.go) — `dangerousExts`, `isMimeMismatch()`, `downloadOpenAttachmentCmd()`
+
+---
+
+## Screener as a security layer
+
+The [HEY-style screener](https://ssp-data.github.io/neomd/docs/screener/) is primarily a productivity workflow, but it doubles as a phishing defense. Unknown senders never reach your Inbox — they land in `ToScreen` first, where you decide whether to approve them.
+
+This matters because **an email in ToScreen from a sender you already screened in is immediately suspicious**. If you've approved `info@sbb.ch` (Swiss train service), but a new email from `info@sbb-tickets.fake.com` arrives in ToScreen, you know it's an impersonation attempt before you even open it. Without the screener, that phishing email would sit alongside legitimate SBB emails in your Inbox with no visual distinction.
+
+In practice: everything in your Inbox is from senders you've explicitly trusted. ToScreen is your quarantine — treat it with suspicion by default, verify the sender address, and press `$` to mark spam.
+
+**Code:** [`internal/screener/screener.go`](https://github.com/ssp-data/neomd/blob/main/internal/screener/screener.go)
 
 ---
 

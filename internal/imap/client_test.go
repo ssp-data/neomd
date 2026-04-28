@@ -434,14 +434,16 @@ func TestSpyPixelDetection(t *testing.T) {
 	for _, d := range spy.Domains {
 		found[d] = true
 	}
-	if !found["click.mailchimp.com"] {
-		t.Errorf("expected domain click.mailchimp.com in spy.Domains, got %v", spy.Domains)
+	if !found["click.mailchimp.com/../open.php"] {
+		t.Errorf("expected click.mailchimp.com/../open.php in spy.Domains, got %v", spy.Domains)
 	}
-	if !found["pixel.sendinblue.com"] {
-		t.Errorf("expected domain pixel.sendinblue.com in spy.Domains, got %v", spy.Domains)
+	if !found["pixel.sendinblue.com/../open"] {
+		t.Errorf("expected pixel.sendinblue.com/../open in spy.Domains, got %v", spy.Domains)
 	}
-	if found["cdn.example.com"] {
-		t.Errorf("decorative image cdn.example.com should NOT be counted as spy pixel, got %v", spy.Domains)
+	for _, d := range spy.Domains {
+		if strings.Contains(d, "cdn.example.com") {
+			t.Errorf("decorative image should NOT be counted, got %v", spy.Domains)
+		}
 	}
 }
 

@@ -60,9 +60,12 @@ menu:
     - name: Changelog
       url: "https://github.com/ssp-data/neomd/blob/main/CHANGELOG.md"
       weight: 101
+    - name: Security
+      url: "https://github.com/ssp-data/neomd/blob/main/SECURITY.md"
+      weight: 110
     - name: Roadmap
       url: "https://www.ssp.sh/brain/neomd#roadmap"
-      weight: 102
+      weight: 120
 
 params:
   description: "A fast, keyboard-first TUI email client with smart screening"

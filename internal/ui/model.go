@@ -3,6 +3,7 @@ package ui
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -3274,15 +3275,16 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.downloadOpenAttachmentCmd(m.openAttachments[idx])
 		}
 	case " ":
-		if len(m.openLinks) > 0 {
-			m.readerPending = " "
-			if len(m.openLinks) > 10 {
-				m.status = "open link: 1-0 (links 1-10), l11-99 (links 11+)"
-			} else {
-				m.status = "open link: 1-0"
-			}
-			return m, nil
+		m.readerPending = " "
+		var hints []string
+		if len(m.openLinks) > 10 {
+			hints = append(hints, "1-0 links", "l11-99 links 11+")
+		} else if len(m.openLinks) > 0 {
+			hints = append(hints, "1-0 links")
 		}
+		hints = append(hints, "d download .eml")
+		m.status = "space: " + strings.Join(hints, "  ·  ")
+		return m, nil
 	case "g":
 		m.readerPending = "g"
 		return m, nil
@@ -3460,6 +3462,28 @@ func (m Model) openWebVersion() (tea.Model, tea.Cmd) {
 	}
 }
 
+// expectedMimePrefix maps common file extensions to expected MIME type prefixes.
+// If magic-byte detection returns something outside the expected prefix, the file is suspicious.
+var expectedMimePrefix = map[string]string{
+	".png": "image/", ".jpg": "image/", ".jpeg": "image/", ".gif": "image/",
+	".webp": "image/", ".svg": "image/", ".bmp": "image/", ".ico": "image/",
+	".pdf": "application/pdf",
+	".zip": "application/zip", ".gz": "application/",
+	".doc": "application/", ".docx": "application/", ".xls": "application/", ".xlsx": "application/",
+	".mp3": "audio/", ".wav": "audio/", ".ogg": "audio/",
+	".mp4": "video/", ".webm": "video/", ".avi": "video/",
+}
+
+// isMimeMismatch returns true if the file extension claims to be a safe type
+// but magic-byte detection says otherwise (e.g. a script disguised as .png).
+func isMimeMismatch(ext, detected string) bool {
+	expected, ok := expectedMimePrefix[ext]
+	if !ok {
+		return false // unknown extension — can't validate, let it through
+	}
+	return !strings.HasPrefix(detected, expected)
+}
+
 // dangerousExts lists file extensions that should not be auto-opened with xdg-open
 // because they could execute arbitrary code.
 var dangerousExts = map[string]bool{
@@ -3501,6 +3525,11 @@ func (m Model) downloadOpenAttachmentCmd(a imap.Attachment) tea.Cmd {
 		}
 		ext := strings.ToLower(filepath.Ext(base))
 		if dangerousExts[ext] {
+			return attachOpenDoneMsg{path: dst, dangerous: true}
+		}
+		// Magic-byte check: detect actual content type from file bytes.
+		// Flags mismatches like a .sh disguised as .png (detected as text/plain, not image/png).
+		if detected := http.DetectContentType(a.Data); isMimeMismatch(ext, detected) {
 			return attachOpenDoneMsg{path: dst, dangerous: true}
 		}
 		_ = exec.Command("xdg-open", dst).Start()

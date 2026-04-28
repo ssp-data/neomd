@@ -47,7 +47,7 @@ const (
 	colThreadWidth = 2 // "│ " or "╰ " or "  "
 	colDateWidth   = 7 // "Feb 03 "
 	colAttachWidth = 2 // "@ " or "  "
-	colSpyWidth    = 2 // "⊙ " or "  " — spy pixel indicator
+	colSpyWidth    = 2 // "°" or "  " — spy pixel indicator
 	colSizeWidth   = 7 // "(38.2K)"
 )
 
@@ -94,7 +94,7 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	}
 	spyStr := "  "
 	if e.hasSpyPixel {
-		spyStr = "⊙ "
+		spyStr = "° "
 	}
 	sizeStr := fmtSize(e.email.Size)
 

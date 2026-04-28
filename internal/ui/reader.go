@@ -119,12 +119,13 @@ func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, spyPixels i
 		styleDate.Render("Date:    ")+fmtDateFull(e.Date),
 	)
 
+	attachStyle := lipgloss.NewStyle().Foreground(colorSubjectRead) // waveAqua2 — visible but not dominant
 	if len(attachments) > 0 {
 		var parts []string
 		for i, a := range attachments {
-			parts = append(parts, fmt.Sprintf("[%d] %s", i+1, a.Filename))
+			parts = append(parts, attachStyle.Render(fmt.Sprintf("[%d] %s", i+1, a.Filename)))
 		}
-		lines = append(lines, styleHelp.Render("Attach:  ")+strings.Join(parts, "  "))
+		lines = append(lines, styleDate.Render("Attach:  ")+strings.Join(parts, "  "))
 	}
 
 	if spyPixels.Count > 0 {
@@ -133,7 +134,7 @@ func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, spyPixels i
 		if len(spyPixels.Domains) > 0 {
 			label += " (" + strings.Join(spyPixels.Domains, ", ") + ")"
 		}
-		lines = append(lines, spyStyle.Render("⊙ "+label))
+		lines = append(lines, spyStyle.Render("° "+label))
 	}
 
 	content := strings.Join(lines, "\n")

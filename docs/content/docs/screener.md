@@ -54,6 +54,14 @@ When you add many senders to `feed.txt` or `papertrail.txt` at once (e.g. after 
 
 `:screen-all` (alias `:sa`) scans every email in your Inbox — read and unread — and proposes moves for any sender that is now in a list. It does **not** touch emails already in Feed, PaperTrail, or other folders.
 
+## Screener as phishing defense
+
+The screener isn't just a productivity tool — it's a natural phishing filter. Since unknown senders always land in ToScreen, your Inbox only contains emails from senders you've explicitly approved.
+
+This makes impersonation attempts easy to spot: if you've already screened in `info@sbb.ch` (Swiss train service), a phishing email from `info@sbb-tickets.fake.com` will land in ToScreen, not your Inbox. You'll immediately notice it's suspicious because the real sender is already approved. Without the screener, the fake would sit alongside legitimate emails with no visual distinction.
+
+**Practical rule:** treat ToScreen as a quarantine. Verify the sender address before approving. Press `$` to mark spam.
+
 ## Screening happens once
 
 Emails are only auto-screened while they are in the **Inbox**. Once moved to ToScreen (or any other folder), they are not re-classified automatically. This keeps the logic simple and predictable.
