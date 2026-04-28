@@ -22,6 +22,7 @@
 //     by MailTrackerBlocker and Twobird as well.
 //     https://github.com/leggett/simplify-trackers
 //     License: BSD-3-Clause
+//     Copyright (c) 2021 Michael Leggett, simpl.fyi
 //
 //   - LeaveMeAlone email-trackers list, derived from UglyEmail, written
 //     in adblock-filter syntax.
