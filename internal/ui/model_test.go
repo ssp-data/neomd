@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -613,6 +614,119 @@ func TestReplyAllExcludesAllOwnAddresses(t *testing.T) {
 				if strings.Contains(strings.ToLower(gotCC), strings.ToLower(extractEmailAddr(excl))) {
 					t.Errorf("excluded address %q should not appear in CC: %q", excl, gotCC)
 				}
+			}
+		})
+	}
+}
+
+func TestIsMimeMismatch(t *testing.T) {
+	tests := []struct {
+		name     string
+		ext      string
+		detected string
+		want     bool
+	}{
+		// Disguised files — should be flagged
+		{"sh disguised as png", ".png", "text/plain; charset=utf-8", true},
+		{"html disguised as jpg", ".jpg", "text/html; charset=utf-8", true},
+		{"elf binary as pdf", ".pdf", "application/octet-stream", true},
+		{"script as gif", ".gif", "text/plain; charset=utf-8", true},
+
+		// Legitimate files — should pass
+		{"real png", ".png", "image/png", false},
+		{"real jpg", ".jpg", "image/jpeg", false},
+		{"real gif", ".gif", "image/gif", false},
+		{"real pdf", ".pdf", "application/pdf", false},
+		{"real zip", ".zip", "application/zip", false},
+		{"real mp3", ".mp3", "audio/mpeg", false},
+		{"real mp4", ".mp4", "video/mp4", false},
+
+		// Unknown extensions — can't validate, should pass through
+		{"unknown ext .xyz", ".xyz", "text/plain; charset=utf-8", false},
+		{"unknown ext .foo", ".foo", "application/octet-stream", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isMimeMismatch(tt.ext, tt.detected)
+			if got != tt.want {
+				t.Errorf("isMimeMismatch(%q, %q) = %v, want %v", tt.ext, tt.detected, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDangerousExts(t *testing.T) {
+	// Verify known dangerous extensions are in the blocklist.
+	dangerous := []string{".sh", ".exe", ".desktop", ".bat", ".py", ".jar", ".ps1"}
+	for _, ext := range dangerous {
+		if !dangerousExts[ext] {
+			t.Errorf("expected %q in dangerousExts", ext)
+		}
+	}
+	// Verify safe extensions are NOT in the blocklist.
+	safe := []string{".png", ".jpg", ".pdf", ".txt", ".html", ".md"}
+	for _, ext := range safe {
+		if dangerousExts[ext] {
+			t.Errorf("unexpected %q in dangerousExts", ext)
+		}
+	}
+}
+
+func TestMimeMismatchWithRealBytes(t *testing.T) {
+	// Simulate real magic-byte detection scenarios using net/http.DetectContentType.
+	tests := []struct {
+		name    string
+		ext     string
+		data    []byte // fake file content
+		wantBad bool
+	}{
+		{
+			name:    "bash script disguised as .png",
+			ext:     ".png",
+			data:    []byte("#!/bin/bash\necho hello\n"),
+			wantBad: true,
+		},
+		{
+			name:    "python script disguised as .jpg",
+			ext:     ".jpg",
+			data:    []byte("#!/usr/bin/env python3\nprint('hello')\n"),
+			wantBad: true,
+		},
+		{
+			name:    "html with script disguised as .pdf",
+			ext:     ".pdf",
+			data:    []byte("<html><body>harmless content</body></html>"),
+			wantBad: true,
+		},
+		{
+			name: "real PNG file (magic bytes)",
+			ext:  ".png",
+			// PNG magic: 89 50 4E 47 0D 0A 1A 0A
+			data:    []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00},
+			wantBad: false,
+		},
+		{
+			name: "real PDF file (magic bytes)",
+			ext:  ".pdf",
+			// PDF magic: %PDF-
+			data:    []byte("%PDF-1.4 fake pdf content here"),
+			wantBad: false,
+		},
+		{
+			name: "real GIF file (magic bytes)",
+			ext:  ".gif",
+			// GIF magic: GIF89a
+			data:    []byte("GIF89a" + strings.Repeat("\x00", 100)),
+			wantBad: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			detected := http.DetectContentType(tt.data)
+			got := isMimeMismatch(tt.ext, detected)
+			if got != tt.wantBad {
+				t.Errorf("isMimeMismatch(%q, %q) = %v, want %v (data: %q...)",
+					tt.ext, detected, got, tt.wantBad, string(tt.data[:min(20, len(tt.data))]))
 			}
 		})
 	}

@@ -3466,7 +3466,7 @@ func (m Model) openWebVersion() (tea.Model, tea.Cmd) {
 // If magic-byte detection returns something outside the expected prefix, the file is suspicious.
 var expectedMimePrefix = map[string]string{
 	".png": "image/", ".jpg": "image/", ".jpeg": "image/", ".gif": "image/",
-	".webp": "image/", ".svg": "image/", ".bmp": "image/", ".ico": "image/",
+	".webp": "image/", ".bmp": "image/", ".ico": "image/",
 	".pdf": "application/pdf",
 	".zip": "application/zip", ".gz": "application/",
 	".doc": "application/", ".docx": "application/", ".xls": "application/", ".xlsx": "application/",
