@@ -1,5 +1,5 @@
 # Hugo configuration file
-title: neomd Documentation
+title: neomd
 
 # Base URL will be set by GitHub Actions
 baseURL: "https://neomd.ssp.sh/"
@@ -69,6 +69,8 @@ menu:
 
 params:
   description: "A fast, keyboard-first TUI email client with smart screening"
+  images:
+    - /images/neomd-hero.png
 
   navbar:
     displayTitle: true
