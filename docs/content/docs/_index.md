@@ -85,7 +85,8 @@ flowchart TD
 ### Overview: List-View
 
 Feed view with all Newsletters - also workflow with differnt tabs and unread counter only for certain tabs (not all):
-![neomd](/images/overview-email-feed.png)
+![neomd](/images/neomd-hero.png)
+*Features seen: Reading newsletter directly in your email client (feed) - see spy pixel, if you have replied (dot) and thread mode if replied*
 
 ### Reading Panel
 
