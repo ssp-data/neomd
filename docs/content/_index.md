@@ -69,16 +69,16 @@ toc: false
 <br>
 
 <div class="hx-mt-12 hx-mb-8">
-<h2 class="hx-text-4xl hx-font-bold hx-tracking-tight hx-text-gray-900 dark:hx-text-gray-50">Video Demo</h2>
+<h2 class="hx-text-4xl hx-font-bold hx-tracking-tight hx-text-gray-900 dark:hx-text-gray-50">Video Demo - YouTube rundown of most features:</h2>
 </div>
 
-YouTube rundown of most features:
+
 [![neomd demo](https://img.youtube.com/vi/lpmHqIrCC-w/maxresdefault.jpg)](https://youtu.be/8aKkldYLWV8)
 
 
 <br>
 <div class="hx-mt-12 hx-mb-8">
-<h2 class="hx-text-4xl hx-font-bold hx-tracking-tight hx-text-gray-900 dark:hx-text-gray-50">Documentation</h2>
+<h2 class="hx-text-4xl hx-font-bold hx-tracking-tight hx-text-gray-900 dark:hx-text-gray-50">Documentation:</h2>
 </div>
 
 {{< cards cols="3" >}}
@@ -98,12 +98,11 @@ YouTube rundown of most features:
 {{< hextra/hero-button text="Getting Started: Install" link="docs#install" >}}
 </div>
 
+<br>
 
 <div class="hx-mt-12 hx-mb-8">
-<h2 class="hx-text-4xl hx-font-bold hx-tracking-tight hx-text-gray-900 dark:hx-text-gray-50">Links</h2>
+<h2 class="hx-text-4xl hx-font-bold hx-tracking-tight hx-text-gray-900 dark:hx-text-gray-50">Links:</h2>
 </div>
-
-<br>
 
 - [GitHub Repository](https://github.com/ssp-data/neomd)
 - [Changelog](https://github.com/ssp-data/neomd/blob/main/CHANGELOG.md)
