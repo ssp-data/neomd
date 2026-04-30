@@ -103,6 +103,8 @@ YouTube rundown of most features:
 <h2 class="hx-text-4xl hx-font-bold hx-tracking-tight hx-text-gray-900 dark:hx-text-gray-50">Links</h2>
 </div>
 
+<br>
+
 - [GitHub Repository](https://github.com/ssp-data/neomd)
 - [Changelog](https://github.com/ssp-data/neomd/blob/main/CHANGELOG.md)
 - [Roadmap](https://www.ssp.sh/brain/neomd#roadmap)
