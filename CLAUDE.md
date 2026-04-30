@@ -57,7 +57,7 @@ Folder operations prefer RFC 6851 MOVE; `u` undo uses UIDPLUS destination UIDs c
 
 **Config** (`internal/config/`) — TOML at `~/.config/neomd/config.toml`, auto-created with placeholders. Supports multiple `[[accounts]]` and SMTP-only `[[senders]]` aliases (cycled with `ctrl+f` in compose/pre-send). OAuth2 authentication supported via `oauth2_client_id`, `oauth2_client_secret`, `oauth2_issuer_url`, `oauth2_scopes` fields. `-config PATH` flag overrides location.
 
-**Documentation** — Hugo site in `docs/` served at https://ssp-data.github.io/neomd/. README.md is synced to `docs/content/overview.md` via `scripts/sync-readme-to-docs.sh`. Keybindings are auto-generated from `internal/ui/keys.go` via `cmd/docs/main.go` — never hand-edit the markdown tables.
+**Documentation** — Hugo site in `docs/` served at https://neomd.ssp.sh/. README.md is synced to `docs/content/overview.md` via `scripts/sync-readme-to-docs.sh`. Keybindings are auto-generated from `internal/ui/keys.go` via `cmd/docs/main.go` — never hand-edit the markdown tables.
 
 **Package structure:**
 - `internal/ui/` — bubbletea TUI: model.go (state machine), inbox.go, reader.go, compose.go, keys.go (single source of truth for keybindings)

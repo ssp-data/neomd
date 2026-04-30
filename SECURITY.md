@@ -117,7 +117,7 @@ Attachments are saved to `~/Downloads/` and opened with `xdg-open`. Two layers o
 
 ## Screener as a security layer
 
-The [HEY-style screener](https://ssp-data.github.io/neomd/docs/screener/) is primarily a productivity workflow, but it doubles as a **phishing defense**. Unknown senders never reach your Inbox — they land in `ToScreen` first, where you decide whether to approve them.
+The [HEY-style screener](https://neomd.ssp.sh/docs/screener/) is primarily a productivity workflow, but it doubles as a **phishing defense**. Unknown senders never reach your Inbox — they land in `ToScreen` first, where you decide whether to approve them.
 
 This matters because **an email in ToScreen from a sender you already screened in is immediately suspicious**. If you've approved `info@sbb.ch` (Swiss train service), but a new email from `info@sbb-tickets.fake.com` arrives in ToScreen, you know it's an impersonation attempt before you even open it. Without the screener, that phishing email would sit alongside legitimate SBB emails in your Inbox with no visual distinction.
 
