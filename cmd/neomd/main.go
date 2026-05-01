@@ -116,7 +116,9 @@ func main() {
 	}
 	defer func() {
 		for _, c := range imapClients {
-			c.Close()
+			if c != nil {
+				c.Close()
+			}
 		}
 	}()
 
