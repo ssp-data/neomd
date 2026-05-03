@@ -146,6 +146,104 @@ func TestPresendSMTPAccount(t *testing.T) {
 	})
 }
 
+// TestReactionAutoSelectsCorrectFromAndSMTP covers the full ctrl+e path:
+// matchFromIndex picks the From based on which of our addresses received the
+// email, and presendSMTPAccount() — used by sendReaction — must return the
+// SMTP account matching that From (account or sender-alias). Regression for a
+// bug where sendReaction used a custom check that misread account indices as
+// sender-alias indices in multi-account setups, causing reactions to a Work
+// address to send the From header as Work but authenticate via Personal SMTP
+// and grab Senders[0].
+func TestReactionAutoSelectsCorrectFromAndSMTP(t *testing.T) {
+	// Mirrors the user's real config: 4 accounts, then 1 sender alias on Personal.
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{Name: "Personal", User: "simu@sspaeti.com", From: "Simon Späti <simu@sspaeti.com>"},
+			{Name: "Work", User: "simon@sspaeti.com", From: "Simon Späti <simon@ssp.sh>"},
+			{Name: "Work Info", User: "info@ssp.sh", From: "SSP Data GmbH <info@ssp.sh>"},
+			{Name: "Gmail", User: "simon.spaeti@gmail.com", From: "Simon Späti <simon.spaeti@gmail.com>"},
+		},
+		Senders: []config.SenderConfig{
+			{Name: "Simon Späti", From: "Simon Späti <s@ssp.sh>", Account: "Personal"},
+		},
+	}
+
+	tests := []struct {
+		name        string
+		recipientTo string
+		recipientCC string
+		wantFrom    string // expected From header
+		wantSMTP    string // expected SMTP account name
+	}{
+		{
+			name:        "received at Work address while in Personal inbox",
+			recipientTo: "simon@ssp.sh",
+			wantFrom:    "Simon Späti <simon@ssp.sh>",
+			wantSMTP:    "Work",
+		},
+		{
+			name:        "received at Work Info address",
+			recipientTo: "info@ssp.sh",
+			wantFrom:    "SSP Data GmbH <info@ssp.sh>",
+			wantSMTP:    "Work Info",
+		},
+		{
+			name:        "received at Gmail address",
+			recipientTo: "simon.spaeti@gmail.com",
+			wantFrom:    "Simon Späti <simon.spaeti@gmail.com>",
+			wantSMTP:    "Gmail",
+		},
+		{
+			name:        "received at sender alias resolves to alias's account",
+			recipientTo: "s@ssp.sh",
+			wantFrom:    "Simon Späti <s@ssp.sh>",
+			wantSMTP:    "Personal",
+		},
+		{
+			name:        "received at Personal address (also the active inbox)",
+			recipientTo: "simu@sspaeti.com",
+			wantFrom:    "Simon Späti <simu@sspaeti.com>",
+			wantSMTP:    "Personal",
+		},
+		{
+			name:        "match via CC field, not To",
+			recipientTo: "someone-else@example.com",
+			recipientCC: "simon@ssp.sh",
+			wantFrom:    "Simon Späti <simon@ssp.sh>",
+			wantSMTP:    "Work",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				cfg:      cfg,
+				accounts: cfg.ActiveAccounts(),
+				accountI: 0, // active inbox = Personal (the bug's worst case)
+			}
+			email := &imap.Email{
+				UID:     42,
+				Folder:  "INBOX",
+				From:    "someone@external.com",
+				To:      tt.recipientTo,
+				CC:      tt.recipientCC,
+				Subject: "Hello",
+			}
+
+			next, _ := m.enterReactionMode(email)
+			got := next.(Model)
+
+			if from := got.presendFrom(); from != tt.wantFrom {
+				t.Errorf("presendFrom() = %q, want %q", from, tt.wantFrom)
+			}
+			if smtp := got.presendSMTPAccount().Name; smtp != tt.wantSMTP {
+				t.Errorf("presendSMTPAccount().Name = %q, want %q (presendFromI=%d)",
+					smtp, tt.wantSMTP, got.presendFromI)
+			}
+		})
+	}
+}
+
 func TestSentDraftsIMAPClient_DefaultsToPrimaryAccount(t *testing.T) {
 	cfg := &config.Config{
 		Accounts: []config.AccountConfig{

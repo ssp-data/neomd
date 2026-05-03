@@ -1,5 +1,8 @@
 # Changelog
 
+# 2026-05-02
+- **Fix: emoji reaction sent through wrong SMTP account** — `ctrl+e` reactions already auto-selected the correct From address (matching whichever of your addresses received the email), but `sendReaction()` then resolved the SMTP account with a buggy custom check (`presendFromI > 0 && presendFromI-1 < len(senders)`) that misinterpreted account indices as sender-alias indices in multi-account setups; e.g. mail to `simon@ssp.sh` (Work, account index 1) while in the Personal inbox would send the reaction header as `simon@ssp.sh` but authenticate via Personal's SMTP and grab `Senders[0]`; reactions now use `presendSMTPAccount()` (same helper as the regular send path), so SMTP credentials, the Sent-folder destination, and the From header all match the address that received the original email
+
 # 2026-04-30
 - **Send-only accounts (`imap_disabled = true`)** — accounts can be marked as send-only by setting `imap_disabled = true`; neomd skips IMAP connection, folder fetching, and screening for that account; the account remains available as a From address via `ctrl+f` in compose/pre-send; `ctrl+a` account cycling skips disabled accounts; useful for adding Gmail or other providers purely for sending without fetching thousands of emails; `:debug` shows "(imap disabled)" label
 

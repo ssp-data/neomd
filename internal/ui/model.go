@@ -918,18 +918,10 @@ func (m Model) sendReaction(emojiIndex int) (tea.Model, tea.Cmd) {
 	// Build reaction body in markdown (used for both text/plain and text/html parts, same as regular replies)
 	bodyMarkdown := editor.ReactionBody(emoji.emoji, fromName, e.From, m.openBody)
 
-	// Get SMTP account
-	smtpAcct := m.activeAccount()
-	if m.presendFromI > 0 && m.presendFromI-1 < len(m.cfg.Senders) {
-		// Sender alias selected; find its SMTP account
-		alias := m.cfg.Senders[m.presendFromI-1]
-		for _, acc := range m.accounts {
-			if acc.Name == alias.Account {
-				smtpAcct = acc
-				break
-			}
-		}
-	}
+	// Get SMTP account matching the selected From. presendFromI is pre-set by
+	// matchFromIndex in enterReactionMode based on which of our addresses
+	// received the email, so this resolves to the correct account/alias SMTP.
+	smtpAcct := m.presendSMTPAccount()
 
 	// Reset state before sending
 	m.state = m.prevState
