@@ -176,6 +176,45 @@ func TestBulkThreshold(t *testing.T) {
 	}
 }
 
+func TestLabelFor(t *testing.T) {
+	// Custom IMAP folder names (e.g. HEY-style labels).
+	fc := FoldersConfig{
+		Inbox:      "INBOX",
+		PaperTrail: "HEY/Paper Trail",
+		Feed:       "Newsletters",
+		Sent:       "Sent Items",
+	}
+	tests := []struct {
+		imap, want string
+	}{
+		{"INBOX", "Inbox"},
+		{"HEY/Paper Trail", "PaperTrail"},
+		{"Newsletters", "Feed"},
+		{"Sent Items", "Sent"},
+		{"unknown-folder", "unknown-folder"}, // pass-through fallback
+	}
+	for _, tt := range tests {
+		if got := fc.LabelFor(tt.imap); got != tt.want {
+			t.Errorf("LabelFor(%q) = %q, want %q", tt.imap, got, tt.want)
+		}
+	}
+}
+
+func TestFolderAllowed_MatchesLabelAfterCustomIMAPName(t *testing.T) {
+	// Regression: when notifications.folders = ["PaperTrail"] but
+	// folders.papertrail = "HEY/Paper Trail", the caller must convert the
+	// IMAP name to the label before calling FolderAllowed.
+	fc := FoldersConfig{PaperTrail: "HEY/Paper Trail"}
+	nc := NotificationsConfig{Folders: []string{"PaperTrail"}}
+
+	if nc.FolderAllowed("HEY/Paper Trail") {
+		t.Error("FolderAllowed should not match an IMAP name directly — caller must normalise to label first")
+	}
+	if !nc.FolderAllowed(fc.LabelFor("HEY/Paper Trail")) {
+		t.Error("FolderAllowed should match after caller normalises via LabelFor")
+	}
+}
+
 func TestLoad_MissingConfigCreatesDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "neomd", "config.toml")

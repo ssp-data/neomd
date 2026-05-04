@@ -1446,8 +1446,13 @@ func (m Model) execDomainScreen(op *pendingDomainAction) (tea.Model, tea.Cmd) {
 
 // maybeNotifyInbox dispatches desktop notifications for the freshly fetched
 // emails. moves describes where each email is heading after auto-screening
-// (pass nil if no auto-screen pass ran). Folder is the IMAP source folder
-// label the fetch came from. No-op when the notifier is disabled.
+// (pass nil if no auto-screen pass ran). folder is the IMAP source-folder
+// name the fetch came from. No-op when the notifier is disabled.
+//
+// All folder values are converted to UI labels ("Inbox", "PaperTrail", …)
+// before the notifier sees them so [notifications].folders works regardless
+// of whether the user kept default IMAP names or set custom ones (e.g.
+// folders.papertrail = "HEY/Paper Trail").
 //
 // Reports activity on the TUI status bar so the user can confirm the pipeline
 // is wired up — notifications themselves are easy to miss.
@@ -1455,29 +1460,30 @@ func (m *Model) maybeNotifyInbox(folder string, emails []imap.Email, moves []aut
 	if !m.notifier.Enabled() || len(emails) == 0 {
 		return
 	}
+	folderLabel := m.cfg.Folders.LabelFor(folder)
 	dstByUID := make(map[uint32]string, len(moves))
 	for _, mv := range moves {
 		if mv.email != nil {
-			dstByUID[mv.email.UID] = mv.dst
+			dstByUID[mv.email.UID] = m.cfg.Folders.LabelFor(mv.dst)
 		}
 	}
-	res := m.notifier.MaybeNotify(m.activeAccount().Name, folder, emails, dstByUID, m.screener, m.notifyState)
+	res := m.notifier.MaybeNotify(m.activeAccount().Name, folderLabel, emails, dstByUID, m.screener, m.notifyState)
 	switch {
 	case res.Failed > 0:
 		m.status = fmt.Sprintf("Notification command failed (%d): %s", res.Failed, res.Err)
 		m.isError = true
 	case res.Sent > 0:
-		m.status = fmt.Sprintf("Notified %d VIP sender(s) in %s.", res.Sent, folder)
+		m.status = fmt.Sprintf("Notified %d VIP sender(s) in %s.", res.Sent, folderLabel)
 	case !res.HadBaseline:
-		m.status = fmt.Sprintf("Notify baseline set for %s (UID %d). New mail from now on will notify.", folder, res.MaxUIDObserved)
+		m.status = fmt.Sprintf("Notify baseline set for %s (UID %d). New mail from now on will notify.", folderLabel, res.MaxUIDObserved)
 	case res.NewSinceBase == 0:
 		// No new emails — silent (avoid noisy status on every refresh).
 	case res.MatchedNotify == 0:
 		m.status = fmt.Sprintf("Notify check %s: %d new email(s), 0 from VIPs (baseline UID %d → %d).",
-			folder, res.NewSinceBase, res.Baseline, res.MaxUIDObserved)
+			folderLabel, res.NewSinceBase, res.Baseline, res.MaxUIDObserved)
 	case res.FolderAllowed == 0:
 		m.status = fmt.Sprintf("Notify check %s: %d VIP email(s), but destination not in allowlist (folders=%v).",
-			folder, res.MatchedNotify, m.cfg.Notifications.Resolved().Folders)
+			folderLabel, res.MatchedNotify, m.cfg.Notifications.Resolved().Folders)
 	}
 }
 
@@ -1965,7 +1971,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// screened a VIP email out of Inbox into PaperTrail/Feed before the
 		// TUI sees it; the notification still fires when the user (or the
 		// next refresh) loads that destination folder.
-		if m.cfg.Notifications.FolderAllowed(msg.folder) {
+		//
+		// Convert the IMAP folder name to its UI label first so allowlists
+		// written with labels (e.g. "PaperTrail") still match when the IMAP
+		// folder name is custom (e.g. "HEY/Paper Trail").
+		if m.cfg.Notifications.FolderAllowed(m.cfg.Folders.LabelFor(msg.folder)) {
 			m.maybeNotifyInbox(msg.folder, msg.emails, nil)
 		}
 		return m, tea.Batch(sortCmd, m.fetchFolderCountsCmd())

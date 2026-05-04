@@ -116,6 +116,46 @@ var keyToLabel = map[string]string{
 	"work":         "Work",
 }
 
+// LabelFor returns the UI label (e.g. "Inbox", "PaperTrail") for a configured
+// IMAP folder name. Useful for matching user-facing config (which uses labels)
+// against runtime values (which use IMAP names — they may differ, e.g. Gmail's
+// "[Gmail]/All Mail" or HEY's "HEY/Paper Trail"). Returns the input
+// unchanged if no mapping exists, so the caller can fall back to direct
+// string comparison.
+func (f FoldersConfig) LabelFor(imapName string) string {
+	switch imapName {
+	case f.Inbox:
+		return "Inbox"
+	case f.Sent:
+		return "Sent"
+	case f.Trash:
+		return "Trash"
+	case f.Drafts:
+		return "Drafts"
+	case f.ToScreen:
+		return "ToScreen"
+	case f.Feed:
+		return "Feed"
+	case f.PaperTrail:
+		return "PaperTrail"
+	case f.ScreenedOut:
+		return "ScreenedOut"
+	case f.Archive:
+		return "Archive"
+	case f.Waiting:
+		return "Waiting"
+	case f.Scheduled:
+		return "Scheduled"
+	case f.Someday:
+		return "Someday"
+	case f.Spam:
+		return "Spam"
+	case f.Work:
+		return "Work"
+	}
+	return imapName
+}
+
 // TabLabels returns the UI label names in tab display order.
 // tab_order keys (e.g. "inbox", "to_screen") are resolved to label names
 // (e.g. "Inbox", "ToScreen") that activeFolder() and keyboard shortcuts match against.

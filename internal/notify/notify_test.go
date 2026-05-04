@@ -3,7 +3,9 @@ package notify
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/sspaeti/neomd/internal/config"
 	"github.com/sspaeti/neomd/internal/imap"
@@ -151,6 +153,32 @@ func TestState_PersistAndReload(t *testing.T) {
 	uid, ok := reloaded.Get("acct|Inbox")
 	if !ok || uid != 42 {
 		t.Errorf("reloaded = (%d, %v), want (42, true)", uid, ok)
+	}
+}
+
+func TestSend_TimeoutCannotBlockTUI(t *testing.T) {
+	// Drop a tiny shell script that ignores all arguments and sleeps
+	// forever; Send must return within the configured timeout instead of
+	// blocking the bubbletea Update loop indefinitely.
+	dir := t.TempDir()
+	hung := filepath.Join(dir, "hung-notifier.sh")
+	if err := os.WriteFile(hung, []byte("#!/bin/sh\nsleep 60\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	n := New(config.NotificationsConfig{Enabled: true, Command: hung, Folders: []string{"Inbox"}})
+
+	start := time.Now()
+	err := n.Send("title", "body")
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected timeout error from hung notifier, got nil")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("error should mention timeout, got: %v", err)
+	}
+	// 2s timeout + exec overhead — must finish well under 4s.
+	if elapsed > 4*time.Second {
+		t.Errorf("Send blocked for %s, exceeds the 2s timeout ceiling", elapsed)
 	}
 }
 

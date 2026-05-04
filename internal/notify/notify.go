@@ -7,15 +7,24 @@ package notify
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sspaeti/neomd/internal/config"
 	"github.com/sspaeti/neomd/internal/imap"
 	"github.com/sspaeti/neomd/internal/screener"
 )
+
+// sendTimeout caps how long we'll wait for the notification command to
+// return.  MaybeNotify runs inside the bubbletea Update loop, so a hung
+// notify-send (broken DBus, mako restarting, …) would otherwise freeze the
+// TUI.  notify-send normally returns in single-digit milliseconds; 2 s is a
+// generous ceiling that still keeps the UI responsive.
+const sendTimeout = 2 * time.Second
 
 // Notifier wraps a notification command (notify-send by default) and a
 // resolved-defaults config snapshot.
@@ -34,9 +43,10 @@ func (n *Notifier) Enabled() bool {
 	return n != nil && n.cfg.Enabled
 }
 
-// Send fires a single notification synchronously. Safe to call when disabled
-// (returns nil). Returned error wraps the command's stderr so callers can
-// surface useful diagnostics in the TUI status bar.
+// Send fires a single notification with a hard deadline so it can never
+// freeze the bubbletea Update loop.  Safe to call when disabled (returns
+// nil).  Returned error wraps the command's stderr so callers can surface
+// useful diagnostics in the TUI status bar.
 func (n *Notifier) Send(title, body string) error {
 	if !n.cfg.Enabled {
 		return nil
@@ -48,10 +58,21 @@ func (n *Notifier) Send(title, body string) error {
 		title,
 		truncate(body, 200),
 	}
-	cmd := exec.Command(n.cfg.Command, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, n.cfg.Command, args...)
+	// WaitDelay ensures Wait() returns shortly after the process is killed
+	// even if its stdout/stderr pipes are still being held open by a child
+	// process — without this, a hung notifier could keep cmd.Run() blocked
+	// long after the deadline expired.
+	cmd.WaitDelay = 500 * time.Millisecond
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("%s: timed out after %s", n.cfg.Command, sendTimeout)
+	}
+	if err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			return err

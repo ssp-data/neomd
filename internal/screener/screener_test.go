@@ -248,6 +248,30 @@ func TestFileOperations(t *testing.T) {
 		}
 	})
 
+	t.Run("New strips inline # comments after entries", func(t *testing.T) {
+		// The documented example showed `@ssp.sh # everyone at ssp.sh …` —
+		// loadList must strip the inline comment so the entry actually matches.
+		dir := t.TempDir()
+		cfg := makeCfg(dir)
+		content := "@ssp.sh # everyone at ssp.sh is approved\nalice@example.com    # personal contact\n#bob@example.com # full-line still works\n"
+		if err := os.WriteFile(cfg.ScreenedIn, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		s, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.Classify("anyone@ssp.sh") != CategoryInbox {
+			t.Error("@ssp.sh entry with inline comment should match anyone@ssp.sh")
+		}
+		if s.Classify("alice@example.com") != CategoryInbox {
+			t.Error("alice@example.com with trailing comment should match")
+		}
+		if s.Classify("bob@example.com") != CategoryToScreen {
+			t.Error("bob (full-line commented out) should NOT match")
+		}
+	})
+
 	t.Run("Approve adds to screened_in removes from screened_out and spam", func(t *testing.T) {
 		dir := t.TempDir()
 		cfg := makeCfg(dir)

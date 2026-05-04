@@ -456,7 +456,9 @@ func (s *Screener) addToList(path string, m map[string]bool, from string) error 
 	return nil
 }
 
-// loadList reads a one-address-per-line file into a set.
+// loadList reads a one-address-per-line file into a set.  Full-line and
+// inline "# comment" suffixes are stripped — `addr@example.com  # note`
+// stores `addr@example.com`, matching the documented examples.
 func loadList(path string, m map[string]bool) error {
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
@@ -471,6 +473,12 @@ func loadList(path string, m map[string]bool) error {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
+		}
+		if i := strings.IndexByte(line, '#'); i >= 0 {
+			line = strings.TrimSpace(line[:i])
+			if line == "" {
+				continue
+			}
 		}
 		m[normalise(line)] = true
 	}
