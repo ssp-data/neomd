@@ -287,6 +287,76 @@ func TestSentDraftsIMAPClient_FollowsSendingAccountWhenEnabled(t *testing.T) {
 	}
 }
 
+// imap_disabled = true accounts (typically a Gmail set up for SMTP-only)
+// produce a nil entry in m.clients by design (cmd/neomd/main.go appends nil
+// for those accounts).  Every helper that walks m.clients[i] must skip the
+// nil entries — historically several didn't, and a perfectly normal "send
+// from Gmail" flow crashed the TUI with `nil pointer dereference` in
+// tokenSourceFor.  These tests pin all four resolver helpers so that
+// regression cannot recur silently.
+
+func TestTokenSourceFor_NilClientReturnsNil(t *testing.T) {
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{Name: "Personal"},
+			{Name: "Gmail", IMAPDisabled: true},
+		},
+	}
+	m := Model{
+		cfg:      cfg,
+		accounts: cfg.ActiveAccounts(),
+		clients:  []*imap.Client{imap.New(imap.Config{Host: "personal"}), nil},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("tokenSourceFor panicked on nil client: %v", r)
+		}
+	}()
+	if m.tokenSourceFor("Gmail") != nil {
+		t.Error("tokenSourceFor(send-only Gmail) should return nil, not a token source from nil client")
+	}
+}
+
+func TestImapCliForAccount_FallsBackWhenClientNil(t *testing.T) {
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{Name: "Personal"},
+			{Name: "Gmail", IMAPDisabled: true},
+		},
+	}
+	personal := imap.New(imap.Config{Host: "personal"})
+	m := Model{cfg: cfg, accounts: cfg.ActiveAccounts(), clients: []*imap.Client{personal, nil}}
+	if got := m.imapCliForAccount("Gmail"); got != personal {
+		t.Error("imapCliForAccount(Gmail) should fall back to the first non-nil client")
+	}
+}
+
+func TestPrimaryIMAPClient_SkipsNilEntries(t *testing.T) {
+	// Reverse the layout — nil at index 0, real client at index 1.
+	personal := imap.New(imap.Config{Host: "personal"})
+	m := Model{
+		cfg:      &config.Config{Accounts: []config.AccountConfig{{Name: "Gmail", IMAPDisabled: true}, {Name: "Personal"}}},
+		accounts: []config.AccountConfig{{Name: "Gmail", IMAPDisabled: true}, {Name: "Personal"}},
+		clients:  []*imap.Client{nil, personal},
+	}
+	if got := m.primaryIMAPClient(); got != personal {
+		t.Error("primaryIMAPClient should walk past nil entries to the first real client")
+	}
+}
+
+func TestImapCli_FallsBackWhenActiveAccountIMAPDisabled(t *testing.T) {
+	personal := imap.New(imap.Config{Host: "personal"})
+	m := Model{
+		cfg:      &config.Config{Accounts: []config.AccountConfig{{Name: "Personal"}, {Name: "Gmail", IMAPDisabled: true}}},
+		accounts: []config.AccountConfig{{Name: "Personal"}, {Name: "Gmail", IMAPDisabled: true}},
+		clients:  []*imap.Client{personal, nil},
+		accountI: 1, // active = Gmail (nil client)
+	}
+	if got := m.imapCli(); got != personal {
+		t.Error("imapCli should fall back to a non-nil client when the active account is imap_disabled")
+	}
+}
+
 func TestMatchFromAddress(t *testing.T) {
 	cfg := &config.Config{
 		Accounts: []config.AccountConfig{

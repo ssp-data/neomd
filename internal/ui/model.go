@@ -682,10 +682,12 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 }
 
 // tokenSourceFor returns the OAuth2 token source for the account with the
-// given name, or nil if the account uses plain password authentication.
+// given name, or nil if the account uses plain password authentication or
+// is configured as send-only (imap_disabled — its client is nil because
+// neomd never opened an IMAP connection).
 func (m Model) tokenSourceFor(accountName string) func() (string, error) {
 	for i, acc := range m.accounts {
-		if acc.Name == accountName && i < len(m.clients) {
+		if acc.Name == accountName && i < len(m.clients) && m.clients[i] != nil {
 			return m.clients[i].TokenSource()
 		}
 	}
@@ -748,18 +750,24 @@ func (m Model) presendSMTPAccount() config.AccountConfig {
 
 func (m Model) imapCliForAccount(accountName string) *imap.Client {
 	for i, a := range m.accounts {
-		if strings.EqualFold(a.Name, accountName) && i < len(m.clients) {
+		if strings.EqualFold(a.Name, accountName) && i < len(m.clients) && m.clients[i] != nil {
 			return m.clients[i]
 		}
 	}
+	// Account not found, or its client is nil because imap_disabled — fall
+	// back to whatever imapCli / primaryIMAPClient resolves to.
 	return m.imapCli()
 }
 
 func (m Model) primaryIMAPClient() *imap.Client {
-	if len(m.clients) > 0 {
-		return m.clients[0]
+	// Pick the first non-nil client — accounts with imap_disabled = true
+	// have a nil entry by design, so we cannot blindly use index 0.
+	for _, c := range m.clients {
+		if c != nil {
+			return c
+		}
 	}
-	return m.imapCli()
+	return nil
 }
 
 func (m Model) sentDraftsIMAPClient() *imap.Client {
@@ -779,12 +787,13 @@ func (m *Model) applyEditedFrom(from string) {
 	}
 }
 
-// imapCli returns the IMAP client for the active account.
+// imapCli returns the IMAP client for the active account, falling back to
+// the first non-nil client if the active account is imap_disabled.
 func (m Model) imapCli() *imap.Client {
-	if m.accountI < len(m.clients) {
+	if m.accountI < len(m.clients) && m.clients[m.accountI] != nil {
 		return m.clients[m.accountI]
 	}
-	return m.clients[0]
+	return m.primaryIMAPClient()
 }
 
 func (m Model) Init() tea.Cmd {
@@ -890,11 +899,16 @@ func (m Model) sendEmailCmd(smtpAcct config.AccountConfig, from, to, cc, bcc, su
 			return sendDoneMsg{err: err}
 		}
 		// Save copy to Sent; non-fatal if it fails, but warn user.
-		if saveErr := cli.SaveSent(nil, sentFolder, raw); saveErr != nil {
-			return sendDoneMsg{warning: "Sent, but failed to save to Sent folder: " + saveErr.Error(), replyToUID: replyToUID, replyToFolder: replyToFolder}
+		// cli can be nil when every configured account has imap_disabled = true
+		// (send-only setups) — in that case there is no IMAP target for the
+		// Sent copy, so we skip silently.
+		if cli != nil {
+			if saveErr := cli.SaveSent(nil, sentFolder, raw); saveErr != nil {
+				return sendDoneMsg{warning: "Sent, but failed to save to Sent folder: " + saveErr.Error(), replyToUID: replyToUID, replyToFolder: replyToFolder}
+			}
 		}
 		// Mark original email as \Answered (non-fatal).
-		if replyToUID > 0 && replyToFolder != "" {
+		if replyToUID > 0 && replyToFolder != "" && replyCli != nil {
 			_ = replyCli.MarkAnswered(nil, replyToFolder, replyToUID)
 		}
 		return sendDoneMsg{replyToUID: replyToUID, replyToFolder: replyToFolder}
