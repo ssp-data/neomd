@@ -32,6 +32,7 @@ spammy@ssp.sh           # … except this one address, which is blocked
 
 Domain entries work in every screener list (`screened_in`, `screened_out`, `feed`, `papertrail`, `spam`, `notify`). The `Di` / `Do` chord (see below) writes them for you from inside neomd.
 
+
 ## Auto-screen and background sync
 
 By default neomd screens your inbox automatically so you never have to press `S`:
@@ -95,6 +96,29 @@ This makes impersonation attempts easy to spot: if you've already screened in `i
 Emails are only auto-screened while they are in the **Inbox**. Once moved to ToScreen (or any other folder), they are not re-classified automatically. This keeps the logic simple and predictable.
 
 If emails end up in ToScreen incorrectly (e.g. screened by another device like [Termux with Android](configuration/android) with incomplete lists), use `:reset-toscreen` to move them back to Inbox where auto-screen will re-classify them.
+
+## Priority Screener: Exact match over `@domain` match
+
+When an incoming sender could match more than one list, neomd picks a category in two passes:
+
+1. **First pass — exact email** is looked up in every list, in this priority order:
+   `spam` → `screened_out` → `feed` → `papertrail` → `screened_in`.
+   The first list that contains the *exact* address decides the category, and the search stops.
+2. **Second pass — `@domain` rules** are consulted only if the first pass found no exact match, again in the same priority order. The first list whose `@domain` entry matches decides the category.
+3. If neither pass matches → the sender lands in `ToScreen`.
+
+This guarantees that a per-address rule **always overrides** the broader domain rule across *any* category. Two real examples:
+
+| `screened_in.txt` | `screened_out.txt` | Sender                | Result      | Why                                                                             |
+| ----------------- | ------------------ | --------------------- | ----------- | ------------------------------------------------------------------------------- |
+| `neomd.demo@ssp.sh` | `@ssp.sh`        | `neomd.demo@ssp.sh`   | **Inbox**   | Exact match in `screened_in` (pass 1) wins over `@ssp.sh` block (pass 2)        |
+| (empty)           | `@ssp.sh`          | `neomd.demo@ssp.sh`   | ScreenedOut | No exact match anywhere → `@ssp.sh` in `screened_out` matches in pass 2         |
+| `@ssp.sh`         | `spammy@ssp.sh`    | `spammy@ssp.sh`       | ScreenedOut | Exact match in `screened_out` (pass 1) wins over `@ssp.sh` approval (pass 2)    |
+| `@ssp.sh`         | (empty)            | `random@ssp.sh`       | **Inbox**   | No exact match → `@ssp.sh` in `screened_in` matches in pass 2                   |
+
+**The mental model:** *"Add the domain to lift the whole company, then surgically block (or approve) individual addresses without restating the rule."*
+
+The same two-pass logic runs for [`notify.txt`](/docs/notifications/#domain-entries) too — an exact entry there always wins over an `@domain` entry, but for the notify list this rarely matters since both produce the same outcome (a desktop notification).
 
 ## Colon commands
 

@@ -7,6 +7,9 @@ neomd can fire desktop notifications via `notify-send` (or any compatible CLI) w
 
 Notifications fire from the **TUI only**. The headless daemon (`neomd --headless`) screens mail silently so notifications don't end up on a NAS where no one sees them.
 
+How it looks:
+![notification](/images/notifictation.png)
+
 ## Quick start
 
 1. Make sure `notify-send` is installed and a notification daemon is running (`mako`, `dunst`, `swaync`, …). On Hyprland with mako:
