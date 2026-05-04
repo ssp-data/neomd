@@ -192,6 +192,25 @@ func matchAddr(addr string, set map[string]bool) bool {
 	return domainMatch(addr, set)
 }
 
+// AddNotify appends a sender (or "@domain" entry) to notify.txt.  No-op when
+// the entry is already present or when no notify list is configured.
+// Independent of the screening category — does not touch screened_in /
+// screened_out / feed / papertrail / spam.
+func (s *Screener) AddNotify(from string) error {
+	if s.cfg.Notify == "" {
+		return fmt.Errorf("notify list path not configured (set [screener].notify in config.toml)")
+	}
+	return s.addToList(s.cfg.Notify, s.notify, from)
+}
+
+// RemoveNotify deletes a sender (or "@domain" entry) from notify.txt.
+func (s *Screener) RemoveNotify(from string) error {
+	if s.cfg.Notify == "" {
+		return nil
+	}
+	return s.removeFromList(s.cfg.Notify, s.notify, from)
+}
+
 // domainMatch returns true only via the "@domain" form (skipping the exact
 // check). Used by Classify so that the priority loop can be split into an
 // exact-match pass first, then a domain-match pass.

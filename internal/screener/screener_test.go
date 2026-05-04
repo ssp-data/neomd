@@ -504,6 +504,100 @@ func TestShouldNotify(t *testing.T) {
 		}
 	})
 
+	t.Run("AddNotify appends and persists, RemoveNotify clears", func(t *testing.T) {
+		dir := t.TempDir()
+		notifyPath := filepath.Join(dir, "notify.txt")
+		s, err := New(Config{
+			ScreenedIn:  filepath.Join(dir, "in.txt"),
+			ScreenedOut: filepath.Join(dir, "out.txt"),
+			Feed:        filepath.Join(dir, "feed.txt"),
+			PaperTrail:  filepath.Join(dir, "pt.txt"),
+			Spam:        filepath.Join(dir, "spam.txt"),
+			Notify:      notifyPath,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.AddNotify("alice@example.com"); err != nil {
+			t.Fatalf("AddNotify exact: %v", err)
+		}
+		if err := s.AddNotify("@important.org"); err != nil {
+			t.Fatalf("AddNotify domain: %v", err)
+		}
+		// Re-add is no-op (no duplicate).
+		if err := s.AddNotify("alice@example.com"); err != nil {
+			t.Fatalf("AddNotify duplicate: %v", err)
+		}
+		if !s.ShouldNotify("alice@example.com") {
+			t.Error("alice should notify")
+		}
+		if !s.ShouldNotify("anyone@important.org") {
+			t.Error("@important.org should match anyone@important.org")
+		}
+		// Reload from disk to confirm persistence.
+		s2, err := New(s.cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !s2.ShouldNotify("alice@example.com") || !s2.ShouldNotify("bob@important.org") {
+			t.Error("reload lost entries")
+		}
+		// Remove.
+		if err := s.RemoveNotify("alice@example.com"); err != nil {
+			t.Fatal(err)
+		}
+		if s.ShouldNotify("alice@example.com") {
+			t.Error("removed entry should not match")
+		}
+	})
+
+	t.Run("AddNotify errors when path not configured", func(t *testing.T) {
+		s := &Screener{notify: map[string]bool{}, cfg: Config{}}
+		if err := s.AddNotify("x@example.com"); err == nil {
+			t.Error("expected error when notify path empty")
+		}
+	})
+
+	t.Run("ShouldNotify is false when Notify path is omitted from Config (regression)", func(t *testing.T) {
+		// Regression: cmd/neomd/main.go used to construct screener.Config without
+		// the Notify field, so the in-memory notify set stayed empty even when
+		// notify.txt had entries. Result: ShouldNotify returned false silently.
+		dir := t.TempDir()
+		notifyPath := filepath.Join(dir, "notify.txt")
+		os.WriteFile(notifyPath, []byte("vip@example.com\n"), 0600)
+		// Build a screener WITHOUT passing Notify — mimics the broken main.go
+		// before the fix.
+		s, err := New(Config{
+			ScreenedIn:  filepath.Join(dir, "in.txt"),
+			ScreenedOut: filepath.Join(dir, "out.txt"),
+			Feed:        filepath.Join(dir, "feed.txt"),
+			PaperTrail:  filepath.Join(dir, "pt.txt"),
+			Spam:        filepath.Join(dir, "spam.txt"),
+			// Notify intentionally unset
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.ShouldNotify("vip@example.com") {
+			t.Fatal("ShouldNotify should be false when Notify path is omitted")
+		}
+		// Now pass Notify — ShouldNotify must return true.
+		s2, err := New(Config{
+			ScreenedIn:  filepath.Join(dir, "in.txt"),
+			ScreenedOut: filepath.Join(dir, "out.txt"),
+			Feed:        filepath.Join(dir, "feed.txt"),
+			PaperTrail:  filepath.Join(dir, "pt.txt"),
+			Spam:        filepath.Join(dir, "spam.txt"),
+			Notify:      notifyPath,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !s2.ShouldNotify("vip@example.com") {
+			t.Fatal("ShouldNotify should return true when Notify path is wired up")
+		}
+	})
+
 	t.Run("Notify path empty leaves the list empty", func(t *testing.T) {
 		dir := t.TempDir()
 		s, err := New(Config{

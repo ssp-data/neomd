@@ -6,6 +6,8 @@
 package notify
 
 import (
+	"bytes"
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -33,8 +35,8 @@ func (n *Notifier) Enabled() bool {
 }
 
 // Send fires a single notification synchronously. Safe to call when disabled
-// (returns nil). Errors from the underlying command are swallowed by callers
-// — a failed notification should never break the email flow.
+// (returns nil). Returned error wraps the command's stderr so callers can
+// surface useful diagnostics in the TUI status bar.
 func (n *Notifier) Send(title, body string) error {
 	if !n.cfg.Enabled {
 		return nil
@@ -46,7 +48,31 @@ func (n *Notifier) Send(title, body string) error {
 		title,
 		truncate(body, 200),
 	}
-	return exec.Command(n.cfg.Command, args...).Run()
+	cmd := exec.Command(n.cfg.Command, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			return err
+		}
+		return fmt.Errorf("%s: %s", n.cfg.Command, msg)
+	}
+	return nil
+}
+
+// Result summarises a MaybeNotify pass. The counters help diagnose why a
+// notification did or did not fire.
+type Result struct {
+	Sent           int    // notifications dispatched without error
+	Failed         int    // notifications attempted but the command returned an error
+	Err            string // last error message (if any)
+	NewSinceBase   int    // emails whose UID was strictly above the recorded baseline
+	MatchedNotify  int    // of those, how many had a sender on the notify list
+	FolderAllowed  int    // of those, how many landed in a folder in the allowlist
+	HadBaseline    bool   // false → first-run pass, no notifications fire by design
+	Baseline       uint32 // baseline used for the comparison
+	MaxUIDObserved uint32 // highest UID seen in this batch
 }
 
 // MaybeNotify processes a freshly fetched batch of emails from sourceFolder.
@@ -63,16 +89,19 @@ func (n *Notifier) Send(title, body string) error {
 // after auto-screening (caller computes this from screener.ClassifyForScreen).
 // UIDs missing from dstByUID are assumed to stay in sourceFolder.
 //
-// Returns the number of notifications dispatched.
-func (n *Notifier) MaybeNotify(account, sourceFolder string, emails []imap.Email, dstByUID map[uint32]string, sc *screener.Screener, state *State) int {
+// Returns a Result describing how many notifications fired and the last
+// error encountered (if any).
+func (n *Notifier) MaybeNotify(account, sourceFolder string, emails []imap.Email, dstByUID map[uint32]string, sc *screener.Screener, state *State) Result {
+	var res Result
 	if !n.Enabled() || sc == nil || state == nil || len(emails) == 0 {
-		return 0
+		return res
 	}
 	key := stateKey(account, sourceFolder)
 	baseline, hadBaseline := state.Get(key)
+	res.HadBaseline = hadBaseline
+	res.Baseline = baseline
 
 	var maxUID uint32
-	sent := 0
 	for i := range emails {
 		e := &emails[i]
 		if e.UID > maxUID {
@@ -81,9 +110,11 @@ func (n *Notifier) MaybeNotify(account, sourceFolder string, emails []imap.Email
 		if !hadBaseline || e.UID <= baseline {
 			continue
 		}
+		res.NewSinceBase++
 		if !sc.ShouldNotify(e.From) {
 			continue
 		}
+		res.MatchedNotify++
 		dst, ok := dstByUID[e.UID]
 		if !ok {
 			dst = sourceFolder
@@ -91,21 +122,26 @@ func (n *Notifier) MaybeNotify(account, sourceFolder string, emails []imap.Email
 		if !n.cfg.FolderAllowed(dst) {
 			continue
 		}
+		res.FolderAllowed++
 		title := "neomd: " + truncate(e.From, 80)
 		body := e.Subject
 		if body == "" {
 			body = "(no subject)"
 		}
-		if err := n.Send(title, body); err == nil {
-			sent++
+		if err := n.Send(title, body); err != nil {
+			res.Failed++
+			res.Err = err.Error()
+			continue
 		}
+		res.Sent++
 	}
+	res.MaxUIDObserved = maxUID
 
 	if maxUID > baseline {
 		state.Set(key, maxUID)
 		_ = state.Save()
 	}
-	return sent
+	return res
 }
 
 func stateKey(account, folder string) string {

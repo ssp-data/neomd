@@ -236,6 +236,26 @@ func init() {
 			},
 		},
 		{
+			name:    "notify-test",
+			aliases: []string{"nt"},
+			desc:    "fire a single test desktop notification using the current [notifications] config (diagnostic)",
+			run: func(m *Model) (tea.Model, tea.Cmd) {
+				if !m.notifier.Enabled() {
+					m.status = "Notifications disabled. Set [notifications].enabled = true in config.toml."
+					m.isError = true
+					return m, nil
+				}
+				if err := m.notifier.Send("neomd: test", "If you can see this, notify-send works."); err != nil {
+					m.status = "notify-send failed: " + err.Error()
+					m.isError = true
+					return m, nil
+				}
+				m.status = "Test notification sent — check your desktop notifications. Listening folders: " +
+					strings.Join(m.cfg.Notifications.Resolved().Folders, ", ")
+				return m, nil
+			},
+		},
+		{
 			name:    "quit",
 			aliases: []string{"q"},
 			desc:    "quit neomd",

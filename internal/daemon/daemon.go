@@ -148,6 +148,7 @@ func (d *Daemon) reloadScreener() error {
 		Feed:        d.cfg.Screener.Feed,
 		PaperTrail:  d.cfg.Screener.PaperTrail,
 		Spam:        d.cfg.Screener.Spam,
+		Notify:      d.cfg.Screener.Notify,
 	})
 	if err != nil {
 		return fmt.Errorf("reload screener: %w", err)

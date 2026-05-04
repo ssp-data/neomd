@@ -73,9 +73,9 @@ func TestMaybeNotify_FirstRunBaselineSilent(t *testing.T) {
 		{UID: 100, From: "vip@example.com", Subject: "hi"},
 		{UID: 101, From: "other@example.com", Subject: "hello"},
 	}
-	sent := n.MaybeNotify("acct", "Inbox", emails, nil, sc, state)
-	if sent != 0 {
-		t.Errorf("first run sent = %d, want 0 (baseline-only pass)", sent)
+	res := n.MaybeNotify("acct", "Inbox", emails, nil, sc, state)
+	if res.Sent != 0 {
+		t.Errorf("first run sent = %d, want 0 (baseline-only pass)", res.Sent)
 	}
 	uid, ok := state.Get(stateKey("acct", "Inbox"))
 	if !ok || uid != 101 {
@@ -96,9 +96,9 @@ func TestMaybeNotify_OnlyNewEmailsFromNotifyList(t *testing.T) {
 		{UID: 101, From: "vip@example.com", Subject: "new!"},    // new + on notify list
 		{UID: 102, From: "other@example.com", Subject: "noise"}, // new but not on notify list
 	}
-	sent := n.MaybeNotify("acct", "Inbox", emails, nil, sc, state)
-	if sent != 1 {
-		t.Errorf("sent = %d, want 1", sent)
+	res := n.MaybeNotify("acct", "Inbox", emails, nil, sc, state)
+	if res.Sent != 1 {
+		t.Errorf("sent = %d, want 1", res.Sent)
 	}
 }
 
@@ -115,9 +115,9 @@ func TestMaybeNotify_DomainEntry(t *testing.T) {
 		{UID: 2, From: "bob@important.org", Subject: "y"},
 		{UID: 3, From: "spam@nowhere.com", Subject: "z"},
 	}
-	sent := n.MaybeNotify("acct", "Inbox", emails, nil, sc, state)
-	if sent != 2 {
-		t.Errorf("sent = %d, want 2 (both @important.org senders)", sent)
+	res := n.MaybeNotify("acct", "Inbox", emails, nil, sc, state)
+	if res.Sent != 2 {
+		t.Errorf("sent = %d, want 2 (both @important.org senders)", res.Sent)
 	}
 }
 
@@ -134,9 +134,9 @@ func TestMaybeNotify_FolderAllowlistFiltersOut(t *testing.T) {
 	}
 	// Email is auto-screened to Feed → allowlist excludes it.
 	dst := map[uint32]string{5: "Feed"}
-	sent := n.MaybeNotify("acct", "Inbox", emails, dst, sc, state)
-	if sent != 0 {
-		t.Errorf("sent = %d, want 0 (Feed not in allowlist)", sent)
+	res := n.MaybeNotify("acct", "Inbox", emails, dst, sc, state)
+	if res.Sent != 0 {
+		t.Errorf("sent = %d, want 0 (Feed not in allowlist)", res.Sent)
 	}
 }
 

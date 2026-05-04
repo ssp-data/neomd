@@ -129,6 +129,7 @@ func main() {
 		Feed:        cfg.Screener.Feed,
 		PaperTrail:  cfg.Screener.PaperTrail,
 		Spam:        cfg.Screener.Spam,
+		Notify:      cfg.Screener.Notify,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "neomd: screener error: %v\n", err)
