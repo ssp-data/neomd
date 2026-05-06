@@ -74,7 +74,7 @@ spam         = "spam" #check capitalization of your pre-existing Spam folder, so
 # Gmail uses different folder names — see docs/content/gmail.md for the correct mapping.
 
 [ui]
-theme                = "dark"   # dark | light | auto
+theme                = "kanagawa"   # kanagawa | kanagawa-paper | kanagawa-light | rose-pine | gruvbox | osaka-jade
 inbox_count          = 200      # how many newest emails neomd loads per folder/reload
 auto_screen_on_load  = true     # screen inbox automatically on every load (default true)
 bg_sync_interval     = 5        # background sync interval in minutes; 0 = disabled (default 5)
@@ -321,6 +321,78 @@ BR Simon
 - Host logo images externally (e.g., `https://example.com/logo.png`) so they display for recipients
 - The `text` field is backward compatible: if empty, neomd falls back to the legacy `signature` field
 - The `--` separator is added automatically before the text signature
+
+
+## Theming
+
+Pick from six built-in palettes via `[ui].theme`:
+
+| Name | Mode | Source |
+|---|---|---|
+| `kanagawa` (default) | dark | https://github.com/rebelot/kanagawa.nvim |
+| `kanagawa-paper` | dark | https://github.com/thesimonho/kanagawa-paper.nvim |
+| `kanagawa-light` | **light** | Lotus palette from kanagawa.nvim, paperwhite (#F2EFE9) background |
+| `rose-pine` | dark | https://github.com/rose-pine/rose-pine-theme |
+| `gruvbox` | dark | https://github.com/morhetz/gruvbox |
+| `osaka-jade` | dark | https://github.com/Justikun/omarchy-osaka-jade-theme |
+
+Override individual colour slots (any subset) via the optional `[theme]` block:
+
+```toml
+[ui]
+theme = "rose-pine"
+
+[theme]
+# All slots are hex strings ("#rrggbb"). Empty / missing slots fall back
+# to the named built-in.
+primary       = "#ff79c6"   # accent (active tab, header, autocomplete)
+unread        = "#bd93f9"   # unread email emphasis
+error         = "#ff5555"
+# bg, border, subtle, selected, text, muted, number, date,
+# author_read, subject_read, size_col, author_unread, subject_unread, success
+```
+
+## Calendar invites
+
+```toml
+[calendar]
+open_command = "xdg-open"   # what `<space> v o` runs to import .ics into your local calendar app
+                            # Linux: defaults to xdg-mime registration; set to "morgen", "khal",
+                            # "/usr/bin/gnome-calendar", etc. to force a specific app
+```
+
+Workflow + caveats (sending an iMIP REPLY ≠ importing into your calendar) are documented in [Reading → Calendar Invites](../reading/#calendar-invites-icalendar--rsvp).
+
+## AI handoff (pre-send `i` key)
+
+`[ai]` wires any external CLI to the pre-send `i` key. neomd:
+
+1. Shows a one-line prompt for your instruction (e.g. `fix grammar`, `make it more formal`, `tighten this`).
+2. Writes the current draft to a temp markdown file (with the same `# [neomd: ...]` headers used during compose).
+3. Spawns the command with the file path appended as the last arg. Any `{prompt}` token in `args` is replaced by what you typed.
+4. Re-reads the file on exit so the AI's edits replace your draft body.
+
+Press Enter on an empty prompt to run interactively (no `{prompt}` substitution); type an instruction + Enter to run non-interactively; press Esc to cancel. Quit the AI tool (`ctrl+c`, `q`, `/quit`, `ZZ`, …) to return to neomd's pre-send screen.
+
+```toml
+[ai]
+command = "claude"                      # default: Claude Code CLI
+args    = ["edit {file}: {prompt}"]     # default: tells claude what file + what to do
+# command = "codex"
+# command = "aichat"
+```
+
+Two placeholders are substituted at spawn time: `{prompt}` becomes your typed instruction, `{file}` becomes the draft's basename. neomd also sets the spawned process's working directory to the temp dir holding the draft, so claude's built-in Edit tool reaches the file natively (no `--add-dir` needed).
+
+If you type `fix grammar` at the prompt, the spawn is `claude "edit neomd-ai-XYZ.md: fix grammar"` running in `/tmp/neomd/`. Claude opens interactively, sees the file in cwd, edits in place, you `/quit` when satisfied, neomd picks up the changes.
+
+> [!IMPORTANT]
+> Default args use the **interactive** form, not `claude -p`. The `-p` (print) flag in Claude Code is non-interactive and bills against your **API credits** rather than your Claude Pro/Max subscription — it leaks money even when you're paying for a plan. Interactive mode runs under your subscription auth. Only switch to `args = ["-p", "edit {file}: {prompt}"]` if you have an API key with credits and explicitly want the scripted, no-review flow.
+
+If you press Enter on an empty prompt, only the `{prompt}` placeholder is replaced (with `""`) — the resulting `"edit neomd-ai-XYZ.md: "` still tells claude which file to look at, so claude opens interactively in the temp dir with that file pre-mentioned and waits for your follow-up instruction.
+
+`nvim` is intentionally **not** the default: the compose buffer is already open in nvim before pre-send, so spawning nvim on `i` would just re-edit. You can already use [avante.nvim](https://github.com/yetone/avante.nvim) or others within neovim composer to do any AI you'd like. 
+But instead, pick a tool that does work. The handoff reuses the same parser as the regular editor flow, so headers (To, Cc, Bcc, Subject) the AI tool may rewrite are picked up automatically. If `command` is empty the `i` key is a no-op.
 
 ## OAuth2 Authentication
 

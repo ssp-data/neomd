@@ -76,6 +76,63 @@ type ScreenerConfig struct {
 	Notify      string `toml:"notify"` // optional: addresses or @domain entries that fire desktop notifications
 }
 
+// Theme overrides individual colour slots used by the UI. Any field left
+// empty falls back to the active built-in theme value (selected via
+// `[ui].theme`). All fields are hex strings, e.g. "#7E9CD8". The actual
+// built-in palettes (kanagawa, kanagawa-paper, rose-pine, gruvbox,
+// osaka-jade) live in internal/ui/styles.go; this struct is only the
+// TOML-facing override surface.
+type Theme struct {
+	Bg            string `toml:"bg"`
+	Border        string `toml:"border"`
+	Subtle        string `toml:"subtle"`
+	Selected      string `toml:"selected"`
+	Text          string `toml:"text"`
+	Muted         string `toml:"muted"`
+	Primary       string `toml:"primary"`
+	Unread        string `toml:"unread"`
+	Number        string `toml:"number"`
+	Date          string `toml:"date"`
+	AuthorRead    string `toml:"author_read"`
+	SubjectRead   string `toml:"subject_read"`
+	SizeCol       string `toml:"size_col"`
+	AuthorUnread  string `toml:"author_unread"`
+	SubjectUnread string `toml:"subject_unread"`
+	Error         string `toml:"error"`
+	Success       string `toml:"success"`
+}
+
+// CalendarConfig configures local handoff for iCalendar invites. The reader
+// shows a card whenever an email contains a `text/calendar` part or `.ics`
+// attachment. The leader chord `<space> v {a|d|t}` sends an iMIP RSVP reply;
+// `<space> v o` writes the .ics to a cache file and runs OpenCommand against
+// it, letting the user import the event into their local calendar app
+// (default `xdg-open` follows the system's MIME handler; set to `morgen`,
+// `khal`, etc. to force a specific app).
+type CalendarConfig struct {
+	OpenCommand string `toml:"open_command"` // default "xdg-open"
+}
+
+// AIConfig configures the pre-send "AI handoff" key (`i`). When pressed,
+// neomd shows a one-line prompt for an instruction (e.g. "fix grammar"),
+// writes the current draft to a temp markdown file with the standard
+// `# [neomd: ...]` headers, spawns `<command> [args...]` with cwd set to
+// the file's directory, and re-reads the file on exit so any changes
+// round-trip back into the draft. Quit the AI tool to return.
+//
+// Two placeholders are substituted in args at spawn time:
+//   - `{prompt}` → the typed instruction (or empty for interactive mode)
+//   - `{file}`   → the draft's basename (cwd is set to its directory)
+//
+// Default args = ["edit {file}: {prompt}"]. With prompt "fix grammar" the
+// spawn is `claude "edit neomd-ai-XYZ.md: fix grammar"` (cwd /tmp/neomd) —
+// claude finds the file via cwd and edits in place. Set `command = ""` to
+// disable the binding.
+type AIConfig struct {
+	Command string   `toml:"command"`
+	Args    []string `toml:"args"` // {prompt} and {file} placeholders are substituted
+}
+
 // NotificationsConfig controls desktop notifications for emails landing in
 // folders the user cares about, scoped to senders listed in screener.notify.
 // TUI-only: the headless daemon never fires notifications.
@@ -297,6 +354,9 @@ type Config struct {
 	Folders       FoldersConfig       `toml:"folders"`
 	UI            UIConfig            `toml:"ui"`
 	Notifications NotificationsConfig `toml:"notifications"`
+	AI            AIConfig            `toml:"ai"`
+	Theme         Theme               `toml:"theme"`
+	Calendar      CalendarConfig      `toml:"calendar"`
 
 	// AutoBCC, if set, is added to every outgoing email's Bcc field so the
 	// user keeps a copy in an external mailbox (e.g. their hey.com archive).
@@ -602,11 +662,27 @@ func defaults() *Config {
 			Spam:        "Spam",
 		},
 		UI: UIConfig{
-			Theme:               "dark",
+			Theme:               "kanagawa", // built-in: kanagawa | kanagawa-paper | kanagawa-light | rose-pine | gruvbox | osaka-jade
 			InboxCount:          200,
 			BgSyncInterval:      5,
 			MarkAsReadAfterSecs: 7,
 			Signature:           "*sent from [neomd](https://neomd.ssp.sh)*",
+		},
+		AI: AIConfig{
+			// Default: hand off to Claude Code in **interactive** mode (not
+			// `-p` print mode, which would bill against Anthropic API credits
+			// instead of a Pro/Max subscription).
+			//
+			// `{prompt}` is the user's typed instruction. `{file}` is the
+			// basename of the temp draft. neomd sets the spawned command's
+			// cwd to the file's directory, so claude can reach the file
+			// natively via its Edit tool without --add-dir tricks.
+			//
+			// With this default, typing "fix grammar" at the AI prompt
+			// produces `claude "edit neomd-ai-XYZ.md: fix grammar"` (cwd
+			// set), and claude edits the file in place.
+			Command: "claude",
+			Args:    []string{"edit {file}: {prompt}"},
 		},
 	}
 }

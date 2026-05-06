@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sspaeti/neomd/internal/calendar"
 	"github.com/sspaeti/neomd/internal/imap"
 	"github.com/sspaeti/neomd/internal/render"
 )
@@ -137,10 +138,46 @@ func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, spyPixels i
 		lines = append(lines, spyStyle.Render("° "+label))
 	}
 
+	if card := calendarInviteCard(attachments); card != "" {
+		lines = append(lines, card)
+	}
+
 	content := strings.Join(lines, "\n")
 	_ = width
 
 	return styleEmailMeta.Render(content) + "\n"
+}
+
+// calendarInviteCard renders a one-line summary of an iCalendar invite if one
+// is attached. Empty string when no invite is found or parsing fails. The
+// reader keeps it succinct because the full event detail is already in the
+// email body — this just surfaces the action: "Press <space> v {a|d|t|o}".
+func calendarInviteCard(attachments []imap.Attachment) string {
+	for i := range attachments {
+		if !attachments[i].IsCalendarInvite {
+			continue
+		}
+		ev, err := calendar.Parse(attachments[i].Data)
+		if err != nil {
+			continue
+		}
+		when := ev.FormatTime()
+		summary := ev.Summary
+		if summary == "" {
+			summary = "(untitled event)"
+		}
+		card := fmt.Sprintf("📅 %s", summary)
+		if when != "" {
+			card += "  ·  " + when
+		}
+		if ev.Location != "" {
+			card += "  ·  " + ev.Location
+		}
+		card += "  ·  press <space> v {a|d|t|o}"
+		cardStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
+		return cardStyle.Render(card)
+	}
+	return ""
 }
 
 // readerHelp returns the one-line help string for the reader view.

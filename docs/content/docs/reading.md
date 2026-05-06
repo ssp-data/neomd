@@ -83,6 +83,44 @@ Press `space` then `d` in the reader to download the full raw email source (`.em
 
 This is useful for archiving emails, debugging headers, or importing into other email clients. The status bar shows a green confirmation when the download completes.
 
+## Calendar Invites (iCalendar / RSVP)
+
+When an email has a `text/calendar` part or `.ics` attachment, the reader shows a card and exposes a chord:
+
+```
+📅 Q2 Planning  ·  Mon, 21 Apr 2026 14:00–15:00  ·  Conference Room A
+```
+
+| Key | Action |
+|-----|--------|
+| `<space> v a` / `d` / `t` | RSVP accept / decline / tentative — send iMIP REPLY to the organizer |
+| `<space> v o` | hand `.ics` to your local calendar app via `[calendar].open_command` |
+
+**Sending an RSVP ≠ adding the event to your calendar.** neomd sends one iMIP email (RFC 5546/6047 REPLY) to the organizer; that's the entire effect. To put the meeting on your own calendar, press `<space> v o` to hand the `.ics` to your local calendar app.
+
+After sending: the REPLY lands in your `Sent` folder, the original invite gets `\Answered` (`·` indicator), and the status bar shows `RSVP sent: accepted`. Responder = active account's `user`; recipient = the event's `ORGANIZER`; `[[senders]]` aliases are not used.
+
+### Will the organizer's calendar auto-update?
+
+The organizer's mail server processes the iMIP REPLY before they see it — no manual click needed on their end. Reliability depends on whose server they're on:
+
+| Organizer's calendar | Auto-updates attendee list? |
+|---|---|
+| Outlook 365 / Exchange (on-prem or Online) | **Yes**, server-side, recipient often doesn't even see the email |
+| Apple iCloud Calendar | **Yes**, server-side |
+| Fastmail / CalDAV / Nextcloud / self-hosted | **Yes** |
+| Gmail (`@gmail.com`) | **Unreliable in 2026** — Google has deprioritized server-side iMIP. Email arrives, calendar often doesn't update |
+| Google Workspace | Tenant-dependent |
+
+**Practical workflow:** for a Gmail-organized invite, just click Yes/No in Gmail's web UI (no email is sent — Google updates internally). Use neomd's `<space> v {a|d|t}` for invites from Outlook, Apple, CalDAV, or anywhere iMIP is honored. The organizer always gets a clear `Accepted: <event>` email regardless, so it's never silent — just the calendar-side automation that varies.
+
+> [!INFO]
+> Check the `Sent` folder, and verify with a colleague's invite where you can ask them whether their attendee list updated.
+
+**Local handoff (`<space> v o`).** `xdg-mime query default text/calendar` shows what will run on Arch. Override with `[calendar].open_command = "morgen"` (or `khal import`, `thunderbird`, …).
+
+Only the first `VEVENT` is processed; recurring (`RRULE`), counter-proposals (`METHOD=COUNTER`), and cancellations (`METHOD=CANCEL`) are out of scope — those still arrive as new emails you can re-process or import via `<space> v o`.
+
 ## Threaded Inbox
 
 Related emails are automatically grouped together in the inbox list. Threads are detected using a hybrid approach:

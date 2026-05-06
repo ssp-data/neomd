@@ -72,6 +72,7 @@ Folder operations prefer RFC 6851 MOVE; `u` undo uses UIDPLUS destination UIDs c
 - `internal/daemon/` — headless background mode (`--headless`): screener loop without TUI
 - `internal/mailtls/` — TLS/STARTTLS connection helpers
 - `internal/oauth2/` — OAuth2 flow for Gmail/Office365
+- `internal/calendar/` — iCalendar (.ics) parsing + iMIP RSVP reply construction (`arran4/golang-ical`); used by reader card and `<space> v {a|d|t}` chord
 - `internal/integration_test.go` — integration tests (live IMAP/SMTP); lives at package level, not in a sub-package
 
 **Spy pixel detection** (`internal/imap/tracker_list.go` + `client.go`): Two-layer approach — (1) curated denylist of 150+ tracking services in `KnownTrackers` with `IdentifyTracker()` for attribution ("Mailchimp", "HubSpot"); (2) generic 1×1 pixel heuristic via `detectSpyPixels()` on raw HTML. Results flow through `SpyPixelInfo` struct returned by `FetchBody()` and `ScanSpyPixels()`. Cached to `~/.cache/neomd/spy_pixels` (format: `+key` for spy, `-key` for scanned clean).

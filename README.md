@@ -158,6 +158,7 @@ Keep your inbox clean without effort.
 ### Composing & Sending
 
 - **Pre-send review** — after closing the editor, review To/Subject/body before sending; attach files, save to Drafts, or re-open the editor — no accidental sends [→](https://neomd.ssp.sh/docs/sending/#pre-send-review)
+- **AI handoff (`i` in pre-send)** — `[ai].command` (default `claude`) wires any LLM CLI (claude, codex, aichat, …) to the pre-send `i` key; neomd writes the draft to a temp markdown, spawns the command, and re-reads on exit when you quit the tool — header and body edits round-trip back. No in-app AI dependency [→](https://neomd.ssp.sh/docs/configuration/#ai-handoff-pre-send-i-key)
 - **Attachments** — attach files from the pre-send screen via yazi (`a`); images appear inline in the email body, other files as attachments; also attach from within Neovim via `<leader>a`; the reader lists all attachments and `1`–`9` downloads and opens them [→](https://neomd.ssp.sh/docs/sending/#attachments)
 - **Emoji reactions** — press `ctrl+e` from inbox or reader to react with emoji (👍 ❤️ 😂 🎉 🙏 💯 👀 ✅); instant send with proper threading and quoted message history, no editor needed [→](https://neomd.ssp.sh/docs/sending/#emoji-reactions)
 - **Multi-select** — `m` marks emails, then batch-delete, move, or screen them all at once [→](https://neomd.ssp.sh/docs/keybindings/#multi-select--undo)
@@ -166,6 +167,7 @@ Keep your inbox clean without effort.
 ### Reading
 
 - **Threaded inbox** — related emails grouped together with a vertical connector line (`│`/`╰`), Twitter-style; threads detected via `In-Reply-To`/`Message-ID` headers with a subject+participant fallback; newest reply on top, root at bottom; `·` reply indicator shows which emails you've answered [→](https://neomd.ssp.sh/docs/reading/#threaded-inbox)
+- **iCalendar RSVP** — meeting invites (`text/calendar` / `.ics`) show a `📅` card in the reader; leader chord `<space> v {a|d|t}` sends an RFC 5546/6047 (iMIP) accept/decline/tentative reply; `<space> v o` hands the `.ics` off to your local calendar app via `[calendar].open_command` (default `xdg-open`, set to `morgen`, `khal`, etc.) [→](https://neomd.ssp.sh/docs/configuration/#calendar-invites-icalendar--imip)
 - **Conversation view** — `T` or `:thread` shows the full conversation across folders (Inbox, Sent, Archive, etc.) in a temporary tab with `[Folder]` prefix; see your replies alongside received emails [→](https://neomd.ssp.sh/docs/reading/#conversation-view)
 - **Link opener** — links in emails are numbered `[1]`–`[0]` in the reader header; press `space+digit` to open in `$BROWSER` [→](https://neomd.ssp.sh/docs/reading/#links)
 - **Everything view** — `ge` or `:everything` shows the 50 most recent emails across all folders; find emails that were screened out, moved to spam, or otherwise hard to locate [→](https://neomd.ssp.sh/docs/keybindings/#folders)
@@ -179,6 +181,7 @@ Keep your inbox clean without effort.
 - **CC, BCC, Reply-all** — optional Cc/Bcc fields (toggle with `ctrl+b`); `R` in the reader replies to sender + all CC recipients [→](https://neomd.ssp.sh/docs/sending/#cc-bcc-reply-all-and-forward)
 - **Drafts** — `d` in pre-send saves to Drafts (IMAP APPEND); `E` in the reader re-opens a draft as an editable compose; compose sessions are auto-backed up to `~/.cache/neomd/drafts/` so you never lose an unsent email (`:recover` to reopen) [→](https://neomd.ssp.sh/docs/sending/#drafts)
 - **Multiple From addresses** — define SMTP-only `[[senders]]` aliases (e.g. `s@ssp.sh` through an existing account); cycle with `ctrl+f` in compose and pre-send; sent copies always land in the Sent folder [→](https://neomd.ssp.sh/docs/sending/#multiple-from-addresses)
+- **OS keyring credentials** — set `password = "keyring"` to fetch the IMAP/SMTP password from your OS keyring (macOS Keychain, Linux Secret Service, Windows Credential Manager); OAuth2 tokens also stored in keyring with file fallback for headless/SSH; resolution happens at config load so `[[senders]]` aliases inherit the resolved password automatically [→](https://neomd.ssp.sh/docs/configuration/#storing-passwords-in-the-os-keyring)
 - **HTML signatures** — configure separate text and HTML signatures; text signature appears in editor and plain text part, HTML signature in HTML part only; use `[html-signature]` placeholder to control inclusion per-email [→](https://neomd.ssp.sh/docs/configuration/#html-signatures)
 - **Address autocomplete** — To/Cc/Bcc fields autocomplete from screener lists; navigate with `ctrl+n`/`ctrl+p`, accept with `tab`
 
@@ -186,7 +189,7 @@ Keep your inbox clean without effort.
 
 - **IMAP + SMTP** — direct connection via RFC 6851 MOVE, no local sync daemon required; stays in sync if you use it on mobile or different device [→](https://neomd.ssp.sh/docs/configuration/)
 - **RFC 5322 compliant email delivery** — Message-IDs use sender's domain, proper MIME multipart/alternative structure (text/plain before text/html), quoted-printable encoding, and all required headers; ensures deliverability across all providers, spam filter compatibility, and correct email threading [→](https://neomd.ssp.sh/docs/configuration/email-standards/)
-- **Kanagawa theme** — colors from the [kanagawa.nvim](https://github.com/rebelot/kanagawa.nvim) palette
+- **Themes** — six built-in palettes (`kanagawa` default, `kanagawa-paper`, `kanagawa-light` for daylight terminals, `rose-pine`, `gruvbox`, `osaka-jade`); pick via `[ui].theme = "..."` and override individual colour slots in an optional `[theme]` block [→](https://neomd.ssp.sh/docs/configuration/#theming)
 
 > [!NOTE]
 > neomd's **speed** depends entirely on your IMAP provider. On Hostpoint (the provider I use), a folder switch takes **~33ms** which feels instant. On Gmail, the same operation takes **~570ms** which is noticeably slow. See [Benchmark](#benchmark) for full details and how to test your provider.

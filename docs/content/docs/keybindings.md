@@ -102,6 +102,10 @@ To update both the help overlay and this document at once, edit that file and ru
 | `<space>d  (reader)` | download raw email source (.eml) to ~/Downloads |
 | `<space>n  (reader)` | append open email's sender to notify.txt (desktop notifications opt-in) |
 | `<space>N  (reader)` | append @domain of open email's sender to notify.txt |
+| `<space>va  (reader, calendar invite)` | RSVP accept — send iMIP REPLY to organizer |
+| `<space>vd  (reader, calendar invite)` | RSVP decline |
+| `<space>vt  (reader, calendar invite)` | RSVP tentative |
+| `<space>vo  (reader, calendar invite)` | open .ics in [calendar].open_command (default xdg-open, e.g. morgen) |
 | `<space>w` | show welcome screen |
 
 
@@ -141,6 +145,7 @@ To update both the help overlay and this document at once, edit that file and ru
 | `s  (pre-send)` | spell check — open in nvim with spell on, jump to first error |
 | `p  (pre-send)` | preview email in $BROWSER (images rendered, same as recipient sees) |
 | `e  (pre-send)` | re-open editor to edit body |
+| `i  (pre-send)` | AI handoff — write draft to temp file, spawn [ai].command (default `claude`; quit the tool to return to neomd, edits round-trip back) |
 | `enter  (pre-send)` | confirm and send |
 | `1-9  (reader)` | download attachment N to ~/Downloads and open with xdg-open |
 | `space+1-0  (reader)` | open link 1-10 in $BROWSER (0 = 10th link) |
