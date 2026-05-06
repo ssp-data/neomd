@@ -199,10 +199,11 @@ Keep your inbox clean without effort.
 > neomd moves, deletes, and modifies emails directly on your IMAP server. These operations affect your mailbox across all devices. **Back up important emails before first use.** neomd is experimental software and can't take responsibility for lost or misplaced emails. Consider testing with a secondary email account first.
 
 > [!NOTE]
-> **Optional attachment helpers:**
+> **Optional Neovim & file picker helpers:**
 > - `yazi` enables the built-in file picker used by pre-send `a`
 > - custom Neovim integration in `custom.lua` enables inline `<leader>a` attachment insertion inside `neomd-*.md` buffers
-> - without these, neomd still works; the inline Neovim attachment workflow just won't be available
+> - a small `markdown.lua` plugin spec gives you **live, beautiful rendered Markdown** (headings, code blocks, callouts) while composing — see [Beautiful Markdown Composer with Live-Preview in Neovim](https://neomd.ssp.sh/docs/sending/#beautiful-markdown-composer-with-live-preview-in-neovim)
+> - without these, neomd still works; the inline Neovim attachment workflow and live rendering just won't be available
 
 ```sh
 git clone https://github.com/ssp-data/neomd

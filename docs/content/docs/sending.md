@@ -1,18 +1,81 @@
 ---
-title: Sending Emails
+title: "Sending Emails (Composer)"
 weight: 5
 ---
 
-neomd sends every email as `multipart/alternative`:
+## Beautiful Markdown Composer with **Live-Preview** in Neovim
 
-- **`text/plain`** — the raw Markdown you wrote (readable as-is in any client)
-- **`text/html`** — rendered by [goldmark](https://github.com/yuin/goldmark) with a clean CSS wrapper
+Since you compose every email in Neovim as a `neomd-*.md` buffer, a small markdown plugin setup makes the writing experience much nicer — headings get colored blocks, code fences get borders, bullets get spacing, and callouts (`> [!note]`) render with icons live as you type.
 
-This means recipients using Gmail, Apple Mail, Outlook, etc. see properly formatted links, bold, headers, inline code, and code blocks — while you write nothing but Markdown.
+### Workflow of Writing and Composing an Email
+1. **Pre-Composer**: Fill in your emails and subject:
+![neomd in neovim with rendered markdown](/images/composing-1.png)
 
-When attachments are present the MIME structure is upgraded automatically:
-- **Images** → `multipart/related` with `Content-ID` — displayed inline in the email body
-- **Other files** (PDF, zip, …) → `multipart/mixed` — shown as downloadable attachments
+2. **Composer**: Write your email in Neovim with Markdown rendering enabled (see configs below):
+![neomd in neovim with rendered markdown](/images/composing-2.png)
+
+3. **Post-Composer and Pre-Sent View**: Preview, change FROM sender, attach files, etc.:
+![neomd in neovim with rendered markdown](/images/composing-3.png)
+
+4. **Preview in Browser**: Preview email in Browser - shows emails, Markdown rendered HTML.
+![neomd in neovim with rendered markdown](/images/composing-4.png)
+
+### Optional Neovim Configuratios 
+*Recommended for nice look and live rendering while you compose your emails*
+
+The single plugin that does most of the work is [render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim). Drop this file into your lazy.nvim plugin folder (e.g. `~/.config/nvim/lua/plugins/markdown.lua`):
+
+```lua
+return {
+  -- Live inline rendering: headings, code blocks, bullets, callouts
+  {
+    "MeanderingProgrammer/render-markdown.nvim",
+    ft = { "markdown" },
+    dependencies = { "nvim-treesitter/nvim-treesitter", "nvim-tree/nvim-web-devicons" },
+    keys = {
+      { "<leader>mr", ":RenderMarkdown toggle<CR>", desc = "Markdown render toggle" },
+    },
+    opts = {
+      heading = {
+        sign = false,
+        position = "inline",
+        icons = { "# ", "## ", "### ", "#### ", "##### ", "###### " },
+        width = "block",
+        left_pad = 2,
+        right_pad = 4,
+      },
+      code = {
+        sign = false,
+        left_pad = 2,
+        right_pad = 4,
+        border = "thick",
+      },
+      bullet = { right_pad = 2 },
+    },
+  },
+
+  -- Optional: bold / italic / link toggles via Alt-key chords in visual mode
+  {
+    "tadmccorkle/markdown.nvim",
+    ft = "markdown",
+    opts = {
+      on_attach = function(bufnr)
+        local toggle = function(key)
+          return "<Esc>gv<Cmd>lua require'markdown.inline'"
+            .. ".toggle_emphasis_visual'" .. key .. "'<CR>"
+        end
+        vim.keymap.set("x", "<M-i>", toggle("i"), { buffer = bufnr }) -- italic
+        vim.keymap.set("x", "<M-b>", toggle("l"), { buffer = bufnr }) -- bold
+        vim.keymap.set("x", "<M-k>", toggle("l"), { buffer = bufnr }) -- link
+      end,
+    },
+  },
+}
+```
+
+Toggle rendering on/off with `<leader>mr`. For the full version (with browser preview, wikilinks, custom highlights), see my live config at [markdown.lua](https://github.com/sspaeti/dotfiles/blob/master/nvim/.config/nvim/lua/sspaeti/plugins/markdown.lua).
+
+
 
 ## Multiple From Addresses
 
@@ -247,6 +310,18 @@ Thanks,
 Simon
 ```
 
+
+## Format that email is sent
+neomd sends every email as `multipart/alternative`:
+
+- **`text/plain`** — the raw Markdown you wrote (readable as-is in any client)
+- **`text/html`** — rendered by [goldmark](https://github.com/yuin/goldmark) with a clean CSS wrapper
+
+This means recipients using Gmail, Apple Mail, Outlook, etc. see properly formatted links, bold, headers, inline code, and code blocks — while you write nothing but Markdown.
+
+When attachments are present the MIME structure is upgraded automatically:
+- **Images** → `multipart/related` with `Content-ID` — displayed inline in the email body
+- **Other files** (PDF, zip, …) → `multipart/mixed` — shown as downloadable attachments
 
 
 ## Mailto Handler
