@@ -28,10 +28,11 @@ import (
 // Email is a fully parsed email message.
 // Attachment holds a decoded email attachment (file or inline binary part).
 type Attachment struct {
-	Filename    string // from Content-Disposition filename or Content-Type name param
-	ContentType string // e.g. "application/pdf"
-	ContentID   string // Content-ID without angle brackets (for inline cid: references)
-	Data        []byte
+	Filename         string // from Content-Disposition filename or Content-Type name param
+	ContentType      string // e.g. "application/pdf"
+	ContentID        string // Content-ID without angle brackets (for inline cid: references)
+	Data             []byte
+	IsCalendarInvite bool // true for text/calendar parts or filenames ending in .ics
 }
 
 type Email struct {
@@ -1128,6 +1129,15 @@ func (c *Client) SaveDraft(ctx context.Context, folder string, raw []byte) error
 //   - rawHTML:      original HTML part verbatim (empty for plain-text emails)
 //   - webURL:       "view online" URL extracted from List-Post header or plain-text
 //     preamble (e.g. Substack's "View this post on the web at https://…")
+// isCalendarPart returns true if a part is an iCalendar invite by either its
+// MIME type (text/calendar with optional method=…) or filename suffix.
+func isCalendarPart(contentType, filename string) bool {
+	if strings.HasPrefix(strings.ToLower(contentType), "text/calendar") {
+		return true
+	}
+	return strings.HasSuffix(strings.ToLower(filename), ".ics")
+}
+
 func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Attachment, references string, spyPixels SpyPixelInfo) {
 	e, err := message.Read(bytes.NewReader(raw))
 	if err != nil && !message.IsUnknownCharset(err) && !message.IsUnknownEncoding(err) {
@@ -1195,10 +1205,11 @@ func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Atta
 				}
 				data, _ := io.ReadAll(p.Body)
 				attachments = append(attachments, Attachment{
-					Filename:    filename,
-					ContentType: ct,
-					ContentID:   cid,
-					Data:        data,
+					Filename:         filename,
+					ContentType:      ct,
+					ContentID:        cid,
+					Data:             data,
+					IsCalendarInvite: isCalendarPart(ct, filename),
 				})
 				continue
 			}
@@ -1208,9 +1219,10 @@ func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Atta
 			data, _ := io.ReadAll(p.Body)
 			if filename != "" {
 				attachments = append(attachments, Attachment{
-					Filename:    filename,
-					ContentType: ct,
-					Data:        data,
+					Filename:         filename,
+					ContentType:      ct,
+					Data:             data,
+					IsCalendarInvite: isCalendarPart(ct, filename),
 				})
 			}
 			continue

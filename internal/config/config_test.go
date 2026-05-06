@@ -368,3 +368,89 @@ func TestValidate_NegativeUIValues(t *testing.T) {
 		t.Error("expected error for negative inbox_count")
 	}
 }
+
+func TestLoad_AIConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfgBody := `
+[[accounts]]
+name     = "Personal"
+imap     = "imap.example.com:993"
+smtp     = "smtp.example.com:587"
+user     = "me@example.com"
+password = "x"
+from     = "Me <me@example.com>"
+
+[ai]
+command = "claude"
+args = ["--print", "--cwd"]
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AI.Command != "claude" {
+		t.Errorf("AI.Command = %q, want %q", cfg.AI.Command, "claude")
+	}
+	if len(cfg.AI.Args) != 2 || cfg.AI.Args[0] != "--print" || cfg.AI.Args[1] != "--cwd" {
+		t.Errorf("AI.Args = %v, want [--print --cwd]", cfg.AI.Args)
+	}
+}
+
+func TestLoad_AIConfigOmittedFallsBackToDefault(t *testing.T) {
+	// When [ai] is absent, defaults() supplies "claude" so the i key works
+	// out of the box. Users who want the binding disabled set command = "".
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfgBody := `
+[[accounts]]
+name     = "Personal"
+imap     = "imap.example.com:993"
+smtp     = "smtp.example.com:587"
+user     = "me@example.com"
+password = "x"
+from     = "Me <me@example.com>"
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AI.Command != "claude" {
+		t.Errorf("AI.Command = %q, want %q (default from defaults())", cfg.AI.Command, "claude")
+	}
+}
+
+func TestLoad_AIConfigEmptyStringDisables(t *testing.T) {
+	// Setting command = "" must remain empty (override default) so the
+	// binding can be disabled deliberately.
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfgBody := `
+[[accounts]]
+name     = "Personal"
+imap     = "imap.example.com:993"
+smtp     = "smtp.example.com:587"
+user     = "me@example.com"
+password = "x"
+from     = "Me <me@example.com>"
+
+[ai]
+command = ""
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AI.Command != "" {
+		t.Errorf("AI.Command = %q, want empty (explicit disable)", cfg.AI.Command)
+	}
+}

@@ -21,6 +21,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sspaeti/neomd/internal/calendar"
 	"github.com/sspaeti/neomd/internal/config"
 	"github.com/sspaeti/neomd/internal/editor"
 	"github.com/sspaeti/neomd/internal/imap"
@@ -644,6 +645,16 @@ type Model struct {
 
 // New creates and initialises the TUI model.
 func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mailto ...*MailtoParams) Model {
+	// Theme is applied here so any in-memory rendering inside this constructor
+	// already uses the user's chosen palette. Default name is "kanagawa" for
+	// byte-for-byte parity with the pre-theme state when [ui].theme is unset.
+	themeName := cfg.UI.Theme
+	if themeName == "" || themeName == "dark" || themeName == "light" || themeName == "auto" {
+		// Legacy [ui].theme values (pre-named-theme era) → kanagawa default.
+		themeName = "kanagawa"
+	}
+	ApplyTheme(themeName, cfg.Theme)
+
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
@@ -2149,6 +2160,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case rsvpDoneMsg:
+		if msg.err != nil {
+			m.status = "RSVP send failed: " + msg.err.Error()
+			m.isError = true
+		} else {
+			m.status = "RSVP sent: " + strings.ToLower(string(msg.status))
+			m.isError = false
+		}
+		return m, nil
+
+	case icsOpenedMsg:
+		if msg.err != nil {
+			m.status = "Open .ics failed: " + msg.err.Error()
+			m.isError = true
+		} else {
+			m.status = "Opened " + msg.path
+			m.isError = false
+		}
+		return m, nil
+
 	case saveDraftDoneMsg:
 		if msg.err != nil {
 			m.status = "Draft error: " + msg.err.Error()
@@ -3498,6 +3529,16 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.isError = false
 				return m, m.downloadEMLCmd()
 			}
+			// space + v = leader for calendar RSVP chord (v + a/d/t/o)
+			if key == "v" {
+				if m.calendarInvite() == nil {
+					m.status = "No calendar invite in this email."
+					return m, nil
+				}
+				m.readerPending = "v"
+				m.status = "rsvp: a=accept · d=decline · t=tentative · o=open in calendar app"
+				return m, nil
+			}
 			// space + n / N = add open email's sender (or @domain) to notify.txt
 			if key == "n" || key == "N" {
 				if m.openEmail == nil {
@@ -3532,6 +3573,21 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "g": // gg = top of email
 			if key == "g" {
 				m.reader.GotoTop()
+				return m, nil
+			}
+		case "v": // <space> v {a|d|t|o} — calendar RSVP chord
+			switch key {
+			case "a":
+				return m, m.sendRSVPCmd(calendar.StatusAccepted)
+			case "d":
+				return m, m.sendRSVPCmd(calendar.StatusDeclined)
+			case "t":
+				return m, m.sendRSVPCmd(calendar.StatusTentative)
+			case "o":
+				return m, m.openICSCmd()
+			default:
+				m.status = fmt.Sprintf("rsvp: unknown chord v%s — use a/d/t/o or esc", key)
+				m.isError = true
 				return m, nil
 			}
 		case "D": // Di / Do = domain-level screen IN / OUT for the open email
@@ -3981,6 +4037,174 @@ func (m Model) downloadEMLCmd() tea.Cmd {
 	}
 }
 
+// rsvpDoneMsg is fired when an RSVP send completes.
+type rsvpDoneMsg struct {
+	status calendar.Status
+	err    error
+}
+
+// icsOpenedMsg is fired after writing the .ics to ~/.cache and invoking
+// the configured calendar open_command.
+type icsOpenedMsg struct {
+	path string
+	err  error
+}
+
+// calendarInvite returns the first calendar invite attachment on the
+// currently open email, or nil if none.
+func (m Model) calendarInvite() *imap.Attachment {
+	for i := range m.openAttachments {
+		if m.openAttachments[i].IsCalendarInvite {
+			return &m.openAttachments[i]
+		}
+	}
+	return nil
+}
+
+// sendRSVPCmd builds an iMIP REPLY message and sends it to the event
+// organizer. The responder address is the active account's user email.
+func (m Model) sendRSVPCmd(status calendar.Status) tea.Cmd {
+	att := m.calendarInvite()
+	if att == nil {
+		m.status = "No calendar invite to RSVP to."
+		return nil
+	}
+	ev, err := calendar.Parse(att.Data)
+	if err != nil {
+		m.status = "RSVP parse: " + err.Error()
+		m.isError = true
+		return nil
+	}
+	if ev.Organizer == "" {
+		m.status = "RSVP: invite has no ORGANIZER — cannot determine recipient."
+		m.isError = true
+		return nil
+	}
+
+	acct := m.activeAccount()
+	responder := acct.User
+	from := acct.From
+	if from == "" {
+		from = responder
+	}
+
+	reply, err := calendar.BuildRSVP(att.Data, responder, status)
+	if err != nil {
+		m.status = "RSVP build: " + err.Error()
+		m.isError = true
+		return nil
+	}
+
+	// Subject prefix matches what Gmail's own native "Yes / Maybe / No"
+	// buttons emit: "Accepted: <event>", "Declined: <event>",
+	// "Tentative: <event>". Gmail's iMIP processor uses this prefix as one
+	// of its signals to match the REPLY to a calendar event; "Re: <event>"
+	// gets treated as an ordinary reply and the calendar isn't updated.
+	low := strings.ToLower(string(status))
+	verb := strings.ToUpper(low[:1]) + low[1:]
+	subject := verb + ": " + ev.Summary
+	plain := fmt.Sprintf("%s: %s\n", verb, ev.Summary)
+	if when := ev.FormatTime(); when != "" {
+		plain += when
+		if ev.Location != "" {
+			plain += " at " + ev.Location
+		}
+		plain += "\n"
+	}
+
+	var inReplyTo, references string
+	if m.openEmail != nil {
+		inReplyTo = m.openEmail.MessageID
+		references = m.openEmail.References
+	}
+
+	raw, err := smtp.BuildRSVPMessage(from, ev.Organizer, subject, plain, reply, inReplyTo, references)
+	if err != nil {
+		m.status = "RSVP MIME: " + err.Error()
+		m.isError = true
+		return nil
+	}
+
+	h, p := splitAddr(acct.SMTP)
+	cfg := smtp.Config{
+		Host: h, Port: p,
+		User:        acct.User,
+		Password:    acct.Password,
+		From:        from,
+		STARTTLS:    acct.STARTTLS,
+		TLSCertFile: acct.TLSCertFile,
+		TokenSource: m.tokenSourceFor(acct.Name),
+	}
+
+	to := ev.Organizer
+	sentCli := m.sentDraftsIMAPClient()
+	sentFolder := m.cfg.Folders.Sent
+	openEmail := m.openEmail
+	replyCli := m.imapCliForAccount(acct.Name)
+	return func() tea.Msg {
+		if err := smtp.SendRaw(cfg, []string{to}, raw); err != nil {
+			return rsvpDoneMsg{status: status, err: err}
+		}
+		// Save a copy to Sent so the user has an audit trail of which
+		// RSVPs they sent — regular replies save, RSVPs should too.
+		// Non-fatal: if SaveSent fails the RSVP is already on the wire.
+		if sentCli != nil && sentFolder != "" {
+			_ = sentCli.SaveSent(nil, sentFolder, raw)
+		}
+		// Mark the original invite as \Answered so the inbox shows the
+		// reply indicator (·), matching reply / forward behaviour.
+		if openEmail != nil && replyCli != nil {
+			_ = replyCli.MarkAnswered(nil, openEmail.Folder, openEmail.UID)
+		}
+		return rsvpDoneMsg{status: status}
+	}
+}
+
+// openICSCmd writes the calendar invite to ~/.cache/neomd/ical/ and runs
+// the configured open_command (default xdg-open). Lets the user import
+// the event into their local calendar app (e.g. morgen, khal, GNOME).
+func (m Model) openICSCmd() tea.Cmd {
+	att := m.calendarInvite()
+	if att == nil {
+		m.status = "No calendar invite to open."
+		return nil
+	}
+	cmdName := strings.TrimSpace(m.cfg.Calendar.OpenCommand)
+	if cmdName == "" {
+		cmdName = "xdg-open"
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		m.status = "open .ics: " + err.Error()
+		m.isError = true
+		return nil
+	}
+	dir := filepath.Join(home, ".cache", "neomd", "ical")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		m.status = "open .ics: " + err.Error()
+		m.isError = true
+		return nil
+	}
+	name := att.Filename
+	if name == "" {
+		name = fmt.Sprintf("invite-%d.ics", time.Now().Unix())
+	}
+	dst := filepath.Join(dir, name)
+	if err := os.WriteFile(dst, att.Data, 0600); err != nil {
+		m.status = "open .ics: " + err.Error()
+		m.isError = true
+		return nil
+	}
+
+	return func() tea.Msg {
+		if err := exec.Command(cmdName, dst).Start(); err != nil {
+			return icsOpenedMsg{path: dst, err: err}
+		}
+		return icsOpenedMsg{path: dst}
+	}
+}
+
 // extractWebVersionURL looks for the "view in browser" / "read online" link
 // that newsletter platforms insert near the top of every HTML email.
 // Searches only the first 3000 bytes (the link is always in the preheader).
@@ -4268,6 +4492,16 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		// Open in nvim with spell checking, cursor on first error.
 		return m.launchSpellCheckCmd(ps)
+	case "i":
+		// AI handoff: write draft to a temp file and spawn [ai].command. The
+		// command is typically `nvim` (so the user can drive Claude/Codex from
+		// inside the editor) or a CLI like `claude` invoked directly. Body
+		// changes round-trip back through editorDoneMsg.
+		if strings.TrimSpace(m.cfg.AI.Command) == "" {
+			m.status = "AI handoff: set [ai].command in config.toml (e.g. command = \"claude\")"
+			return m, nil
+		}
+		return m.launchAIHandoffCmd(ps)
 	case "d":
 		// Save to Drafts without sending.
 		return m, m.saveDraftCmd(m.presendIMAPClient(), m.presendFrom(), ps.to, ps.cc, ps.bcc, ps.subject, ps.body, m.attachments)
@@ -4322,6 +4556,60 @@ func (m Model) launchSpellCheckCmd(ps *pendingSendData) (tea.Model, tea.Cmd) {
 		"-c", `autocmd VimEnter * ++once lua vim.defer_fn(function() vim.wo.spell = true; vim.bo.spelllang = "en_us,de"; vim.cmd("normal! gg]s") end, 100)`,
 		tmpPath,
 	)
+	m.state = stateCompose
+	draftBackups := m.cfg.UI.DraftBackups()
+	return m, tea.ExecProcess(cmd, func(execErr error) tea.Msg {
+		backupDraft(tmpPath, draftBackups)
+		defer os.Remove(tmpPath)
+		if execErr != nil {
+			return editorDoneMsg{err: execErr}
+		}
+		raw, readErr := os.ReadFile(tmpPath)
+		if readErr != nil {
+			return editorDoneMsg{err: readErr}
+		}
+		pto, pcc, pbcc, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
+		if pto == "" {
+			pto = ps.to
+		}
+		if pcc == "" {
+			pcc = ps.cc
+		}
+		if pbcc == "" {
+			pbcc = ps.bcc
+		}
+		if pfrom == "" {
+			pfrom = m.presendFrom()
+		}
+		if psubject == "" {
+			psubject = ps.subject
+		}
+		return editorDoneMsg{to: pto, cc: pcc, bcc: pbcc, from: pfrom, subject: psubject, body: string(raw)}
+	})
+}
+
+// launchAIHandoffCmd writes the current draft to a temp markdown file and
+// spawns [ai].command against it. Same temp-file round-trip as the editor and
+// spell-check flows: on exit, the file is re-parsed and the draft body is
+// replaced. The configured command receives the file path as its final
+// argument so e.g. `claude` or `codex` work the same as `nvim`.
+func (m Model) launchAIHandoffCmd(ps *pendingSendData) (tea.Model, tea.Cmd) {
+	prelude := editor.Prelude(ps.to, ps.cc, ps.bcc, m.presendFrom(), ps.subject, "")
+	content := prelude + ps.body
+
+	f, err := os.CreateTemp(neomdTempDir(), "neomd-ai-*.md")
+	if err != nil {
+		m.status = "AI handoff: " + err.Error()
+		m.isError = true
+		return m, nil
+	}
+	tmpPath := f.Name()
+	f.WriteString(content) //nolint
+	f.Close()
+
+	args := append([]string{}, m.cfg.AI.Args...)
+	args = append(args, tmpPath)
+	cmd := exec.Command(m.cfg.AI.Command, args...)
 	m.state = stateCompose
 	draftBackups := m.cfg.UI.DraftBackups()
 	return m, tea.ExecProcess(cmd, func(execErr error) tea.Msg {
@@ -5046,7 +5334,11 @@ func (m Model) viewPresend() string {
 		if isListmonk {
 			b.WriteString(styleHelp.Render("  enter schedule campaign · e edit · p preview · ctrl+f from · d draft · esc cancel · x discard"))
 		} else {
-			b.WriteString(styleHelp.Render("  enter send · e edit · p preview · a attach · D remove attach · ctrl+f from · ctrl+b cc/bcc · d draft · esc cancel · x discard"))
+			aiHint := ""
+			if strings.TrimSpace(m.cfg.AI.Command) != "" {
+				aiHint = fmt.Sprintf(" · i AI (%s, quit to return)", strings.Fields(m.cfg.AI.Command)[0])
+			}
+			b.WriteString(styleHelp.Render("  enter send · e edit · s spell · p preview" + aiHint + " · a attach · D remove attach · ctrl+f from · ctrl+b cc/bcc · d draft · esc cancel · x discard"))
 		}
 	}
 	return b.String()
