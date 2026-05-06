@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-sasl"
+	"github.com/sspaeti/neomd/internal/keyring"
 	"golang.org/x/oauth2"
 )
 
@@ -41,7 +42,12 @@ type Config struct {
 	TokenURL     string // manual override (skips discovery)
 	Scopes       []string
 	RedirectPort int    // local callback port; defaults to 8085
-	TokenFile    string // path to persist the token JSON
+	TokenFile    string // path to persist the token JSON (used as fallback when keyring is unavailable)
+
+	// AccountName, when non-empty, enables keyring storage for the OAuth2
+	// token under key `account/<name>/oauth2`. The token file remains as a
+	// fallback for headless/SSH systems where no keyring is available.
+	AccountName string
 
 	DiscoveryTimeout time.Duration // Timeout for the discovery OIDC HTTP request. Defaults to 10s
 	AuthFlowTimeout  time.Duration // Timeout for the AuthFlow to be completed. Defaults to 5m
@@ -140,7 +146,9 @@ func TokenSource(ctx context.Context, cfg Config) (func() (string, error), error
 		Scopes:      cfg.Scopes,
 	}
 
-	tok, err := loadToken(cfg.TokenFile)
+	storage := newTokenStorage(cfg.AccountName, cfg.TokenFile)
+
+	tok, err := storage.Load()
 	if err != nil {
 		flowCtx, flowCancel := context.WithTimeout(ctx, cfg.authFlowTimeout())
 		defer flowCancel()
@@ -149,7 +157,7 @@ func TokenSource(ctx context.Context, cfg Config) (func() (string, error), error
 		if err != nil {
 			return nil, fmt.Errorf("oauth2 auth flow: %w", err)
 		}
-		if err := saveToken(cfg.TokenFile, tok); err != nil {
+		if err := storage.Save(tok); err != nil {
 			return nil, fmt.Errorf("save oauth2 token: %w", err)
 		}
 	}
@@ -161,7 +169,7 @@ func TokenSource(ctx context.Context, cfg Config) (func() (string, error), error
 		if err != nil {
 			return "", err
 		}
-		_ = saveToken(cfg.TokenFile, t)
+		_ = storage.Save(t)
 		return t.AccessToken, nil
 	}, nil
 }
@@ -251,18 +259,6 @@ func openBrowser(url string) {
 	_ = exec.Command(cmd, args...).Start()
 }
 
-func saveToken(path string, tok *oauth2.Token) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return json.NewEncoder(f).Encode(tok)
-}
-
 // XOAuth2Client returns a sasl.Client that implements the XOAUTH2 mechanism.
 // Both Google and Microsoft Exchange Online support XOAUTH2; it is more
 // broadly compatible than the RFC 7628 OAUTHBEARER mechanism.
@@ -286,6 +282,50 @@ func (c *xoauth2Client) Next(_ []byte) ([]byte, error) {
 	return []byte{}, nil
 }
 
+// tokenStorage persists OAuth2 tokens with a keyring-first / file-fallback policy.
+// Flow:
+//   - Save: try keyring (if AccountName set); if it fails (or no name), write to file.
+//   - Load: try keyring first; on ErrNotFound or any keyring failure, fall back to file.
+// The TokenFile path remains useful for headless/SSH systems where the keyring
+// service is unavailable. Both paths use mode 0600.
+type tokenStorage struct {
+	account string
+	path    string
+}
+
+func newTokenStorage(account, path string) *tokenStorage {
+	return &tokenStorage{account: account, path: path}
+}
+
+func (s *tokenStorage) Load() (*oauth2.Token, error) {
+	if s.account != "" {
+		tok, err := keyring.GetOAuth2Token(s.account)
+		if err == nil {
+			return tok, nil
+		}
+		// Any keyring error (including ErrNotFound) — try file fallback.
+	}
+	if s.path == "" {
+		return nil, fmt.Errorf("oauth2: no token storage available (no account name and no token file path)")
+	}
+	return loadToken(s.path)
+}
+
+func (s *tokenStorage) Save(tok *oauth2.Token) error {
+	if s.account != "" {
+		if err := keyring.SetOAuth2Token(s.account, tok); err == nil {
+			return nil
+		}
+		// Keyring failed — fall back to file.
+	}
+	if s.path == "" {
+		return fmt.Errorf("oauth2: no token storage available")
+	}
+	return saveToken(s.path, tok)
+}
+
+// loadToken / saveToken expose the file-storage path so existing tests
+// (and the tokenStorage fallback) share one implementation.
 func loadToken(path string) (*oauth2.Token, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -296,4 +336,16 @@ func loadToken(path string) (*oauth2.Token, error) {
 		return nil, fmt.Errorf("parse token file: %w", err)
 	}
 	return &tok, nil
+}
+
+func saveToken(path string, tok *oauth2.Token) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return json.NewEncoder(f).Encode(tok)
 }

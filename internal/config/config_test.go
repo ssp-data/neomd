@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	zalandokeyring "github.com/zalando/go-keyring"
+	"github.com/sspaeti/neomd/internal/keyring"
 )
 
 func TestExpandEnv(t *testing.T) {
@@ -366,5 +369,112 @@ func TestValidate_NegativeUIValues(t *testing.T) {
 	err := cfg.validate()
 	if err == nil {
 		t.Error("expected error for negative inbox_count")
+	}
+}
+
+func TestUseKeyring(t *testing.T) {
+	tests := []struct {
+		password string
+		want     bool
+	}{
+		{"keyring", true},
+		{"actual-password", false},
+		{"", false},
+		{"$ENV_VAR", false},
+		{"keyring-like", false},
+	}
+	for _, tt := range tests {
+		acc := AccountConfig{Password: tt.password}
+		if got := acc.UseKeyring(); got != tt.want {
+			t.Errorf("UseKeyring(%q) = %v, want %v", tt.password, got, tt.want)
+		}
+	}
+}
+
+func TestResolveKeyringPassword(t *testing.T) {
+	// Use the in-memory mock provided by zalando/go-keyring so tests don't
+	// touch the real OS keyring.
+	zalandokeyring.MockInit()
+
+	t.Run("resolved when entry exists", func(t *testing.T) {
+		const acct = "TestAcctResolved"
+		if err := keyring.SetPassword(acct, "real-secret"); err != nil {
+			t.Fatalf("SetPassword: %v", err)
+		}
+		got := resolveKeyringPassword(acct, "keyring")
+		if got != "real-secret" {
+			t.Errorf("got %q, want resolved password", got)
+		}
+		_ = keyring.DeletePassword(acct)
+	})
+
+	t.Run("sentinel preserved when entry missing", func(t *testing.T) {
+		got := resolveKeyringPassword("MissingAcct", "keyring")
+		if got != "keyring" {
+			t.Errorf("got %q, want sentinel preserved", got)
+		}
+	})
+
+	t.Run("non-sentinel passthrough", func(t *testing.T) {
+		got := resolveKeyringPassword("any", "literal-password")
+		if got != "literal-password" {
+			t.Errorf("got %q, want passthrough", got)
+		}
+	})
+
+	t.Run("empty account name passthrough", func(t *testing.T) {
+		// Anonymous accounts (empty Name) should not trigger a keyring lookup.
+		got := resolveKeyringPassword("", "keyring")
+		if got != "keyring" {
+			t.Errorf("got %q, want passthrough for empty account", got)
+		}
+	})
+}
+
+// TestLoad_KeyringResolvesAcrossSenders verifies the senders-gap fix:
+// PR #5 resolved keyring at IMAP construction time, leaving SMTP send paths
+// reading the literal "keyring" sentinel. By moving resolution into Load(),
+// every consumer (IMAP, SMTP, [[senders]] aliases) sees the resolved value.
+func TestLoad_KeyringResolvesAcrossSenders(t *testing.T) {
+	zalandokeyring.MockInit()
+	const acctName = "Personal"
+	const realPw = "the-real-password"
+	if err := keyring.SetPassword(acctName, realPw); err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+	defer keyring.DeletePassword(acctName)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfgBody := `
+[[accounts]]
+name     = "Personal"
+imap     = "imap.example.com:993"
+smtp     = "smtp.example.com:587"
+user     = "me@example.com"
+password = "keyring"
+from     = "Me <me@example.com>"
+
+[[senders]]
+name    = "Alias"
+from    = "Alias <alias@example.com>"
+account = "Personal"
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Accounts) != 1 {
+		t.Fatalf("expected 1 account, got %d", len(cfg.Accounts))
+	}
+	if got := cfg.Accounts[0].Password; got != realPw {
+		t.Errorf("Accounts[0].Password = %q, want resolved %q (the senders-gap fix)", got, realPw)
+	}
+	if cfg.Accounts[0].UseKeyring() {
+		t.Error("UseKeyring() should be false after successful resolution")
 	}
 }

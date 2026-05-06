@@ -7,6 +7,7 @@ sidebar:
 
 On first run, neomd creates `~/.config/neomd/config.toml` with placeholders.
 
+
 ## Full example
 
 ```toml
@@ -97,7 +98,12 @@ Use an app-specific password (Gmail, Fastmail, Hostpoint, etc.) rather than your
 
 `inbox_count` is a fetch cap for normal folder loads and startup auto-screening. If you want to re-screen the entire Inbox on the IMAP server, use `:screen-all` from inside neomd; that scans every Inbox email, not just the loaded subset, and can take a while on large mailboxes.
 
-## Environment Variables
+
+
+## Passwords: Env and Keyring
+
+
+### Environment Variables
 
 The `password` and `user` fields support environment variable expansion. If the entire value is a single env var reference, neomd resolves it at startup:
 
@@ -109,6 +115,52 @@ password = "${IMAP_PASS}"      # ${VAR} form
 Values containing other text or multiple `$` signs are left as-is, so passwords that happen to contain `$` are never mangled.
 
 Credentials are stored only in `~/.config/neomd/config.toml` (mode 0600) and never written elsewhere; all IMAP connections use TLS (port 993) or STARTTLS (port 143).
+
+### Storing passwords in the OS keyring (Linux)
+
+Set `password = "keyring"` to fetch the password from your OS keyring (macOS Keychain, GNOME Keyring / KDE Wallet via Secret Service on Linux, Windows Credential Manager) at startup. The lookup uses the `[[accounts]].name` as the account identifier under service `neomd`.
+
+```toml
+[[accounts]]
+name     = "Personal"
+password = "keyring"           # resolved at startup; see below for setup
+# ...rest of the account
+```
+
+**Setup before first launch (Linux, using `secret-tool` from `libsecret`):**
+
+`zalando/go-keyring` writes Secret Service entries with two attributes — `service` (always `neomd`) and `username` (`account/<name>/password`, where `<name>` is the `[[accounts]].name` from your config). The `--label` is display-only; entries are identified by their **attributes**.
+
+```sh
+# Add the entry (you'll be prompted for the password on stdin):
+secret-tool store --label "neomd Personal" service neomd username account/Personal/password
+
+# Verify it was stored (read-only):
+secret-tool lookup service neomd username account/Personal/password
+
+# Audit every neomd entry currently in your keyring:
+secret-tool search --all service neomd
+
+# Remove a specific entry if you want to start over:
+secret-tool clear service neomd username account/Personal/password
+```
+
+> [!IMPORTANT]
+> **Multiple accounts → multiple distinct `username` values.** Same `service+username` overwrites, regardless of label. For three accounts named `Personal`, `Work`, `WorkInfo` in your config, run **three** commands with **three different** `username=account/<name>/password` values — labels are not enough.
+
+```sh
+secret-tool store --label "neomd Personal"  service neomd username account/Personal/password
+secret-tool store --label "neomd Work"      service neomd username account/Work/password
+secret-tool store --label "neomd WorkInfo"  service neomd username account/WorkInfo/password
+```
+
+> **Recommended: avoid spaces in `name = "..."`** (use `WorkInfo` rather than `"Work Info"`). Easier to type in `secret-tool` commands without quoting; the keyring username is just `account/WorkInfo/password`. If you do use a space, quote the whole username arg every time: `username "account/Work Info/password"`.
+
+`secret-tool` only touches entries that match the **exact** attribute set you pass. It cannot read, modify, or delete other applications' keyring entries — your Firefox / GNOME Online Accounts / SSH Agent / browser passwords stay isolated under their own `service=` namespaces. Worst case if you typo: a stale entry sits unused, removable with `secret-tool clear` above.
+
+If the keyring entry is missing or the keyring service is unavailable, neomd prints a warning and the literal sentinel `"keyring"` is used as the password — IMAP/SMTP authentication will then fail with a clear error. `[[senders]]` aliases that reference an account inherit the resolved keyring password automatically.
+
+OAuth2 tokens are also stored in the keyring under `username = account/<name>/oauth2` with the same `service = neomd`, falling back to `~/.config/neomd/tokens/<account>.json` (mode `0600`) when no keyring is available (headless / SSH systems).
 
 ## TLS and STARTTLS Configuration
 

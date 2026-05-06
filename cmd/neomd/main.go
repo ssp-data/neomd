@@ -102,6 +102,7 @@ func main() {
 				Scopes:       acc.OAuth2Scopes,
 				RedirectPort: acc.OAuth2RedirectPort,
 				TokenFile:    tokenFile,
+				AccountName:  acc.Name, // enables keyring storage; TokenFile remains as headless fallback
 			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "neomd: account %q: oauth2: %v\n", acc.Name, err)

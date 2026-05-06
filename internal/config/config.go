@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/sspaeti/neomd/internal/keyring"
 )
 
 // SenderConfig holds a named "From" alias used only for sending.
@@ -50,6 +51,19 @@ type AccountConfig struct {
 // IsOAuth2 reports whether this account uses OAuth2 instead of password auth.
 func (a AccountConfig) IsOAuth2() bool {
 	return strings.EqualFold(a.AuthType, "oauth2")
+}
+
+// keyringSentinel is the literal value users put in `password = "keyring"`
+// to signal "fetch from OS keyring at startup."
+const keyringSentinel = "keyring"
+
+// UseKeyring reports whether this account stores its password in the OS
+// keyring. After config.Load() resolves the keyring entry, Password holds
+// the actual password and this method returns false. The sentinel only
+// remains if keyring lookup failed (no entry yet, or service unavailable),
+// in which case downstream code can prompt the user via :set-password.
+func (a AccountConfig) UseKeyring() bool {
+	return a.Password == keyringSentinel
 }
 
 // ScreenerConfig points to the allowlist/blocklist files.
@@ -462,10 +476,12 @@ func Load(path string) (*Config, error) {
 		cfg.Accounts[i].Password = expandEnv(cfg.Accounts[i].Password)
 		cfg.Accounts[i].User = expandEnv(cfg.Accounts[i].User)
 		cfg.Accounts[i].TLSCertFile = expandPath(expandEnv(cfg.Accounts[i].TLSCertFile))
+		cfg.Accounts[i].Password = resolveKeyringPassword(cfg.Accounts[i].Name, cfg.Accounts[i].Password)
 	}
 	cfg.Account.Password = expandEnv(cfg.Account.Password)
 	cfg.Account.User = expandEnv(cfg.Account.User)
 	cfg.Account.TLSCertFile = expandPath(expandEnv(cfg.Account.TLSCertFile))
+	cfg.Account.Password = resolveKeyringPassword(cfg.Account.Name, cfg.Account.Password)
 
 	cfg.Listmonk.APIToken = expandEnv(cfg.Listmonk.APIToken)
 
@@ -605,6 +621,30 @@ func writeDefault(path string, cfg *Config) error {
 	}
 	defer f.Close()
 	return toml.NewEncoder(f).Encode(cfg)
+}
+
+// resolveKeyringPassword turns the "keyring" sentinel into the actual password
+// stored in the OS keyring under the given account name. Anything else is
+// returned unchanged. If the keyring lookup fails (no entry yet, or service
+// unavailable) the sentinel is preserved so downstream code can detect it and
+// prompt the user; a one-line warning is written to stderr.
+//
+// This step runs in Load() so every consumer (IMAP at boot, SMTP at send,
+// senders aliasing this account) sees the resolved value.
+func resolveKeyringPassword(accountName, password string) string {
+	if password != keyringSentinel || accountName == "" {
+		return password
+	}
+	resolved, err := keyring.GetPassword(accountName)
+	if err == nil {
+		return resolved
+	}
+	if err == keyring.ErrNotFound {
+		fmt.Fprintf(os.Stderr, "neomd: account %q: keyring entry not set — run :set-password %s\n", accountName, accountName)
+	} else {
+		fmt.Fprintf(os.Stderr, "neomd: account %q: keyring unavailable: %v\n", accountName, err)
+	}
+	return password // leave sentinel for downstream
 }
 
 // expandEnv resolves a value that is entirely a single env var reference
