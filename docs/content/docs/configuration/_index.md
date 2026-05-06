@@ -7,6 +7,28 @@ sidebar:
 
 On first run, neomd creates `~/.config/neomd/config.toml` with placeholders.
 
+## Storing passwords in the OS keyring
+
+Set `password = "keyring"` to fetch the password from your OS keyring (macOS Keychain, GNOME Keyring / KDE Wallet via Secret Service on Linux, Windows Credential Manager) at startup. The lookup uses the `[[accounts]].name` as the account identifier under service `neomd`.
+
+```toml
+[[accounts]]
+name     = "Personal"
+password = "keyring"           # resolved at startup; see below for setup
+# ...rest of the account
+```
+
+**Setup before first launch (Linux example using `secret-tool`):**
+
+```sh
+secret-tool store --label "neomd Personal" service neomd account/Personal/password
+# enter password when prompted
+```
+
+If the keyring entry is missing or the keyring service is unavailable, neomd prints a warning and the literal sentinel `"keyring"` is used as the password — IMAP/SMTP authentication will then fail with a clear error. `[[senders]]` aliases that reference an account inherit the resolved keyring password automatically.
+
+OAuth2 tokens are still persisted to `~/.config/neomd/tokens/<account>.json` (mode `0600`). Keyring storage for OAuth2 tokens is on the roadmap.
+
 ## Full example
 
 ```toml
