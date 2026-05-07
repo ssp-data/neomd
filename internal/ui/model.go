@@ -4412,12 +4412,6 @@ func (m Model) updateCompose(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+t":
 		return m.launchAttachPickerCmd()
-	case "D":
-		// Remove last attachment
-		if len(m.attachments) > 0 {
-			m.attachments = m.attachments[:len(m.attachments)-1]
-		}
-		return m, nil
 	case "ctrl+f":
 		froms := m.presendFroms()
 		if len(froms) <= 1 {
