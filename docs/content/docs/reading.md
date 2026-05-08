@@ -91,6 +91,10 @@ When an email has a `text/calendar` part or `.ics` attachment, the reader shows 
 📅 Q2 Planning  ·  Mon, 21 Apr 2026 14:00–15:00  ·  Conference Room A
 ```
 
+When opening the email:
+![calenar](/images/calendar.png)
+
+
 | Key | Action |
 |-----|--------|
 | `<space> v a` / `d` / `t` | RSVP accept / decline / tentative — send iMIP REPLY to the organizer |
