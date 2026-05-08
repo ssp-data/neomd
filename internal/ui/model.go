@@ -5328,9 +5328,16 @@ func extractInlineAttachments(body string) (files []string, clean string) {
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
 		var rest string
+		// Header form ("# [attach]") is what injectAttachmentsIntoPrelude
+		// writes for existing m.attachments on re-edit/spell/AI/continueDraft;
+		// it must round-trip back to a file attachment regardless of
+		// extension, otherwise an image attachment silently becomes an inline
+		// markdown image and disappears from m.attachments.
+		var header bool
 		switch {
 		case strings.HasPrefix(trimmed, "# [attach] "):
 			rest = strings.TrimSpace(trimmed[len("# [attach] "):])
+			header = true
 		case strings.HasPrefix(trimmed, "[attach] "):
 			rest = strings.TrimSpace(trimmed[len("[attach] "):])
 		default:
@@ -5340,10 +5347,9 @@ func extractInlineAttachments(body string) (files []string, clean string) {
 		if rest == "" {
 			continue
 		}
-		if imageExts[strings.ToLower(filepath.Ext(rest))] {
+		if !header && imageExts[strings.ToLower(filepath.Ext(rest))] {
 			// Inline: replace with markdown image ref so position is preserved.
-			// Header-form "# [attach] /img" loses position (always at top), but
-			// images placed via <leader>a inline use plain "[attach] /img" and
+			// Images placed via <leader>a inline use plain "[attach] /img" and
 			// render where the user put them.
 			kept = append(kept, "![]("+rest+")")
 		} else {
