@@ -2051,7 +2051,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if !m.spyScannedKeys[key] {
 				m.spyScannedKeys[key] = true
-				safeGo(func() { saveSpyPixelCache(copyMap(m.spyPixelKeys), copyMap(m.spyScannedKeys)) })
+				// Snapshot maps before launching the goroutine — copyMap must
+				// run on the main goroutine so it cannot race with subsequent
+				// bodyLoadedMsg / spyScanProgressMsg mutations.
+				spy := copyMap(m.spyPixelKeys)
+				scn := copyMap(m.spyScannedKeys)
+				safeGo(func() { saveSpyPixelCache(spy, scn) })
 			}
 		}
 		// Store References header in the email struct for threading
@@ -2327,7 +2332,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Save cache and rebuild inbox on the main goroutine.
 		if len(msg.scannedKeys) > 0 {
-			safeGo(func() { saveSpyPixelCache(copyMap(m.spyPixelKeys), copyMap(m.spyScannedKeys)) })
+			// Copy under the main goroutine — see comment in bodyLoadedMsg.
+			spy := copyMap(m.spyPixelKeys)
+			scn := copyMap(m.spyScannedKeys)
+			safeGo(func() { saveSpyPixelCache(spy, scn) })
 		}
 		return m, m.applyFilter()
 
@@ -2562,8 +2570,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// ? opens help from any state; q/esc/? closes it
-		if msg.String() == "?" {
+		// ? opens/closes help — but only from states without active text input.
+		// stateCompose feeds keys into a textinput where the user must be able
+		// to type "?" verbatim (To/CC/BCC/Subject fields). Other states either
+		// use single-letter command keys (Inbox, Reading, Presend, Reaction)
+		// or are dismissed by any key (Welcome) — safe to intercept there.
+		if msg.String() == "?" && m.state != stateCompose {
 			if m.state == stateHelp {
 				m.state = m.prevState
 			} else {
@@ -2615,7 +2627,12 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cmdText = ""
 			if input != "" {
 				m.cmdHistory = addCmdHistory(m.cmdHistory, input)
-				go saveCmdHistory(config.HistoryPath(), m.cmdHistory)
+				// Snapshot before launching: addCmdHistory returns a fresh
+				// slice, but future calls in this goroutine could grow it
+				// while the writer is still serialising — pass a copy.
+				hist := append([]string(nil), m.cmdHistory...)
+				path := config.HistoryPath()
+				safeGo(func() { saveCmdHistory(path, hist) })
 			}
 			if cmd := matchCmd(input); cmd != nil {
 				result, c := cmd.run(&m)
@@ -3959,7 +3976,12 @@ func (m Model) downloadOpenAttachmentCmd(a imap.Attachment) tea.Cmd {
 			return attachOpenDoneMsg{err: fmt.Errorf("create Downloads: %w", err)}
 		}
 		// Avoid overwriting existing files by appending a counter before the extension.
+		// Reject filenames that would escape the Downloads dir when joined.
+		// filepath.Base("..") returns "..", filepath.Base("") returns ".".
 		base := filepath.Base(a.Filename)
+		if base == "" || base == "." || base == ".." || base == "/" || strings.ContainsRune(base, os.PathSeparator) {
+			base = fmt.Sprintf("attachment-%d", time.Now().Unix())
+		}
 		dst := filepath.Join(dir, base)
 		if _, err := os.Stat(dst); err == nil {
 			ext := filepath.Ext(base)
@@ -4204,10 +4226,11 @@ func (m Model) openICSCmd() tea.Cmd {
 	}
 	// Path traversal hardening: filepath.Base() strips any directory
 	// components the sender may have stuck in Content-Disposition: filename
-	// (e.g. "../../../.bashrc" → ".bashrc"). The result is then joined under
-	// the cache dir so we can never write outside ~/.cache/neomd/ical/.
+	// (e.g. "../../../.bashrc" → ".bashrc"). Note that filepath.Base("..")
+	// returns ".." and filepath.Base("") returns "." — both would escape the
+	// cache dir when joined, so reject them and fall back to a safe default.
 	name := filepath.Base(att.Filename)
-	if name == "" || name == "." || name == "/" {
+	if name == "" || name == "." || name == ".." || name == "/" || strings.ContainsRune(name, os.PathSeparator) {
 		name = fmt.Sprintf("invite-%d.ics", time.Now().Unix())
 	}
 	dst := filepath.Join(dir, name)

@@ -17,7 +17,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"mime"
-	"net"
 	"net/mail"
 	"net/smtp"
 	"os"
@@ -641,8 +640,21 @@ func writeAttachment(b *bytes.Buffer, boundary, path string) error {
 
 // writeQP writes s as simplified quoted-printable (ASCII passthrough,
 // encodes only non-ASCII and special chars). Good enough for UTF-8 prose.
+//
+// RFC 2045 §6.7 requires that any space or tab immediately before a CRLF be
+// encoded as =20 / =09 — otherwise SMTP relays may strip the whitespace,
+// which mangles Markdown's two-trailing-spaces hard-break syntax.
 func writeQP(b *bytes.Buffer, s string) {
 	lineLen := 0
+	// Look ahead at the next byte to decide if a space/tab is trailing.
+	nextNonCR := func(i int) byte {
+		for j := i + 1; j < len(s); j++ {
+			if s[j] != '\r' {
+				return s[j]
+			}
+		}
+		return 0 // end of input — treat as trailing
+	}
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c == '\n' {
@@ -652,6 +664,17 @@ func writeQP(b *bytes.Buffer, s string) {
 		}
 		if c == '\r' {
 			continue // CRLF handled above
+		}
+		// Trailing space/tab before a line break (or end of input) must be encoded.
+		if (c == ' ' || c == '\t') && (nextNonCR(i) == '\n' || nextNonCR(i) == 0) {
+			enc := fmt.Sprintf("=%02X", c)
+			if lineLen+3 > 75 {
+				b.WriteString("=\r\n")
+				lineLen = 0
+			}
+			b.WriteString(enc)
+			lineLen += 3
+			continue
 		}
 		if (c >= 33 && c <= 126 && c != '=') || c == '\t' || c == ' ' {
 			if lineLen >= 75 {
@@ -694,13 +717,7 @@ func extractAddr(s string) string {
 	if i := strings.IndexByte(s, '<'); i >= 0 {
 		j := strings.IndexByte(s, '>')
 		if j > i {
-			h, _, _ := strings.Cut(s[i+1:j], "@")
-			_ = h
-			// validate it looks like an address
-			addr := s[i+1 : j]
-			if _, err := net.LookupHost(strings.SplitN(addr, "@", 2)[len(strings.SplitN(addr, "@", 2))-1]); err == nil || strings.Contains(addr, "@") {
-				return addr
-			}
+			return s[i+1 : j]
 		}
 	}
 	return s
