@@ -336,6 +336,11 @@ Pick from six built-in palettes via `[ui].theme`:
 | `gruvbox` | dark | https://github.com/morhetz/gruvbox |
 | `osaka-jade` | dark | https://github.com/Justikun/omarchy-osaka-jade-theme |
 
+
+How it looks (Kanagawa Paper does not yet work, also light needs some work):
+![theme](/images/themes.png)
+
+
 Override individual colour slots (any subset) via the optional `[theme]` block:
 
 ```toml
