@@ -3311,7 +3311,13 @@ func (m *Model) applyFilter() tea.Cmd {
 		// Skip if text filter is active and doesn't match
 		if m.filterText != "" {
 			query := strings.ToLower(m.filterText)
-			hay := strings.ToLower(e.From + " " + e.Subject)
+			// In Sent folder, search To/CC/BCC instead of From — From is always us.
+			var hay string
+			if len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent {
+				hay = strings.ToLower(e.To + " " + e.CC + " " + e.BCC + " " + e.Subject)
+			} else {
+				hay = strings.ToLower(e.From + " " + e.Subject)
+			}
 			if !strings.Contains(hay, query) {
 				continue
 			}
@@ -3428,6 +3434,7 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			"f": m.cfg.Folders.Feed,
 			"p": m.cfg.Folders.PaperTrail,
 			"t": m.cfg.Folders.Trash,
+			"s": m.cfg.Folders.Sent,
 			"o": m.cfg.Folders.ScreenedOut,
 			"w": m.cfg.Folders.Waiting,
 			"c": m.cfg.Folders.Scheduled,

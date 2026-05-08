@@ -57,6 +57,7 @@ var HelpSections = []HelpSection{
 		{"Mf", "move to Feed"},
 		{"Mp", "move to PaperTrail"},
 		{"Mt", "move to Trash"},
+		{"Ms", "move to Sent"},
 		{"Mo", "move to ScreenedOut"},
 		{"Mw", "move to Waiting"},
 		{"Mc", "move to Scheduled"},
