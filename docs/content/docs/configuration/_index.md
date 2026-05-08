@@ -339,6 +339,7 @@ Pick from six built-in palettes via `[ui].theme`:
 
 How it looks (Kanagawa Paper does not yet work, also light needs some work):
 ![theme](/images/themes.png)
+*notice, that background color depends on terminal color/theme, so that you'd need to fit your color theme (I didn't do in these printscreen)*
 
 
 Override individual colour slots (any subset) via the optional `[theme]` block:
