@@ -368,9 +368,12 @@ type Config struct {
 }
 
 // ListmonkTrigger maps a virtual email address to Listmonk list IDs.
+// TemplateID, when non-zero, overrides Listmonk's default template for the
+// generated campaign (e.g. a per-list "Book Update" template).
 type ListmonkTrigger struct {
-	Address string `toml:"address"`
-	ListIDs []int  `toml:"list_ids"`
+	Address    string `toml:"address"`
+	ListIDs    []int  `toml:"list_ids"`
+	TemplateID int    `toml:"template_id"`
 }
 
 // ListmonkConfig holds settings for the Listmonk newsletter integration.

@@ -48,7 +48,7 @@ func TestCreateAndSchedule(t *testing.T) {
 		APIToken: "testtoken",
 	})
 
-	id, err := c.CreateAndSchedule("My Newsletter", "# Hello\n\nWorld", []int{1, 2}, 30*time.Minute)
+	id, err := c.CreateAndSchedule("My Newsletter", "# Hello\n\nWorld", []int{1, 2}, 5, 30*time.Minute)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -76,6 +76,9 @@ func TestCreateAndSchedule(t *testing.T) {
 	if gotStatus.Status != "scheduled" {
 		t.Errorf("status = %q, want %q", gotStatus.Status, "scheduled")
 	}
+	if gotCreate.TemplateID != 5 {
+		t.Errorf("template_id = %d, want 5", gotCreate.TemplateID)
+	}
 }
 
 func TestCreateAndSchedule_APIError(t *testing.T) {
@@ -85,7 +88,7 @@ func TestCreateAndSchedule_APIError(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(Config{URL: srv.URL, APIUser: "u", APIToken: "t"})
-	_, err := c.CreateAndSchedule("Test", "body", []int{1}, 10*time.Minute)
+	_, err := c.CreateAndSchedule("Test", "body", []int{1}, 0, 10*time.Minute)
 	if err == nil {
 		t.Fatal("expected error for bad request")
 	}
@@ -124,6 +127,22 @@ func TestResolveListIDs(t *testing.T) {
 				t.Errorf("got %d IDs %v, want %d", len(ids), ids, tt.wantLen)
 			}
 		})
+	}
+}
+
+func TestResolveTemplateID(t *testing.T) {
+	triggers := []Trigger{
+		{Address: "listmonk@ssp.sh", ListIDs: []int{2}},                       // no template override
+		{Address: "listmonk-book@ssp.sh", ListIDs: []int{4}, TemplateID: 5},   // override
+	}
+	if got := ResolveTemplateID(triggers, "listmonk-book@ssp.sh"); got != 5 {
+		t.Errorf("book override: got %d, want 5", got)
+	}
+	if got := ResolveTemplateID(triggers, "listmonk@ssp.sh"); got != 0 {
+		t.Errorf("default: got %d, want 0", got)
+	}
+	if got := ResolveTemplateID(triggers, "nobody@example.com"); got != 0 {
+		t.Errorf("no match: got %d, want 0", got)
 	}
 }
 

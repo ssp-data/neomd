@@ -33,6 +33,7 @@ list_ids = [2]
 [[listmonk.triggers]]
 address = "listmonk-book@ssp.sh"
 list_ids = [4]
+template_id = 5  # optional: override default template (e.g. "Book Update Template")
 
 [[listmonk.triggers]]
 address = "listmonk@ssp.sh"
@@ -45,6 +46,22 @@ list_ids = [2, 4]  # send to all lists
 | `api_user` | API username for HTTP Basic Auth |
 | `api_token` | API token (supports `$ENV` expansion) |
 | `delay_minutes` | Minutes to delay before campaign sends (default 30) |
+
+Per-trigger fields:
+
+| Field | Description |
+|-------|-------------|
+| `address` | Virtual email address that fires this trigger |
+| `list_ids` | One or more Listmonk list IDs to send to |
+| `template_id` | *(optional)* Listmonk template ID — when set, overrides the Listmonk default template for campaigns created from this trigger. Omit (or set to `0`) to use Listmonk's default. |
+
+### Per-list templates
+
+Each trigger can pin its own Listmonk template. For example, if you have a generic "Newsletter Template" set as the Listmonk default (ID 4) and a "Book Update Template" (ID 5) you only want to use for book announcements, set `template_id = 5` on the `listmonk-book` trigger and leave the others untouched — they fall back to the Listmonk default. Look up template IDs via the API:
+
+```bash
+curl -u "admin:token" https://list.ssp.sh/api/templates | jq '.data[] | {id, name, is_default}'
+```
 
 ### Trigger addresses
 
@@ -69,7 +86,7 @@ curl -u "admin:token" https://list.ssp.sh/api/lists | jq '.data.results[] | {id,
 When the To address matches a trigger, the pre-send review changes:
 
 - Header shows **"Newsletter via Listmonk"** instead of "Ready to send"
-- Displays the target **list IDs** and **schedule delay**
+- Displays the target **list IDs**, **template ID** (if overridden), and **schedule delay**
 - Help bar shows `enter schedule campaign` instead of `enter send`
 
 
@@ -93,7 +110,7 @@ The email body (Markdown) is sent as-is with `content_type: "markdown"` — List
 
 neomd uses two Listmonk API calls:
 
-1. `POST /api/campaigns` — creates campaign in DRAFT status with `send_at` set to now + `delay_minutes`
+1. `POST /api/campaigns` — creates campaign in DRAFT status with `send_at` set to now + `delay_minutes`; includes `template_id` only when the matching trigger sets a non-zero override (otherwise Listmonk applies its default template)
 2. `PUT /api/campaigns/{id}/status` — sets status to `scheduled`
 
 Authentication is HTTP Basic Auth. The campaign name is auto-generated as `"{subject} - {timestamp}"`.
