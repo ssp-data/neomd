@@ -49,6 +49,38 @@ func DeletePassword(accountName string) error {
 	return err
 }
 
+// clientSecretKey returns the keyring key for an OAuth2 client secret.
+func clientSecretKey(accountName string) string {
+	return fmt.Sprintf("account/%s/oauth2_client_secret", accountName)
+}
+
+// SetClientSecret stores an OAuth2 client secret in the OS keyring.
+func SetClientSecret(accountName, secret string) error {
+	return keyring.Set(serviceName, clientSecretKey(accountName), secret)
+}
+
+// GetClientSecret retrieves an OAuth2 client secret from the OS keyring.
+// Returns ErrNotFound if no entry exists for this account.
+func GetClientSecret(accountName string) (string, error) {
+	secret, err := keyring.Get(serviceName, clientSecretKey(accountName))
+	if err == keyring.ErrNotFound {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("keyring get client secret: %w", err)
+	}
+	return secret, nil
+}
+
+// DeleteClientSecret removes an OAuth2 client secret from the OS keyring.
+func DeleteClientSecret(accountName string) error {
+	err := keyring.Delete(serviceName, clientSecretKey(accountName))
+	if err == keyring.ErrNotFound {
+		return nil
+	}
+	return err
+}
+
 // SetOAuth2Token stores an OAuth2 token in the OS keyring as JSON.
 func SetOAuth2Token(accountName string, token *oauth2.Token) error {
 	data, err := json.Marshal(token)
