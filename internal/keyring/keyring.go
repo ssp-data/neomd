@@ -5,6 +5,7 @@ package keyring
 import (
 	"encoding/json"
 	"fmt"
+	"runtime"
 
 	"github.com/zalando/go-keyring"
 	"golang.org/x/oauth2"
@@ -82,12 +83,35 @@ func DeleteClientSecret(accountName string) error {
 }
 
 // SetOAuth2Token stores an OAuth2 token in the OS keyring as JSON.
+//
+// On macOS, only the refresh-relevant fields (RefreshToken, TokenType,
+// Expiry) are persisted; the access_token is dropped. Google access tokens
+// can exceed 2 KB which, once base64-encoded and wrapped in the `security`
+// CLI command zalando/go-keyring uses on macOS, breaches its 4096-byte
+// command-length limit. With AccessToken empty, oauth2.Token.Valid() returns
+// false, so the library refreshes on first use using the stored
+// RefreshToken. Other platforms store the full token unchanged.
 func SetOAuth2Token(accountName string, token *oauth2.Token) error {
-	data, err := json.Marshal(token)
+	data, err := json.Marshal(prepareTokenForStorage(token, runtime.GOOS))
 	if err != nil {
 		return fmt.Errorf("marshal oauth2 token: %w", err)
 	}
 	return keyring.Set(serviceName, oauth2Key(accountName), string(data))
+}
+
+// prepareTokenForStorage returns the token shape to persist for a given OS.
+// On darwin, AccessToken is dropped to stay under zalando/go-keyring's
+// 4096-byte `security` command-length limit. Other platforms keep the token
+// unchanged.
+func prepareTokenForStorage(token *oauth2.Token, goos string) *oauth2.Token {
+	if goos != "darwin" {
+		return token
+	}
+	return &oauth2.Token{
+		TokenType:    token.TokenType,
+		RefreshToken: token.RefreshToken,
+		Expiry:       token.Expiry,
+	}
 }
 
 // GetOAuth2Token retrieves an OAuth2 token from the OS keyring.
