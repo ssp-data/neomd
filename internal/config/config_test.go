@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -206,6 +207,85 @@ func TestSignature(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.cfg.Signature(tt.acct); got != tt.want {
 				t.Errorf("Signature() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveFolders(t *testing.T) {
+	globalFolders := FoldersConfig{
+		Inbox:       "INBOX",
+		Sent:        "Sent",
+		Trash:       "Trash",
+		Drafts:      "Drafts",
+		ToScreen:    "ToScreen",
+		Feed:        "Feed",
+		PaperTrail:  "PaperTrail",
+		ScreenedOut: "ScreenedOut",
+		Archive:     "Archive",
+		Waiting:     "Waiting",
+		Scheduled:   "Scheduled",
+		Someday:     "Someday",
+		Spam:        "Spam",
+		Work:        "Work",
+		TabOrder:    []string{"inbox", "sent"},
+	}
+
+	tests := []struct {
+		name string
+		cfg  *Config
+		acct AccountConfig
+		want FoldersConfig
+	}{
+		{
+			name: "empty account folders inherit global as-is",
+			cfg:  &Config{Folders: globalFolders},
+			acct: AccountConfig{},
+			want: globalFolders,
+		},
+		{
+			name: "sparse override only changes that field",
+			cfg:  &Config{Folders: globalFolders},
+			acct: AccountConfig{Folders: AccountFoldersConfig{Sent: "[Gmail]/Sent Mail"}},
+			want: func() FoldersConfig {
+				f := globalFolders
+				f.Sent = "[Gmail]/Sent Mail"
+				return f
+			}(),
+		},
+		{
+			name: "full override of all four account-level fields, non-overridable stay global",
+			cfg:  &Config{Folders: globalFolders},
+			acct: AccountConfig{Folders: AccountFoldersConfig{
+				Sent:   "[Gmail]/Sent Mail",
+				Trash:  "[Gmail]/Trash",
+				Drafts: "[Gmail]/Drafts",
+				Spam:   "[Gmail]/Spam",
+			}},
+			want: FoldersConfig{
+				Inbox:       "INBOX",
+				Sent:        "[Gmail]/Sent Mail",
+				Trash:       "[Gmail]/Trash",
+				Drafts:      "[Gmail]/Drafts",
+				ToScreen:    "ToScreen",
+				Feed:        "Feed",
+				PaperTrail:  "PaperTrail",
+				ScreenedOut: "ScreenedOut",
+				Archive:     "Archive",
+				Waiting:     "Waiting",
+				Scheduled:   "Scheduled",
+				Someday:     "Someday",
+				Spam:        "[Gmail]/Spam",
+				Work:        "Work",
+				TabOrder:    []string{"inbox", "sent"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.ResolveFolders(tt.acct)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ResolveFolders() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}
