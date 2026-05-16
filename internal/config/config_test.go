@@ -179,6 +179,38 @@ func TestBulkThreshold(t *testing.T) {
 	}
 }
 
+func TestSignature(t *testing.T) {
+	accountWithBoth := AccountConfig{Signature: SignatureConfig{Text: "acct-text", HTML: "<p>acct-html</p>"}}
+	accountTextOnly := AccountConfig{Signature: SignatureConfig{Text: "acct-text"}}
+	accountHTMLOnly := AccountConfig{Signature: SignatureConfig{HTML: "<p>acct-html</p>"}}
+	accountEmpty := AccountConfig{}
+
+	uiWithBlock := UIConfig{SignatureBlock: SignatureConfig{Text: "ui-text", HTML: "<p>ui-html</p>"}}
+	uiLegacyOnly := UIConfig{Signature: "legacy-sig"}
+	uiEmpty := UIConfig{}
+
+	tests := []struct {
+		name string
+		cfg  *Config
+		acct AccountConfig
+		want SignatureConfig
+	}{
+		{"account block wins when populated", &Config{UI: uiWithBlock}, accountWithBoth, SignatureConfig{Text: "acct-text", HTML: "<p>acct-html</p>"}},
+		{"account text-only does not leak ui html", &Config{UI: uiWithBlock}, accountTextOnly, SignatureConfig{Text: "acct-text"}},
+		{"account html-only does not leak ui text", &Config{UI: uiWithBlock}, accountHTMLOnly, SignatureConfig{HTML: "<p>acct-html</p>"}},
+		{"falls back to ui block when account empty", &Config{UI: uiWithBlock}, accountEmpty, SignatureConfig{Text: "ui-text", HTML: "<p>ui-html</p>"}},
+		{"falls back to legacy ui.signature", &Config{UI: uiLegacyOnly}, accountEmpty, SignatureConfig{Text: "legacy-sig"}},
+		{"all empty returns zero value", &Config{UI: uiEmpty}, accountEmpty, SignatureConfig{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.Signature(tt.acct); got != tt.want {
+				t.Errorf("Signature() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLabelFor(t *testing.T) {
 	// Custom IMAP folder names (e.g. HEY-style labels).
 	fc := FoldersConfig{
