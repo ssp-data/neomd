@@ -823,6 +823,23 @@ func (m Model) sentDraftsIMAPAccount() config.AccountConfig {
 	return m.accounts[0]
 }
 
+// emailDelegateForActiveAccount builds the inbox row-rendering delegate
+// using the active account's resolved Sent/Drafts folder names.
+func (m *Model) emailDelegateForActiveAccount() emailDelegate {
+	f := m.cfg.ResolveFolders(m.activeAccount())
+	return emailDelegate{sentFolder: f.Sent, draftFolder: f.Drafts}
+}
+
+// refreshInboxDelegate replaces the inbox list's display delegate so that
+// the active account's Sent/Drafts folder names drive the "→ To:" row
+// rendering. Call this after any change to m.accountI; otherwise the
+// delegate keeps the folder names it was built with and rows from a
+// different account's Sent/Drafts mailbox display the sender instead of
+// the recipient.
+func (m *Model) refreshInboxDelegate() {
+	m.inbox.SetDelegate(m.emailDelegateForActiveAccount())
+}
+
 func (m *Model) applyEditedFrom(from string) {
 	if idx := m.matchFromAddress(from); idx >= 0 {
 		m.presendFromI = idx
@@ -3080,6 +3097,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+			m.refreshInboxDelegate()
 			m.activeFolderI = 0
 			m.loading = true
 			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))

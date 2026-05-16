@@ -438,6 +438,42 @@ func TestActiveFolderHonorsPerAccountOverride(t *testing.T) {
 	}
 }
 
+func TestEmailDelegateForActiveAccount(t *testing.T) {
+	cfg := &config.Config{
+		Folders: config.FoldersConfig{Sent: "Sent", Drafts: "Drafts"},
+		Accounts: []config.AccountConfig{
+			{Name: "Personal"},
+			{Name: "Work", Folders: config.AccountFoldersConfig{
+				Sent:   "[Gmail]/Sent Mail",
+				Drafts: "[Gmail]/Drafts",
+			}},
+		},
+	}
+	m := Model{
+		cfg:      cfg,
+		accounts: cfg.ActiveAccounts(),
+		accountI: 1, // Work
+	}
+
+	d := m.emailDelegateForActiveAccount()
+	if d.sentFolder != "[Gmail]/Sent Mail" {
+		t.Errorf("Work sentFolder = %q, want %q", d.sentFolder, "[Gmail]/Sent Mail")
+	}
+	if d.draftFolder != "[Gmail]/Drafts" {
+		t.Errorf("Work draftFolder = %q, want %q", d.draftFolder, "[Gmail]/Drafts")
+	}
+
+	// Switch to Personal — no override, should fall back to globals.
+	m.accountI = 0
+	d = m.emailDelegateForActiveAccount()
+	if d.sentFolder != "Sent" {
+		t.Errorf("Personal sentFolder = %q, want %q", d.sentFolder, "Sent")
+	}
+	if d.draftFolder != "Drafts" {
+		t.Errorf("Personal draftFolder = %q, want %q", d.draftFolder, "Drafts")
+	}
+}
+
 func TestUpdateInboxEscClearsCommittedFilter(t *testing.T) {
 	m := Model{
 		filterText: "invoice",
