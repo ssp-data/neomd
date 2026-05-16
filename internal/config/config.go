@@ -46,6 +46,9 @@ type AccountConfig struct {
 	OAuth2TokenURL     string   `toml:"oauth2_token_url"`  // manual override; skips discovery
 	OAuth2Scopes       []string `toml:"oauth2_scopes"`
 	OAuth2RedirectPort int      `toml:"oauth2_redirect_port"` // local callback port; default 8085
+
+	// Signature
+	Signature SignatureConfig `toml:"signature_block"` // Per account Signature
 }
 
 // IsOAuth2 reports whether this account uses OAuth2 instead of password auth.
@@ -264,20 +267,6 @@ type UIConfig struct {
 	MarkAsReadAfterSecs   int             `toml:"mark_as_read_after_secs"` // seconds in reader before marking as read (0 = immediate, default 7)
 }
 
-// TextSignature returns the text/markdown signature for editor and text/plain part.
-// Prefers signature_block.text, falls back to legacy signature field.
-func (u UIConfig) TextSignature() string {
-	if u.SignatureBlock.Text != "" {
-		return u.SignatureBlock.Text
-	}
-	return u.Signature
-}
-
-// HTMLSignature returns the HTML signature for text/html part, or empty if not configured.
-func (u UIConfig) HTMLSignature() string {
-	return u.SignatureBlock.HTML
-}
-
 // DraftBackups returns the max number of rolling draft backups (default 20, -1 = disabled).
 func (u UIConfig) DraftBackups() int {
 	if u.DraftBackupCount == 0 {
@@ -402,6 +391,19 @@ func (c *Config) ActiveAccounts() []AccountConfig {
 	return nil
 }
 
+// Signature resolves what signature to use and returns a SignatureConfig.
+// It's up to the caller to decide to use either HTML or Text. The function
+// resolves first to dedicated account signature if defined, else the UI signature
+func (c *Config) Signature(a AccountConfig) SignatureConfig {
+	if a.Signature.Text != "" || a.Signature.HTML != "" {
+		return a.Signature
+	}
+	if c.UI.SignatureBlock.Text != "" || c.UI.SignatureBlock.HTML != "" {
+		return c.UI.SignatureBlock
+	}
+	return SignatureConfig{Text: c.UI.Signature}
+}
+
 // DefaultPath returns ~/.config/neomd/config.toml.
 func DefaultPath() string {
 	home, _ := os.UserHomeDir()
@@ -418,7 +420,7 @@ var cacheDirName = "neomd"
 func HistoryPath() string {
 	if dir, err := os.UserCacheDir(); err == nil {
 		p := filepath.Join(dir, cacheDirName)
-		_ = os.MkdirAll(p, 0700)
+		_ = os.MkdirAll(p, 0o700)
 		return filepath.Join(p, "cmd_history")
 	}
 	return filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_cmd_history", os.Getuid()))
@@ -428,11 +430,11 @@ func HistoryPath() string {
 func DraftsBackupDir() string {
 	if dir, err := os.UserCacheDir(); err == nil {
 		p := filepath.Join(dir, cacheDirName, "drafts")
-		_ = os.MkdirAll(p, 0700)
+		_ = os.MkdirAll(p, 0o700)
 		return p
 	}
 	p := filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_drafts", os.Getuid()))
-	_ = os.MkdirAll(p, 0700)
+	_ = os.MkdirAll(p, 0o700)
 	return p
 }
 
@@ -440,7 +442,7 @@ func DraftsBackupDir() string {
 func CrashLogPath() string {
 	if dir, err := os.UserCacheDir(); err == nil {
 		p := filepath.Join(dir, cacheDirName)
-		_ = os.MkdirAll(p, 0700)
+		_ = os.MkdirAll(p, 0o700)
 		return filepath.Join(p, "crash.log")
 	}
 	return filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_crash.log", os.Getuid()))
@@ -450,7 +452,7 @@ func CrashLogPath() string {
 func SpyPixelCachePath() string {
 	if dir, err := os.UserCacheDir(); err == nil {
 		p := filepath.Join(dir, cacheDirName)
-		_ = os.MkdirAll(p, 0700)
+		_ = os.MkdirAll(p, 0o700)
 		return filepath.Join(p, "spy_pixels")
 	}
 	return filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_spy_pixels", os.Getuid()))
@@ -461,7 +463,7 @@ func SpyPixelCachePath() string {
 func NotifyStatePath() string {
 	if dir, err := os.UserCacheDir(); err == nil {
 		p := filepath.Join(dir, cacheDirName)
-		_ = os.MkdirAll(p, 0700)
+		_ = os.MkdirAll(p, 0o700)
 		return filepath.Join(p, "notify_state.json")
 	}
 	return filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_notify_state.json", os.Getuid()))
@@ -484,8 +486,8 @@ func IsFirstRun() bool {
 // MarkWelcomeShown creates the marker so IsFirstRun returns false next time.
 func MarkWelcomeShown() {
 	p := welcomePath()
-	_ = os.MkdirAll(filepath.Dir(p), 0700)
-	_ = os.WriteFile(p, []byte("1"), 0600)
+	_ = os.MkdirAll(filepath.Dir(p), 0o700)
+	_ = os.WriteFile(p, []byte("1"), 0o600)
 }
 
 // Load reads config from path (or default location if path is empty).
@@ -528,9 +530,9 @@ func Load(path string) (*Config, error) {
 		cfg.Screener.Notify,
 	} {
 		if p != "" {
-			_ = os.MkdirAll(filepath.Dir(p), 0700)
+			_ = os.MkdirAll(filepath.Dir(p), 0o700)
 			if _, err := os.Stat(p); os.IsNotExist(err) {
-				_ = os.WriteFile(p, nil, 0600)
+				_ = os.WriteFile(p, nil, 0o600)
 			}
 		}
 	}
@@ -691,10 +693,10 @@ func defaults() *Config {
 }
 
 func writeDefault(path string, cfg *Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
