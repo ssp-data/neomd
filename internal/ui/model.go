@@ -799,15 +799,23 @@ func (m Model) primaryIMAPClient() *imap.Client {
 	return nil
 }
 
-func (m Model) sentDraftsIMAPClient() *imap.Client {
+// sentDraftsIMAPAccount returns the account whose Sent/Drafts IMAP folders
+// should receive a sent message or saved draft. When
+// StoreSentDraftsInSendingAccount is true the sending account is used;
+// otherwise the first account with a live IMAP client (matching
+// primaryIMAPClient's "first non-nil" logic). Use this so both the IMAP
+// client and the resolved folder name come from the same account —
+// preventing "no such mailbox" mismatches under per-account folder configs.
+func (m Model) sentDraftsIMAPAccount() config.AccountConfig {
 	if m.cfg != nil && m.cfg.StoreSentDraftsInSendingAccount {
-		return m.imapCliForAccount(m.presendSMTPAccount().Name)
+		return m.presendSMTPAccount()
 	}
-	return m.primaryIMAPClient()
-}
-
-func (m Model) presendIMAPClient() *imap.Client {
-	return m.sentDraftsIMAPClient()
+	for i, c := range m.clients {
+		if c != nil {
+			return m.accounts[i]
+		}
+	}
+	return m.accounts[0]
 }
 
 func (m *Model) applyEditedFrom(from string) {
@@ -909,8 +917,9 @@ func (m Model) sendEmailCmd(smtpAcct config.AccountConfig, from, to, cc, bcc, su
 		TLSCertFile: smtpAcct.TLSCertFile,
 		TokenSource: m.tokenSourceFor(smtpAcct.Name),
 	}
-	cli := m.sentDraftsIMAPClient()
-	sentFolder := m.cfg.Folders.Sent
+	sentAcct := m.sentDraftsIMAPAccount()
+	cli := m.imapCliForAccount(sentAcct.Name)
+	sentFolder := m.cfg.ResolveFolders(sentAcct).Sent
 	replyCli := m.imapCliForAccount(replyToAccount)
 	htmlSignature := ""
 	if includeHTMLSig {
@@ -1038,8 +1047,9 @@ func (m Model) sendReactionCmd(smtpAcct config.AccountConfig, from, to, subject,
 		TLSCertFile: smtpAcct.TLSCertFile,
 		TokenSource: m.tokenSourceFor(smtpAcct.Name),
 	}
-	cli := m.sentDraftsIMAPClient()
-	sentFolder := m.cfg.Folders.Sent
+	sentAcct := m.sentDraftsIMAPAccount()
+	cli := m.imapCliForAccount(sentAcct.Name)
+	sentFolder := m.cfg.ResolveFolders(sentAcct).Sent
 	replyCli := m.imapCli()
 
 	return func() tea.Msg {
@@ -4201,8 +4211,9 @@ func (m Model) sendRSVPCmd(status calendar.Status) tea.Cmd {
 	}
 
 	to := ev.Organizer
-	sentCli := m.sentDraftsIMAPClient()
-	sentFolder := m.cfg.Folders.Sent
+	sentAcct := m.sentDraftsIMAPAccount()
+	sentCli := m.imapCliForAccount(sentAcct.Name)
+	sentFolder := m.cfg.ResolveFolders(sentAcct).Sent
 	openEmail := m.openEmail
 	replyCli := m.imapCliForAccount(acct.Name)
 	return func() tea.Msg {
@@ -4601,7 +4612,7 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "d":
 		// Save to Drafts without sending.
-		return m, m.saveDraftCmd(m.presendIMAPClient(), m.presendFrom(), ps.to, ps.cc, ps.bcc, ps.subject, ps.body, m.attachments)
+		return m, m.saveDraftCmd(m.sentDraftsIMAPAccount(), m.presendFrom(), ps.to, ps.cc, ps.bcc, ps.subject, ps.body, m.attachments)
 	case "ctrl+b":
 		// Toggle CC/BCC fields — show input prompts to add/edit them.
 		m.compose.extraVisible = !m.compose.extraVisible
@@ -4837,8 +4848,9 @@ func (m Model) previewInBrowser() (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) saveDraftCmd(imapCli *imap.Client, from, to, cc, bcc, subject, body string, attachments []string) tea.Cmd {
-	folder := m.cfg.Folders.Drafts
+func (m Model) saveDraftCmd(acct config.AccountConfig, from, to, cc, bcc, subject, body string, attachments []string) tea.Cmd {
+	imapCli := m.imapCliForAccount(acct.Name)
+	folder := m.cfg.ResolveFolders(acct).Drafts
 	return func() tea.Msg {
 		raw, err := smtp.BuildDraftMessage(from, to, cc, bcc, subject, body, attachments)
 		if err != nil {
