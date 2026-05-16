@@ -850,41 +850,43 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// activeFolder maps the active tab label to an IMAP mailbox name.
+// activeFolder maps the active tab label to an IMAP mailbox name,
+// honouring per-account folder overrides for the active account.
 func (m Model) activeFolder() string {
+	f := m.cfg.ResolveFolders(m.activeAccount())
 	switch m.offTabFolder {
 	case "Drafts":
-		return m.cfg.Folders.Drafts
+		return f.Drafts
 	case "Spam":
-		return m.cfg.Folders.Spam
+		return f.Spam
 	}
 	switch m.folders[m.activeFolderI] {
 	case "ToScreen":
-		return m.cfg.Folders.ToScreen
+		return f.ToScreen
 	case "Feed":
-		return m.cfg.Folders.Feed
+		return f.Feed
 	case "PaperTrail":
-		return m.cfg.Folders.PaperTrail
+		return f.PaperTrail
 	case "Sent":
-		return m.cfg.Folders.Sent
+		return f.Sent
 	case "Trash":
-		return m.cfg.Folders.Trash
+		return f.Trash
 	case "Archive":
-		return m.cfg.Folders.Archive
+		return f.Archive
 	case "Waiting":
-		return m.cfg.Folders.Waiting
+		return f.Waiting
 	case "Scheduled":
-		return m.cfg.Folders.Scheduled
+		return f.Scheduled
 	case "Someday":
-		return m.cfg.Folders.Someday
+		return f.Someday
 	case "ScreenedOut":
-		return m.cfg.Folders.ScreenedOut
+		return f.ScreenedOut
 	case "Spam":
-		return m.cfg.Folders.Spam
+		return f.Spam
 	case "Work":
-		return m.cfg.Folders.Work
+		return f.Work
 	default:
-		return m.cfg.Folders.Inbox
+		return f.Inbox
 	}
 }
 
@@ -1943,7 +1945,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			listH = 5
 		}
 		if m.inbox.Width() == 0 {
-			m.inbox = newInboxList(msg.Width, listH, m.cfg.Folders.Sent, m.cfg.Folders.Drafts)
+			f := m.cfg.ResolveFolders(m.activeAccount())
+			m.inbox = newInboxList(msg.Width, listH, f.Sent, f.Drafts)
 		} else {
 			m.inbox.SetSize(msg.Width, listH)
 		}
@@ -3436,14 +3439,14 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			m.offTabFolder = "Spam"
 			m.imapSearchText = ""
 			m.status = "Spam folder — press R to reload, tab to leave"
-			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Spam))
+			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.ResolveFolders(m.activeAccount()).Spam))
 		}
 		if key == "d" { // gd — go to Drafts (not in tab rotation)
 			m.loading = true
 			m.offTabFolder = "Drafts"
 			m.imapSearchText = ""
 			m.status = "Drafts folder — press R to reload, tab to leave"
-			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Drafts))
+			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.ResolveFolders(m.activeAccount()).Drafts))
 		}
 		if key == "e" { // ge — Everything: latest emails across all folders
 			m.loading = true
@@ -3484,22 +3487,23 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 		if len(targets) == 0 {
 			return m, nil
 		}
+		f := m.cfg.ResolveFolders(m.activeAccount())
 		dstMap := map[string]string{
-			"i": m.cfg.Folders.Inbox,
-			"a": m.cfg.Folders.Archive,
-			"f": m.cfg.Folders.Feed,
-			"p": m.cfg.Folders.PaperTrail,
-			"t": m.cfg.Folders.Trash,
-			"s": m.cfg.Folders.Sent,
-			"o": m.cfg.Folders.ScreenedOut,
-			"w": m.cfg.Folders.Waiting,
-			"c": m.cfg.Folders.Scheduled,
-			"m": m.cfg.Folders.Someday,
-			"k": m.cfg.Folders.ToScreen,
+			"i": f.Inbox,
+			"a": f.Archive,
+			"f": f.Feed,
+			"p": f.PaperTrail,
+			"t": f.Trash,
+			"s": f.Sent,
+			"o": f.ScreenedOut,
+			"w": f.Waiting,
+			"c": f.Scheduled,
+			"m": f.Someday,
+			"k": f.ToScreen,
 		}
 		// Only add Work folder if configured
-		if m.cfg.Folders.Work != "" {
-			dstMap["b"] = m.cfg.Folders.Work
+		if f.Work != "" {
+			dstMap["b"] = f.Work
 		}
 		if dst, ok := dstMap[key]; ok {
 			m.loading = true

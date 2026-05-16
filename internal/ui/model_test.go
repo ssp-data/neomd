@@ -397,6 +397,48 @@ func TestActiveFolderUsesOffTabFolder(t *testing.T) {
 	}
 }
 
+func TestActiveFolderHonorsPerAccountOverride(t *testing.T) {
+	cfg := &config.Config{
+		Folders: config.FoldersConfig{
+			Inbox: "INBOX", Sent: "Sent", Trash: "Trash",
+			Drafts: "Drafts", Spam: "Spam",
+		},
+		Accounts: []config.AccountConfig{
+			{Name: "Personal"}, // no override → globals
+			{Name: "Work", Folders: config.AccountFoldersConfig{
+				Sent:   "[Gmail]/Sent Mail",
+				Drafts: "[Gmail]/Drafts",
+				Trash:  "[Gmail]/Trash",
+				Spam:   "[Gmail]/Spam",
+			}},
+		},
+	}
+
+	m := Model{
+		cfg:           cfg,
+		accounts:      cfg.ActiveAccounts(),
+		accountI:      1, // Work
+		folders:       []string{"Inbox", "Sent", "Trash"},
+		activeFolderI: 1, // Sent tab
+	}
+
+	if got := m.activeFolder(); got != "[Gmail]/Sent Mail" {
+		t.Errorf("Work account, Sent tab: activeFolder() = %q, want %q", got, "[Gmail]/Sent Mail")
+	}
+
+	m.offTabFolder = "Drafts"
+	if got := m.activeFolder(); got != "[Gmail]/Drafts" {
+		t.Errorf("Work account, off-tab Drafts: activeFolder() = %q, want %q", got, "[Gmail]/Drafts")
+	}
+
+	// Switch to Personal — no override, should use globals.
+	m.accountI = 0
+	m.offTabFolder = ""
+	if got := m.activeFolder(); got != "Sent" {
+		t.Errorf("Personal account, Sent tab: activeFolder() = %q, want %q", got, "Sent")
+	}
+}
+
 func TestUpdateInboxEscClearsCommittedFilter(t *testing.T) {
 	m := Model{
 		filterText: "invoice",
