@@ -723,12 +723,17 @@ func (m Model) tokenSourceFor(accountName string) func() (string, error) {
 	return nil
 }
 
-// activeAccount returns the currently selected AccountConfig.
+// activeAccount returns the currently selected AccountConfig, or the zero
+// value when no accounts are configured (only reachable in unit tests that
+// hand-build a Model; production config validation rejects empty accounts).
 func (m Model) activeAccount() config.AccountConfig {
 	if m.accountI < len(m.accounts) {
 		return m.accounts[m.accountI]
 	}
-	return m.accounts[0]
+	if len(m.accounts) > 0 {
+		return m.accounts[0]
+	}
+	return config.AccountConfig{}
 }
 
 // presendFroms returns all available From addresses: all accounts first (in
@@ -1290,7 +1295,7 @@ func (m Model) batchScreenerCmd(emails []imap.Email, action string) tea.Cmd {
 		case "P":
 			dst = cfg.Folders.PaperTrail
 		case "$":
-			dst = cfg.Folders.Spam
+			dst = cfg.ResolveFolders(m.activeAccount()).Spam
 		}
 		ops = append(ops, op{e.From, e.Folder, e.UID, dst})
 	}
@@ -1329,7 +1334,7 @@ func (m Model) batchScreenerCmd(emails []imap.Email, action string) tea.Cmd {
 						case "P":
 							dst = cfg.Folders.PaperTrail
 						case "$":
-							dst = cfg.Folders.Spam
+							dst = cfg.ResolveFolders(m.activeAccount()).Spam
 						}
 						expandedOps = append(expandedOps, op{e.From, e.Folder, e.UID, dst})
 					}
@@ -1690,7 +1695,7 @@ func (m Model) deleteAllSearchCmd() tea.Cmd {
 
 // emptyTrashSearchCmd is like deleteAllSearchCmd but always targets Trash.
 func (m Model) emptyTrashSearchCmd() tea.Cmd {
-	folder := m.cfg.Folders.Trash
+	folder := m.cfg.ResolveFolders(m.activeAccount()).Trash
 	return func() tea.Msg {
 		uids, err := m.imapCli().SearchUIDs(nil, folder)
 		if err != nil {
@@ -1887,7 +1892,7 @@ func (m Model) screenerCmd(e *imap.Email, action string) tea.Cmd {
 			dst = m.cfg.Folders.PaperTrail
 		case "$":
 			addErr = m.screener.MarkSpam(e.From)
-			dst = m.cfg.Folders.Spam
+			dst = m.cfg.ResolveFolders(m.activeAccount()).Spam
 		}
 		if addErr != nil {
 			return errMsg{addErr}
@@ -2389,7 +2394,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var dst string
 			switch cat {
 			case screener.CategorySpam:
-				dst = m.cfg.Folders.Spam
+				dst = m.cfg.ResolveFolders(m.activeAccount()).Spam
 			case screener.CategoryScreenedOut:
 				dst = m.cfg.Folders.ScreenedOut
 			case screener.CategoryFeed:
@@ -2845,10 +2850,10 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = true
 		m.bulkProgress = m.newBulkOp("Deleting", len(targets))
-		return m, tea.Batch(m.spinner.Tick, m.batchMoveCmd(targets, m.cfg.Folders.Trash))
+		return m, tea.Batch(m.spinner.Tick, m.batchMoveCmd(targets, m.cfg.ResolveFolders(m.activeAccount()).Trash))
 
 	case "X": // permanent delete (marked or cursor) — only in Trash
-		if m.activeFolder() != m.cfg.Folders.Trash {
+		if m.activeFolder() != m.cfg.ResolveFolders(m.activeAccount()).Trash {
 			m.status = "X only works in Trash. Use x to move to Trash first."
 			m.isError = true
 			return m, nil
@@ -2862,7 +2867,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			uids = append(uids, e.UID)
 		}
 		m.loading = true
-		return m, tea.Batch(m.spinner.Tick, m.deleteAllExecCmd(m.cfg.Folders.Trash, uids))
+		return m, tea.Batch(m.spinner.Tick, m.deleteAllExecCmd(m.cfg.ResolveFolders(m.activeAccount()).Trash, uids))
 
 	case "ctrl+u": // clear all marks
 		m.markedUIDs = make(map[uint32]bool)
@@ -3364,7 +3369,7 @@ func (m *Model) applyFilter() tea.Cmd {
 			query := strings.ToLower(m.filterText)
 			// In Sent folder, search To/CC/BCC instead of From — From is always us.
 			var hay string
-			if len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent {
+			if len(m.folders) > 0 && m.activeFolder() == m.cfg.ResolveFolders(m.activeAccount()).Sent {
 				hay = strings.ToLower(e.To + " " + e.CC + " " + e.BCC + " " + e.Subject)
 			} else {
 				hay = strings.ToLower(e.From + " " + e.Subject)
@@ -3382,7 +3387,7 @@ func (m *Model) applyFilter() tea.Cmd {
 		filtered = m.emails
 	}
 
-	noThread := len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent
+	noThread := len(m.folders) > 0 && m.activeFolder() == m.cfg.ResolveFolders(m.activeAccount()).Sent
 	return setEmails(&m.inbox, filtered, m.markedUIDs, m.spyPixelKeys, m.shouldPrefixFolderInSubject(), m.sortField, m.sortReverse, noThread)
 }
 
@@ -5654,7 +5659,7 @@ func (m Model) viewReader() string {
 	} else {
 		b.WriteString(m.reader.View())
 	}
-	isDraft := m.openEmail != nil && m.openEmail.Folder == m.cfg.Folders.Drafts
+	isDraft := m.openEmail != nil && m.openEmail.Folder == m.cfg.ResolveFolders(m.activeAccount()).Drafts
 	if m.status != "" {
 		b.WriteString("\n" + statusBar(m.status, m.isError))
 	} else {
