@@ -171,7 +171,7 @@ func init() {
 			run: func(m *Model) (tea.Model, tea.Cmd) {
 				m.loading = true
 				m.status = "Spam folder — press R to reload, tab to leave"
-				return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Spam))
+				return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.ResolveFolders(m.activeAccount()).Spam))
 			},
 		},
 		{
