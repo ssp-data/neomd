@@ -49,6 +49,9 @@ type AccountConfig struct {
 
 	// Signature
 	Signature SignatureConfig `toml:"signature_block"` // Per account Signature
+
+	// Folders
+	Folders AccountFoldersConfig `toml:"folders"` // Per account folders
 }
 
 // IsOAuth2 reports whether this account uses OAuth2 instead of password auth.
@@ -167,6 +170,17 @@ type FoldersConfig struct {
 	// tab display order. Spam is always excluded from tabs regardless of order.
 	// If empty, the built-in default order is used.
 	TabOrder []string `toml:"tab_order"`
+}
+
+// AccountFoldersConfig is the subset of folder names that may be overridden
+// per account. The other folders in FoldersConfig (Inbox, ToScreen, Feed,
+// PaperTrail, Archive, Waiting, Scheduled, Someday, Work, TabOrder) are
+// global concepts and not configurable per account.
+type AccountFoldersConfig struct {
+	Sent   string `toml:"sent"`
+	Trash  string `toml:"trash"`
+	Drafts string `toml:"drafts"`
+	Spam   string `toml:"spam"`
 }
 
 // defaultTabOrder is the built-in tab order when tab_order is not configured.
@@ -402,6 +416,24 @@ func (c *Config) Signature(a AccountConfig) SignatureConfig {
 		return c.UI.SignatureBlock
 	}
 	return SignatureConfig{Text: c.UI.Signature}
+}
+
+// ResolveFolders returns the global folders with any per account override applied.
+func (c *Config) ResolveFolders(a AccountConfig) FoldersConfig {
+	out := c.Folders
+	if a.Folders.Sent != "" {
+		out.Sent = a.Folders.Sent
+	}
+	if a.Folders.Trash != "" {
+		out.Trash = a.Folders.Trash
+	}
+	if a.Folders.Drafts != "" {
+		out.Drafts = a.Folders.Drafts
+	}
+	if a.Folders.Spam != "" {
+		out.Spam = a.Folders.Spam
+	}
+	return out
 }
 
 // DefaultPath returns ~/.config/neomd/config.toml.
