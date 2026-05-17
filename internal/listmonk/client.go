@@ -41,6 +41,7 @@ type campaignRequest struct {
 	ContentType string `json:"content_type"`
 	Type        string `json:"type"`
 	SendAt      string `json:"send_at,omitempty"`
+	TemplateID  int    `json:"template_id,omitempty"`
 }
 
 // statusRequest is the JSON payload for PUT /api/campaigns/{id}/status.
@@ -56,14 +57,14 @@ type campaignResponse struct {
 }
 
 // CreateAndSchedule creates a campaign in DRAFT status, then schedules it.
-// Returns the campaign ID.
-func (c *Client) CreateAndSchedule(subject, markdownBody string, listIDs []int, delay time.Duration) (int, error) {
+// Returns the campaign ID. templateID is optional (0 = use Listmonk default).
+func (c *Client) CreateAndSchedule(subject, markdownBody string, listIDs []int, templateID int, delay time.Duration) (int, error) {
 	if delay == 0 {
 		delay = 30 * time.Minute
 	}
 	sendAt := time.Now().UTC().Add(delay)
 
-	id, err := c.createCampaign(subject, markdownBody, listIDs, sendAt)
+	id, err := c.createCampaign(subject, markdownBody, listIDs, templateID, sendAt)
 	if err != nil {
 		return 0, err
 	}
@@ -73,7 +74,7 @@ func (c *Client) CreateAndSchedule(subject, markdownBody string, listIDs []int, 
 	return id, nil
 }
 
-func (c *Client) createCampaign(subject, body string, listIDs []int, sendAt time.Time) (int, error) {
+func (c *Client) createCampaign(subject, body string, listIDs []int, templateID int, sendAt time.Time) (int, error) {
 	name := fmt.Sprintf("%s - %s", subject, sendAt.Format("2006-01-02 15:04"))
 	payload := campaignRequest{
 		Name:        name,
@@ -83,6 +84,7 @@ func (c *Client) createCampaign(subject, body string, listIDs []int, sendAt time
 		ContentType: "markdown",
 		Type:        "regular",
 		SendAt:      sendAt.Format(time.RFC3339),
+		TemplateID:  templateID,
 	}
 
 	data, err := json.Marshal(payload)

@@ -937,12 +937,12 @@ func (m Model) sendEmailCmd(smtpAcct config.AccountConfig, from, to, cc, bcc, su
 func (m Model) listmonkTriggers() []listmonk.Trigger {
 	triggers := make([]listmonk.Trigger, len(m.cfg.Listmonk.Triggers))
 	for i, t := range m.cfg.Listmonk.Triggers {
-		triggers[i] = listmonk.Trigger{Address: t.Address, ListIDs: t.ListIDs}
+		triggers[i] = listmonk.Trigger{Address: t.Address, ListIDs: t.ListIDs, TemplateID: t.TemplateID}
 	}
 	return triggers
 }
 
-func (m Model) sendListmonkCmd(subject, markdownBody string, listIDs []int) tea.Cmd {
+func (m Model) sendListmonkCmd(subject, markdownBody string, listIDs []int, templateID int) tea.Cmd {
 	cfg := m.cfg.Listmonk
 	delay := time.Duration(cfg.DelayMinutes) * time.Minute
 	if delay == 0 {
@@ -954,7 +954,7 @@ func (m Model) sendListmonkCmd(subject, markdownBody string, listIDs []int) tea.
 			APIUser:  cfg.APIUser,
 			APIToken: cfg.APIToken,
 		})
-		campaignID, err := client.CreateAndSchedule(subject, markdownBody, listIDs, delay)
+		campaignID, err := client.CreateAndSchedule(subject, markdownBody, listIDs, templateID, delay)
 		if err != nil {
 			return sendDoneMsg{err: fmt.Errorf("listmonk: %w", err)}
 		}
@@ -4521,8 +4521,10 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pendingSend = nil
 		// Route to Listmonk if the To address matches a configured trigger.
 		if m.cfg.ListmonkEnabled() {
-			if listIDs := listmonk.ResolveListIDs(m.listmonkTriggers(), ps.to); len(listIDs) > 0 {
-				return m, tea.Batch(m.spinner.Tick, m.sendListmonkCmd(ps.subject, cleanBody, listIDs))
+			triggers := m.listmonkTriggers()
+			if listIDs := listmonk.ResolveListIDs(triggers, ps.to); len(listIDs) > 0 {
+				templateID := listmonk.ResolveTemplateID(triggers, ps.to)
+				return m, tea.Batch(m.spinner.Tick, m.sendListmonkCmd(ps.subject, cleanBody, listIDs, templateID))
 			}
 		}
 		return m, tea.Batch(m.spinner.Tick, m.sendEmailCmd(smtpAcct, from, ps.to, ps.cc, ps.bcc, ps.subject, cleanBody, attachments, includeHTMLSig, replyUID, replyFolder, ps.replyToAccount, ps.inReplyTo, ps.references))
@@ -5441,12 +5443,18 @@ func (m Model) viewPresend() string {
 	if isListmonk {
 		b.WriteString(styleHeader.Render("  Newsletter via Listmonk") + "\n")
 		b.WriteString(styleSeparator.Render(strings.Repeat("─", m.width)) + "\n")
-		listIDs := listmonk.ResolveListIDs(m.listmonkTriggers(), ps.to)
+		triggers := m.listmonkTriggers()
+		listIDs := listmonk.ResolveListIDs(triggers, ps.to)
+		templateID := listmonk.ResolveTemplateID(triggers, ps.to)
 		delay := m.cfg.Listmonk.DelayMinutes
 		if delay == 0 {
 			delay = 30
 		}
-		b.WriteString(styleHelp.Render(fmt.Sprintf("  Lists: %v · Schedule: in %d min", listIDs, delay)) + "\n\n")
+		tmplPart := ""
+		if templateID != 0 {
+			tmplPart = fmt.Sprintf(" · Template: %d", templateID)
+		}
+		b.WriteString(styleHelp.Render(fmt.Sprintf("  Lists: %v%s · Schedule: in %d min", listIDs, tmplPart, delay)) + "\n\n")
 	} else {
 		b.WriteString(styleHeader.Render("  Ready to send") + "\n")
 		b.WriteString(styleSeparator.Render(strings.Repeat("─", m.width)) + "\n\n")

@@ -5,9 +5,12 @@ import (
 )
 
 // Trigger maps a virtual email address to Listmonk list IDs.
+// TemplateID, when non-zero, overrides Listmonk's default template for
+// campaigns created from this trigger.
 type Trigger struct {
-	Address string
-	ListIDs []int
+	Address    string
+	ListIDs    []int
+	TemplateID int
 }
 
 // ResolveListIDs returns the combined list IDs for all trigger addresses
@@ -28,6 +31,19 @@ func ResolveListIDs(triggers []Trigger, toField string) []int {
 		}
 	}
 	return ids
+}
+
+// ResolveTemplateID returns the first non-zero template ID from triggers
+// matching any recipient in the To field. Returns 0 if no override.
+func ResolveTemplateID(triggers []Trigger, toField string) int {
+	for _, addr := range splitAddrs(toField) {
+		for _, t := range triggers {
+			if strings.EqualFold(addr, t.Address) && t.TemplateID != 0 {
+				return t.TemplateID
+			}
+		}
+	}
+	return 0
 }
 
 // IsTriggerAddress returns true if any address in toField matches a trigger.
