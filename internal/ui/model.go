@@ -886,6 +886,8 @@ func (m Model) activeFolder() string {
 		return f.PaperTrail
 	case "Sent":
 		return f.Sent
+	case "Drafts":
+		return f.Drafts
 	case "Trash":
 		return f.Trash
 	case "Archive":
