@@ -19,6 +19,7 @@ import (
 	"mime"
 	"net/mail"
 	"net/smtp"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -374,10 +375,17 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 		if len(m) < 2 {
 			return match
 		}
-		localPath := m[1]
+		srcAttr := m[1]
+		// Goldmark URL-encodes the destination of `![](<path>)`, so paths
+		// with spaces or other special characters arrive percent-encoded.
+		// Decode back to the on-disk path for os.ReadFile.
+		localPath := srcAttr
+		if decoded, err := url.PathUnescape(srcAttr); err == nil {
+			localPath = decoded
+		}
 		cid := fmt.Sprintf("img%d@neomd", len(inlines))
 		inlines = append(inlines, inlineImage{path: localPath, cid: cid})
-		return strings.Replace(match, `"`+localPath+`"`, `"cid:`+cid+`"`, 1)
+		return strings.Replace(match, `"`+srcAttr+`"`, `"cid:`+cid+`"`, 1)
 	})
 
 	altBoundary, err := randomBoundary()

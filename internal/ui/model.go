@@ -5382,8 +5382,9 @@ func extractInlineAttachments(body string) (files []string, clean string) {
 		if !header && imageExts[strings.ToLower(filepath.Ext(rest))] {
 			// Inline: replace with markdown image ref so position is preserved.
 			// Images placed via <leader>a inline use plain "[attach] /img" and
-			// render where the user put them.
-			kept = append(kept, "![]("+rest+")")
+			// render where the user put them. Angle-bracket destination
+			// (CommonMark) lets goldmark parse paths containing spaces.
+			kept = append(kept, "![](<"+rest+">)")
 		} else {
 			files = append(files, rest)
 		}
