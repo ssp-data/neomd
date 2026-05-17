@@ -396,6 +396,24 @@ func TestActiveFolderUsesOffTabFolder(t *testing.T) {
 	}
 }
 
+// Drafts can appear in tab_order (default order includes it), so the
+// regular tab switch must resolve it — not just the off-tab path used by gd.
+func TestActiveFolderResolvesDraftsTab(t *testing.T) {
+	m := Model{
+		cfg: &config.Config{
+			Folders: config.FoldersConfig{
+				Inbox:  "INBOX",
+				Drafts: "Drafts",
+			},
+		},
+		folders:       []string{"Inbox", "Drafts"},
+		activeFolderI: 1, // Drafts tab
+	}
+	if got := m.activeFolder(); got != "Drafts" {
+		t.Fatalf("activeFolder() on Drafts tab = %q, want %q", got, "Drafts")
+	}
+}
+
 func TestActiveFolderHonorsPerAccountOverride(t *testing.T) {
 	cfg := &config.Config{
 		Folders: config.FoldersConfig{
