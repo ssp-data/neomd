@@ -74,6 +74,16 @@ Drafts and Spam are **off-tab folders** (not in the regular tab rotation) and be
 
 **Old bug (fixed 2026-04-10)**: In older versions, pressing `R` while viewing Drafts could show Inbox content. If you experience this, rebuild neomd to get the fix.
 
+## Why do Bengali / CJK / Arabic / emoji subjects show as `·` in the inbox?
+
+Complex scripts (Bengali, Devanagari, CJK, Arabic, Hebrew, Thai, emoji, …) render at unpredictable widths in modern terminals. The terminal emulator (foot, kitty, alacritty, …) and the application disagree on how many cells a grapheme cluster takes — this is a well-known problem documented in [lipgloss #562](https://github.com/charmbracelet/lipgloss/issues/562) and [Mitchell Hashimoto's "Grapheme Clusters and Terminal Emulators"](https://mitchellh.com/writing/grapheme-clusters-in-terminals). The real fix is the [OSC 66 text-sizing protocol](https://sw.kovidgoyal.net/kitty/text-sizing-protocol/), but it's only implemented in kitty and foot and tmux strips it.
+
+When a subject contains such characters, the inbox row would overflow the terminal width, the bubbles list would wrap the row, and the visible top of the list would scroll off. To keep the layout solid, neomd sanitises the subject for display: every run of unpredictable-width characters collapses into a single `·` placeholder. Latin scripts (including German `ä` `ö` `ü` `ß`, accented vowels, Latin Extended), Greek, Cyrillic, and common punctuation pass through verbatim — so European subjects look normal.
+
+The transform only affects the **displayed** subject in the inbox list and the reader's `Subject:` line. The email body (including its Bengali/Asian/Arabic content) renders unchanged through glamour, and the underlying `Subject` field is preserved on the email object — searches, filters, replies, and forwards still see the original text.
+
+If you regularly read non-Latin subjects, run neomd in a kitty terminal **without** tmux and the placeholder behaviour will eventually move behind a config flag once OSC 66 gets broader adoption.
+
 ## Why some of he tabs have unread number count and others don't?
 
 This is on purpose, it's made to be **less distractive**. For example, I don't need to know the number of unread of my Feed, as it's just newsletter, and when I have time to read, I will, but I ddon't want to be stressed out to read 99 unread newsletters.
