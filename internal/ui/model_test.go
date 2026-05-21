@@ -3,6 +3,7 @@ package ui
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -999,5 +1000,26 @@ func TestSafeGo_MultiplePanics(t *testing.T) {
 		// Success — all panics recovered
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for panicking goroutines to recover")
+	}
+}
+
+func TestFilterValidAttachments(t *testing.T) {
+	dir := t.TempDir()
+	realFile := filepath.Join(dir, "doc.pdf")
+	if err := os.WriteFile(realFile, []byte("pdf"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	subDir := filepath.Join(dir, "aur") // mimics the user's reported bug: a directory the picker mistakenly returned
+	if err := os.Mkdir(subDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	missing := filepath.Join(dir, "nope.txt")
+
+	valid, skipped := filterValidAttachments([]string{realFile, subDir, missing})
+	if !reflect.DeepEqual(valid, []string{realFile}) {
+		t.Errorf("valid = %v, want [%s]", valid, realFile)
+	}
+	if !reflect.DeepEqual(skipped, []string{subDir, missing}) {
+		t.Errorf("skipped = %v, want [%s %s]", skipped, subDir, missing)
 	}
 }

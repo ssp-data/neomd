@@ -2534,7 +2534,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// as [attach] lines via appendAttachments, so a replace here is correct —
 		// append would duplicate them.
 		inlineAttach, cleanBody := extractInlineAttachments(stripPrelude(msg.body))
-		m.attachments = inlineAttach
+		validAttach, skippedAttach := filterValidAttachments(inlineAttach)
+		m.attachments = validAttach
 		m.applyEditedFrom(msg.from)
 
 		// Go to pre-send review instead of sending immediately.
@@ -2558,14 +2559,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.state = statePresend
-		m.status = ""
-		m.isError = false
+		if len(skippedAttach) > 0 {
+			m.status = fmt.Sprintf("⚠ Skipped %d invalid attachment path(s) (not a regular file): %s", len(skippedAttach), strings.Join(skippedAttach, ", "))
+			m.isError = true
+		} else {
+			m.status = ""
+			m.isError = false
+		}
 		return m, nil
 
 	case attachPickDoneMsg:
-		m.attachments = append(m.attachments, msg.paths...)
-		if len(msg.paths) > 0 {
-			m.status = fmt.Sprintf("Attached %d file(s).", len(msg.paths))
+		validPicked, skippedPicked := filterValidAttachments(msg.paths)
+		m.attachments = append(m.attachments, validPicked...)
+		switch {
+		case len(skippedPicked) > 0:
+			m.status = fmt.Sprintf("⚠ Skipped %d invalid path(s): %s", len(skippedPicked), strings.Join(skippedPicked, ", "))
+			m.isError = true
+		case len(validPicked) > 0:
+			m.status = fmt.Sprintf("Attached %d file(s).", len(validPicked))
 		}
 		return m, nil
 
@@ -5351,6 +5362,25 @@ func injectAttachmentsIntoPrelude(prelude string, paths []string) string {
 		b.WriteString("\n")
 	}
 	return prelude[:idx+1] + b.String() + prelude[idx+1:]
+}
+
+// filterValidAttachments returns paths pointing to existing regular files.
+// Anything missing, a directory, or otherwise non-regular is split out into
+// 'skipped' so the caller can surface it. Silently attaching such a path makes
+// the SMTP send fail with "is a directory", or — worse — attach the wrong
+// file's contents if the path happens to be readable. Seen in the wild when
+// the yazi file picker (invoked via <leader>a in nvim or `a` in pre-send)
+// returns the path under the cursor rather than the path the user intended.
+func filterValidAttachments(paths []string) (valid, skipped []string) {
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil || !info.Mode().IsRegular() {
+			skipped = append(skipped, p)
+			continue
+		}
+		valid = append(valid, p)
+	}
+	return
 }
 
 // extractInlineAttachments scans body for [attach] /path lines and removes
