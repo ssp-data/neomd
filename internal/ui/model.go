@@ -3099,7 +3099,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Pre-select the correct From address before fetching body.
-		if idx := m.matchFromIndex(e.To, e.CC); idx >= 0 {
+		if idx := m.matchFromForReply(e); idx >= 0 {
 			m.presendFromI = idx
 		}
 		m.pendingReply = true
@@ -3111,7 +3111,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if e == nil {
 			return m, nil
 		}
-		if idx := m.matchFromIndex(e.To, e.CC); idx >= 0 {
+		if idx := m.matchFromForReply(e); idx >= 0 {
 			m.presendFromI = idx
 		}
 		m.pendingReplyAll = true
@@ -3123,7 +3123,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if e == nil {
 			return m, nil
 		}
-		if idx := m.matchFromIndex(e.To, e.CC); idx >= 0 {
+		if idx := m.matchFromForReply(e); idx >= 0 {
 			m.presendFromI = idx
 		}
 		// Always fetch body first (needed for quoted message in reaction)
@@ -5082,7 +5082,8 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 
 	// Auto-select the From address that matches the email's To/CC field.
 	// E.g. if email was sent to simon@ssp.sh, reply from simon@ssp.sh.
-	if idx := m.matchFromIndex(e.To, e.CC); idx >= 0 {
+	// In Sent folder, the user's own address is in From instead.
+	if idx := m.matchFromForReply(e); idx >= 0 {
 		m.presendFromI = idx
 	}
 
@@ -5201,6 +5202,16 @@ func (m Model) matchFromIndex(toField, ccField string) int {
 		}
 	}
 	return -1
+}
+
+// matchFromForReply picks the right From index for a reply. In the Sent folder
+// the user's own address lives in e.From (e.To is the original recipient);
+// elsewhere it lives in e.To/CC.
+func (m Model) matchFromForReply(e *imap.Email) int {
+	if len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent {
+		return m.matchFromIndex(e.From, "")
+	}
+	return m.matchFromIndex(e.To, e.CC)
 }
 
 func (m Model) matchFromAddress(from string) int {
