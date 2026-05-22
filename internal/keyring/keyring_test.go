@@ -134,6 +134,57 @@ func TestKeyFormats(t *testing.T) {
 	}
 }
 
+func TestPrepareTokenForStorage_DarwinStripsAccessToken(t *testing.T) {
+	tok := &oauth2.Token{
+		AccessToken:  "ya29." + string(make([]byte, 2500)),
+		RefreshToken: "1//0gRefresh",
+		TokenType:    "Bearer",
+		Expiry:       time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	got := prepareTokenForStorage(tok, "darwin")
+	if got.AccessToken != "" {
+		t.Errorf("AccessToken should be stripped on darwin, got len=%d", len(got.AccessToken))
+	}
+	if got.RefreshToken != tok.RefreshToken {
+		t.Errorf("RefreshToken = %q, want %q", got.RefreshToken, tok.RefreshToken)
+	}
+	if got.TokenType != tok.TokenType {
+		t.Errorf("TokenType = %q, want %q", got.TokenType, tok.TokenType)
+	}
+	if !got.Expiry.Equal(tok.Expiry) {
+		t.Errorf("Expiry = %v, want %v", got.Expiry, tok.Expiry)
+	}
+
+	// Marshaled size must fit comfortably under the 4096-byte security CLI limit
+	// (after base64 expansion ~4/3 and ~80 bytes of command wrapping).
+	data, _ := json.Marshal(got)
+	if len(data) > 1024 {
+		t.Errorf("stripped token JSON unexpectedly large: %d bytes", len(data))
+	}
+}
+
+func TestPrepareTokenForStorage_OtherOSPreservesToken(t *testing.T) {
+	tok := &oauth2.Token{
+		AccessToken:  "access123",
+		RefreshToken: "refresh456",
+		TokenType:    "Bearer",
+		Expiry:       time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	for _, goos := range []string{"linux", "windows", "freebsd"} {
+		t.Run(goos, func(t *testing.T) {
+			got := prepareTokenForStorage(tok, goos)
+			if got.AccessToken != tok.AccessToken {
+				t.Errorf("AccessToken = %q, want %q (no stripping on %s)", got.AccessToken, tok.AccessToken, goos)
+			}
+			if got.RefreshToken != tok.RefreshToken {
+				t.Errorf("RefreshToken = %q, want %q", got.RefreshToken, tok.RefreshToken)
+			}
+		})
+	}
+}
+
 func TestClear(t *testing.T) {
 	mock := NewMockBackend()
 

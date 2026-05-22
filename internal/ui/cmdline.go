@@ -256,6 +256,18 @@ func init() {
 			},
 		},
 		{
+			name:    "set-oauth2-secret",
+			aliases: []string{"sos"},
+			desc:    "store OAuth2 client secret in OS keyring for the current account",
+			run: func(m *Model) (tea.Model, tea.Cmd) {
+				accountName := m.activeAccount().Name
+				m.passwordPrompt.setPrompt(accountName, promptOAuth2Secret, "")
+				m.prevState = m.state
+				m.state = statePasswordPrompt
+				return m, nil
+			},
+		},
+		{
 			name:    "quit",
 			aliases: []string{"q"},
 			desc:    "quit neomd",
