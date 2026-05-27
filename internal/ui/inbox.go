@@ -217,20 +217,22 @@ func fmtDate(t time.Time) string {
 }
 
 // displaySafe collapses every run of characters from scripts whose
-// terminal-cell-width is unpredictable (Bengali, CJK, Arabic, emoji,
+// terminal-cell-width is unpredictable (Bengali, Arabic, Thai, emoji,
 // combining marks, variation selectors …) into a single '·' placeholder.
-// Latin-derived scripts and common punctuation pass through unchanged.
+// Latin-derived scripts, common punctuation, and CJK (Hangul, Han, kana)
+// pass through unchanged — terminals and runewidth agree those are exactly
+// 2 cells per character, so the row width stays controllable.
 //
-// Why so blunt: terminal emulators and width libraries disagree on how many
-// cells a Bengali / Devanagari / CJK grapheme cluster occupies (see the
-// "Grapheme Clusters and Terminal Emulators" write-up and lipgloss #562).
-// Anything we measure with runewidth/uniseg can render wider in foot or
-// kitty, overflowing the row and making the bubbles list lose its top
-// when the cursor moves. Replacing the unpredictable runs with a single
-// 1-cell character gives every row a width we can actually control, at
-// the cost of not showing the original glyphs in the list. The reader
-// view applies the same transform so the rounded-border header box and
-// the body's first lines stay aligned.
+// Why so blunt for the unsafe runs: terminal emulators and width libraries
+// disagree on how many cells a Bengali / Devanagari / Thai grapheme cluster
+// occupies (see the "Grapheme Clusters and Terminal Emulators" write-up
+// and lipgloss #562). Anything we measure with runewidth/uniseg can render
+// wider in foot or kitty, overflowing the row and making the bubbles list
+// lose its top when the cursor moves. Replacing the unpredictable runs
+// with a single 1-cell character gives every row a width we can actually
+// control, at the cost of not showing the original glyphs in the list.
+// The reader view applies the same transform to the subject line so the
+// rounded-border header box stays aligned.
 func displaySafe(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -258,8 +260,9 @@ func displaySafe(s string) string {
 
 // safeForDisplay reports whether r is safe to render directly in a width-
 // constrained TUI column. Latin scripts, Greek, Cyrillic, common
-// punctuation, and ASCII control whitespace are safe; everything else
-// (complex scripts, emoji, combining marks, variation selectors) is not.
+// punctuation, and CJK (Hangul, Han, kana — uniformly East Asian Wide,
+// 2 cells) are safe; complex scripts (Bengali, Devanagari, Thai, Arabic),
+// emoji, combining marks and variation selectors are not.
 func safeForDisplay(r rune) bool {
 	switch {
 	case r == '\t' || r == '\n' || r == '\r':
@@ -285,6 +288,42 @@ func safeForDisplay(r rune) bool {
 		return true
 	case r >= 0x20A0 && r <= 0x20CF:
 		// Currency symbols
+		return true
+	case r >= 0x1100 && r <= 0x11FF:
+		// Hangul Jamo
+		return true
+	case r >= 0x3000 && r <= 0x303F:
+		// CJK Symbols and Punctuation
+		return true
+	case r >= 0x3040 && r <= 0x309F:
+		// Hiragana
+		return true
+	case r >= 0x30A0 && r <= 0x30FF:
+		// Katakana
+		return true
+	case r >= 0x3130 && r <= 0x318F:
+		// Hangul Compatibility Jamo
+		return true
+	case r >= 0x3400 && r <= 0x4DBF:
+		// CJK Unified Ideographs Extension A
+		return true
+	case r >= 0x4E00 && r <= 0x9FFF:
+		// CJK Unified Ideographs
+		return true
+	case r >= 0xA960 && r <= 0xA97F:
+		// Hangul Jamo Extended-A
+		return true
+	case r >= 0xAC00 && r <= 0xD7A3:
+		// Hangul Syllables
+		return true
+	case r >= 0xD7B0 && r <= 0xD7FF:
+		// Hangul Jamo Extended-B
+		return true
+	case r >= 0xF900 && r <= 0xFAFF:
+		// CJK Compatibility Ideographs
+		return true
+	case r >= 0xFF00 && r <= 0xFFEF:
+		// Halfwidth and Fullwidth Forms
 		return true
 	}
 	return false
