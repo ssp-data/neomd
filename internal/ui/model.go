@@ -216,7 +216,7 @@ type MailtoParams struct {
 // a draft after a crash) and avoids cluttering /tmp/.
 func neomdTempDir() string {
 	dir := filepath.Join(os.TempDir(), "neomd")
-	os.MkdirAll(dir, 0700) //nolint
+	os.MkdirAll(dir, 0o700) //nolint
 	return dir
 }
 
@@ -277,7 +277,7 @@ func backupDraft(tmpPath string, maxBackups int) {
 	if err != nil || len(src) == 0 {
 		return
 	}
-	_ = os.WriteFile(dst, src, 0600)
+	_ = os.WriteFile(dst, src, 0o600)
 
 	// Prune oldest if over limit.
 	files := listBackupsByAge(dir)
@@ -367,11 +367,19 @@ func (m Model) writeDebugReport() tea.Cmd {
 		b.WriteString("\n## Folder Mapping\n\n")
 		f := m.cfg.Folders
 		folders := [][2]string{
-			{"Inbox", f.Inbox}, {"Sent", f.Sent}, {"Trash", f.Trash},
-			{"Drafts", f.Drafts}, {"ToScreen", f.ToScreen}, {"Feed", f.Feed},
-			{"PaperTrail", f.PaperTrail}, {"ScreenedOut", f.ScreenedOut},
-			{"Archive", f.Archive}, {"Waiting", f.Waiting},
-			{"Scheduled", f.Scheduled}, {"Someday", f.Someday}, {"Spam", f.Spam},
+			{"Inbox", f.Inbox},
+			{"Sent", f.Sent},
+			{"Trash", f.Trash},
+			{"Drafts", f.Drafts},
+			{"ToScreen", f.ToScreen},
+			{"Feed", f.Feed},
+			{"PaperTrail", f.PaperTrail},
+			{"ScreenedOut", f.ScreenedOut},
+			{"Archive", f.Archive},
+			{"Waiting", f.Waiting},
+			{"Scheduled", f.Scheduled},
+			{"Someday", f.Someday},
+			{"Spam", f.Spam},
 			{"Work", f.Work},
 		}
 		for _, kv := range folders {
@@ -390,8 +398,11 @@ func (m Model) writeDebugReport() tea.Cmd {
 		b.WriteString("\n## Screener Lists\n\n")
 		sc := m.cfg.Screener
 		lists := [][2]string{
-			{"screened_in", sc.ScreenedIn}, {"screened_out", sc.ScreenedOut},
-			{"feed", sc.Feed}, {"papertrail", sc.PaperTrail}, {"spam", sc.Spam},
+			{"screened_in", sc.ScreenedIn},
+			{"screened_out", sc.ScreenedOut},
+			{"feed", sc.Feed},
+			{"papertrail", sc.PaperTrail},
+			{"spam", sc.Spam},
 			{"notify", sc.Notify},
 		}
 		for _, kv := range lists {
@@ -450,7 +461,7 @@ func (m Model) writeDebugReport() tea.Cmd {
 
 		// Write to file
 		path := filepath.Join(neomdTempDir(), "debug.log")
-		if err := os.WriteFile(path, []byte(b.String()), 0600); err != nil {
+		if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
 			return errMsg{fmt.Errorf("write debug report: %w", err)}
 		}
 
@@ -712,12 +723,17 @@ func (m Model) tokenSourceFor(accountName string) func() (string, error) {
 	return nil
 }
 
-// activeAccount returns the currently selected AccountConfig.
+// activeAccount returns the currently selected AccountConfig, or the zero
+// value when no accounts are configured (only reachable in unit tests that
+// hand-build a Model; production config validation rejects empty accounts).
 func (m Model) activeAccount() config.AccountConfig {
 	if m.accountI < len(m.accounts) {
 		return m.accounts[m.accountI]
 	}
-	return m.accounts[0]
+	if len(m.accounts) > 0 {
+		return m.accounts[0]
+	}
+	return config.AccountConfig{}
 }
 
 // presendFroms returns all available From addresses: all accounts first (in
@@ -788,15 +804,40 @@ func (m Model) primaryIMAPClient() *imap.Client {
 	return nil
 }
 
-func (m Model) sentDraftsIMAPClient() *imap.Client {
+// sentDraftsIMAPAccount returns the account whose Sent/Drafts IMAP folders
+// should receive a sent message or saved draft. When
+// StoreSentDraftsInSendingAccount is true the sending account is used;
+// otherwise the first account with a live IMAP client (matching
+// primaryIMAPClient's "first non-nil" logic). Use this so both the IMAP
+// client and the resolved folder name come from the same account —
+// preventing "no such mailbox" mismatches under per-account folder configs.
+func (m Model) sentDraftsIMAPAccount() config.AccountConfig {
 	if m.cfg != nil && m.cfg.StoreSentDraftsInSendingAccount {
-		return m.imapCliForAccount(m.presendSMTPAccount().Name)
+		return m.presendSMTPAccount()
 	}
-	return m.primaryIMAPClient()
+	for i, c := range m.clients {
+		if c != nil {
+			return m.accounts[i]
+		}
+	}
+	return m.accounts[0]
 }
 
-func (m Model) presendIMAPClient() *imap.Client {
-	return m.sentDraftsIMAPClient()
+// emailDelegateForActiveAccount builds the inbox row-rendering delegate
+// using the active account's resolved Sent/Drafts folder names.
+func (m *Model) emailDelegateForActiveAccount() emailDelegate {
+	f := m.cfg.ResolveFolders(m.activeAccount())
+	return emailDelegate{sentFolder: f.Sent, draftFolder: f.Drafts}
+}
+
+// refreshInboxDelegate replaces the inbox list's display delegate so that
+// the active account's Sent/Drafts folder names drive the "→ To:" row
+// rendering. Call this after any change to m.accountI; otherwise the
+// delegate keeps the folder names it was built with and rows from a
+// different account's Sent/Drafts mailbox display the sender instead of
+// the recipient.
+func (m *Model) refreshInboxDelegate() {
+	m.inbox.SetDelegate(m.emailDelegateForActiveAccount())
 }
 
 func (m *Model) applyEditedFrom(from string) {
@@ -826,41 +867,45 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// activeFolder maps the active tab label to an IMAP mailbox name.
+// activeFolder maps the active tab label to an IMAP mailbox name,
+// honouring per-account folder overrides for the active account.
 func (m Model) activeFolder() string {
+	f := m.cfg.ResolveFolders(m.activeAccount())
 	switch m.offTabFolder {
 	case "Drafts":
-		return m.cfg.Folders.Drafts
+		return f.Drafts
 	case "Spam":
-		return m.cfg.Folders.Spam
+		return f.Spam
 	}
 	switch m.folders[m.activeFolderI] {
 	case "ToScreen":
-		return m.cfg.Folders.ToScreen
+		return f.ToScreen
 	case "Feed":
-		return m.cfg.Folders.Feed
+		return f.Feed
 	case "PaperTrail":
-		return m.cfg.Folders.PaperTrail
+		return f.PaperTrail
 	case "Sent":
-		return m.cfg.Folders.Sent
+		return f.Sent
+	case "Drafts":
+		return f.Drafts
 	case "Trash":
-		return m.cfg.Folders.Trash
+		return f.Trash
 	case "Archive":
-		return m.cfg.Folders.Archive
+		return f.Archive
 	case "Waiting":
-		return m.cfg.Folders.Waiting
+		return f.Waiting
 	case "Scheduled":
-		return m.cfg.Folders.Scheduled
+		return f.Scheduled
 	case "Someday":
-		return m.cfg.Folders.Someday
+		return f.Someday
 	case "ScreenedOut":
-		return m.cfg.Folders.ScreenedOut
+		return f.ScreenedOut
 	case "Spam":
-		return m.cfg.Folders.Spam
+		return f.Spam
 	case "Work":
-		return m.cfg.Folders.Work
+		return f.Work
 	default:
-		return m.cfg.Folders.Inbox
+		return f.Inbox
 	}
 }
 
@@ -898,12 +943,13 @@ func (m Model) sendEmailCmd(smtpAcct config.AccountConfig, from, to, cc, bcc, su
 		TLSCertFile: smtpAcct.TLSCertFile,
 		TokenSource: m.tokenSourceFor(smtpAcct.Name),
 	}
-	cli := m.sentDraftsIMAPClient()
-	sentFolder := m.cfg.Folders.Sent
+	sentAcct := m.sentDraftsIMAPAccount()
+	cli := m.imapCliForAccount(sentAcct.Name)
+	sentFolder := m.cfg.ResolveFolders(sentAcct).Sent
 	replyCli := m.imapCliForAccount(replyToAccount)
 	htmlSignature := ""
 	if includeHTMLSig {
-		htmlSignature = m.cfg.UI.HTMLSignature()
+		htmlSignature = m.cfg.Signature(smtpAcct).HTML
 	}
 	return func() tea.Msg {
 		// Build raw MIME once — reused for both SMTP delivery and Sent copy.
@@ -1027,8 +1073,9 @@ func (m Model) sendReactionCmd(smtpAcct config.AccountConfig, from, to, subject,
 		TLSCertFile: smtpAcct.TLSCertFile,
 		TokenSource: m.tokenSourceFor(smtpAcct.Name),
 	}
-	cli := m.sentDraftsIMAPClient()
-	sentFolder := m.cfg.Folders.Sent
+	sentAcct := m.sentDraftsIMAPAccount()
+	cli := m.imapCliForAccount(sentAcct.Name)
+	sentFolder := m.cfg.ResolveFolders(sentAcct).Sent
 	replyCli := m.imapCli()
 
 	return func() tea.Msg {
@@ -1269,7 +1316,7 @@ func (m Model) batchScreenerCmd(emails []imap.Email, action string) tea.Cmd {
 		case "P":
 			dst = cfg.Folders.PaperTrail
 		case "$":
-			dst = cfg.Folders.Spam
+			dst = cfg.ResolveFolders(m.activeAccount()).Spam
 		}
 		ops = append(ops, op{e.From, e.Folder, e.UID, dst})
 	}
@@ -1308,7 +1355,7 @@ func (m Model) batchScreenerCmd(emails []imap.Email, action string) tea.Cmd {
 						case "P":
 							dst = cfg.Folders.PaperTrail
 						case "$":
-							dst = cfg.Folders.Spam
+							dst = cfg.ResolveFolders(m.activeAccount()).Spam
 						}
 						expandedOps = append(expandedOps, op{e.From, e.Folder, e.UID, dst})
 					}
@@ -1591,8 +1638,10 @@ func (m Model) spyScanCmd() tea.Cmd {
 		for i, uid := range uids {
 			spy, err := cli.ScanSpyPixels(nil, folder, uid)
 			if err != nil {
-				return spyScanProgressMsg{err: err, scanned: i, total: total, found: found,
-					spyKeys: spyFound, scannedKeys: allScanned}
+				return spyScanProgressMsg{
+					err: err, scanned: i, total: total, found: found,
+					spyKeys: spyFound, scannedKeys: allScanned,
+				}
 			}
 			key := spyPixelKey(folder, uid)
 			allScanned = append(allScanned, key)
@@ -1667,7 +1716,7 @@ func (m Model) deleteAllSearchCmd() tea.Cmd {
 
 // emptyTrashSearchCmd is like deleteAllSearchCmd but always targets Trash.
 func (m Model) emptyTrashSearchCmd() tea.Cmd {
-	folder := m.cfg.Folders.Trash
+	folder := m.cfg.ResolveFolders(m.activeAccount()).Trash
 	return func() tea.Msg {
 		uids, err := m.imapCli().SearchUIDs(nil, folder)
 		if err != nil {
@@ -1864,7 +1913,7 @@ func (m Model) screenerCmd(e *imap.Email, action string) tea.Cmd {
 			dst = m.cfg.Folders.PaperTrail
 		case "$":
 			addErr = m.screener.MarkSpam(e.From)
-			dst = m.cfg.Folders.Spam
+			dst = m.cfg.ResolveFolders(m.activeAccount()).Spam
 		}
 		if addErr != nil {
 			return errMsg{addErr}
@@ -1915,7 +1964,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			listH = 5
 		}
 		if m.inbox.Width() == 0 {
-			m.inbox = newInboxList(msg.Width, listH, m.cfg.Folders.Sent, m.cfg.Folders.Drafts)
+			f := m.cfg.ResolveFolders(m.activeAccount())
+			m.inbox = newInboxList(msg.Width, listH, f.Sent, f.Drafts)
 		} else {
 			m.inbox.SetSize(msg.Width, listH)
 		}
@@ -2366,7 +2416,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var dst string
 			switch cat {
 			case screener.CategorySpam:
-				dst = m.cfg.Folders.Spam
+				dst = m.cfg.ResolveFolders(m.activeAccount()).Spam
 			case screener.CategoryScreenedOut:
 				dst = m.cfg.Folders.ScreenedOut
 			case screener.CategoryFeed:
@@ -2822,10 +2872,10 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = true
 		m.bulkProgress = m.newBulkOp("Deleting", len(targets))
-		return m, tea.Batch(m.spinner.Tick, m.batchMoveCmd(targets, m.cfg.Folders.Trash))
+		return m, tea.Batch(m.spinner.Tick, m.batchMoveCmd(targets, m.cfg.ResolveFolders(m.activeAccount()).Trash))
 
 	case "X": // permanent delete (marked or cursor) — only in Trash
-		if m.activeFolder() != m.cfg.Folders.Trash {
+		if m.activeFolder() != m.cfg.ResolveFolders(m.activeAccount()).Trash {
 			m.status = "X only works in Trash. Use x to move to Trash first."
 			m.isError = true
 			return m, nil
@@ -2839,7 +2889,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			uids = append(uids, e.UID)
 		}
 		m.loading = true
-		return m, tea.Batch(m.spinner.Tick, m.deleteAllExecCmd(m.cfg.Folders.Trash, uids))
+		return m, tea.Batch(m.spinner.Tick, m.deleteAllExecCmd(m.cfg.ResolveFolders(m.activeAccount()).Trash, uids))
 
 	case "ctrl+u": // clear all marks
 		m.markedUIDs = make(map[uint32]bool)
@@ -3077,6 +3127,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+			m.refreshInboxDelegate()
 			m.activeFolderI = 0
 			m.loading = true
 			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
@@ -3219,7 +3270,7 @@ func loadCmdHistory(path string) []string {
 // Called in a goroutine — errors are silently ignored.
 func saveCmdHistory(path string, history []string) {
 	content := strings.Join(history, "\n") + "\n"
-	_ = os.WriteFile(path, []byte(content), 0600)
+	_ = os.WriteFile(path, []byte(content), 0o600)
 }
 
 // loadSpyPixelCache reads the spy pixel cache from disk.
@@ -3258,7 +3309,7 @@ func saveSpyPixelCache(spyKeys, scannedKeys map[string]bool) {
 			lines = append(lines, "-"+k)
 		}
 	}
-	_ = os.WriteFile(config.SpyPixelCachePath(), []byte(strings.Join(lines, "\n")+"\n"), 0600)
+	_ = os.WriteFile(config.SpyPixelCachePath(), []byte(strings.Join(lines, "\n")+"\n"), 0o600)
 }
 
 // safeGo runs fn in a goroutine with panic recovery. If the goroutine panics,
@@ -3279,7 +3330,7 @@ func safeGo(fn func()) {
 // writeCrashLog appends a panic record to the crash log file.
 func writeCrashLog(r interface{}, stack []byte) {
 	path := config.CrashLogPath()
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}
@@ -3341,7 +3392,7 @@ func (m *Model) applyFilter() tea.Cmd {
 			query := strings.ToLower(m.filterText)
 			// In Sent folder, search To/CC/BCC instead of From — From is always us.
 			var hay string
-			if len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent {
+			if len(m.folders) > 0 && m.activeFolder() == m.cfg.ResolveFolders(m.activeAccount()).Sent {
 				hay = strings.ToLower(e.To + " " + e.CC + " " + e.BCC + " " + e.Subject)
 			} else {
 				hay = strings.ToLower(e.From + " " + e.Subject)
@@ -3359,7 +3410,7 @@ func (m *Model) applyFilter() tea.Cmd {
 		filtered = m.emails
 	}
 
-	noThread := len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent
+	noThread := len(m.folders) > 0 && m.activeFolder() == m.cfg.ResolveFolders(m.activeAccount()).Sent
 	return setEmails(&m.inbox, filtered, m.markedUIDs, m.spyPixelKeys, m.shouldPrefixFolderInSubject(), m.sortField, m.sortReverse, noThread)
 }
 
@@ -3408,14 +3459,14 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			m.offTabFolder = "Spam"
 			m.imapSearchText = ""
 			m.status = "Spam folder — press R to reload, tab to leave"
-			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Spam))
+			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.ResolveFolders(m.activeAccount()).Spam))
 		}
 		if key == "d" { // gd — go to Drafts (not in tab rotation)
 			m.loading = true
 			m.offTabFolder = "Drafts"
 			m.imapSearchText = ""
 			m.status = "Drafts folder — press R to reload, tab to leave"
-			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Drafts))
+			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.ResolveFolders(m.activeAccount()).Drafts))
 		}
 		if key == "e" { // ge — Everything: latest emails across all folders
 			m.loading = true
@@ -3456,22 +3507,23 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 		if len(targets) == 0 {
 			return m, nil
 		}
+		f := m.cfg.ResolveFolders(m.activeAccount())
 		dstMap := map[string]string{
-			"i": m.cfg.Folders.Inbox,
-			"a": m.cfg.Folders.Archive,
-			"f": m.cfg.Folders.Feed,
-			"p": m.cfg.Folders.PaperTrail,
-			"t": m.cfg.Folders.Trash,
-			"s": m.cfg.Folders.Sent,
-			"o": m.cfg.Folders.ScreenedOut,
-			"w": m.cfg.Folders.Waiting,
-			"c": m.cfg.Folders.Scheduled,
-			"m": m.cfg.Folders.Someday,
-			"k": m.cfg.Folders.ToScreen,
+			"i": f.Inbox,
+			"a": f.Archive,
+			"f": f.Feed,
+			"p": f.PaperTrail,
+			"t": f.Trash,
+			"s": f.Sent,
+			"o": f.ScreenedOut,
+			"w": f.Waiting,
+			"c": f.Scheduled,
+			"m": f.Someday,
+			"k": f.ToScreen,
 		}
 		// Only add Work folder if configured
-		if m.cfg.Folders.Work != "" {
-			dstMap["b"] = m.cfg.Folders.Work
+		if f.Work != "" {
+			dstMap["b"] = f.Work
 		}
 		if dst, ok := dstMap[key]; ok {
 			m.loading = true
@@ -3837,7 +3889,7 @@ func (m Model) openInBrowser() (tea.Model, tea.Cmd) {
 			continue
 		}
 
-		if err := os.WriteFile(imgPath, a.Data, 0600); err != nil {
+		if err := os.WriteFile(imgPath, a.Data, 0o600); err != nil {
 			continue
 		}
 		tmpImages = append(tmpImages, imgPath)
@@ -3990,7 +4042,7 @@ func (m Model) downloadOpenAttachmentCmd(a imap.Attachment) tea.Cmd {
 			return attachOpenDoneMsg{err: err}
 		}
 		dir := filepath.Join(home, "Downloads")
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return attachOpenDoneMsg{err: fmt.Errorf("create Downloads: %w", err)}
 		}
 		// Avoid overwriting existing files by appending a counter before the extension.
@@ -4011,7 +4063,7 @@ func (m Model) downloadOpenAttachmentCmd(a imap.Attachment) tea.Cmd {
 				}
 			}
 		}
-		if err := os.WriteFile(dst, a.Data, 0644); err != nil {
+		if err := os.WriteFile(dst, a.Data, 0o644); err != nil {
 			return attachOpenDoneMsg{err: fmt.Errorf("save attachment: %w", err)}
 		}
 		ext := strings.ToLower(filepath.Ext(base))
@@ -4054,7 +4106,7 @@ func (m Model) downloadEMLCmd() tea.Cmd {
 			return emlDownloadedMsg{err: err}
 		}
 		dir := filepath.Join(home, "Downloads")
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return emlDownloadedMsg{err: fmt.Errorf("create Downloads: %w", err)}
 		}
 		// Sanitize subject for filename
@@ -4081,7 +4133,7 @@ func (m Model) downloadEMLCmd() tea.Cmd {
 				}
 			}
 		}
-		if err := os.WriteFile(dst, raw, 0644); err != nil {
+		if err := os.WriteFile(dst, raw, 0o644); err != nil {
 			return emlDownloadedMsg{err: fmt.Errorf("save EML: %w", err)}
 		}
 		return emlDownloadedMsg{path: dst}
@@ -4188,8 +4240,9 @@ func (m Model) sendRSVPCmd(status calendar.Status) tea.Cmd {
 	}
 
 	to := ev.Organizer
-	sentCli := m.sentDraftsIMAPClient()
-	sentFolder := m.cfg.Folders.Sent
+	sentAcct := m.sentDraftsIMAPAccount()
+	sentCli := m.imapCliForAccount(sentAcct.Name)
+	sentFolder := m.cfg.ResolveFolders(sentAcct).Sent
 	openEmail := m.openEmail
 	replyCli := m.imapCliForAccount(acct.Name)
 	return func() tea.Msg {
@@ -4237,7 +4290,7 @@ func (m Model) openICSCmd() tea.Cmd {
 		return nil
 	}
 	dir := filepath.Join(home, ".cache", "neomd", "ical")
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		m.status = "open .ics: " + err.Error()
 		m.isError = true
 		return nil
@@ -4252,7 +4305,7 @@ func (m Model) openICSCmd() tea.Cmd {
 		name = fmt.Sprintf("invite-%d.ics", time.Now().Unix())
 	}
 	dst := filepath.Join(dir, name)
-	if err := os.WriteFile(dst, att.Data, 0600); err != nil {
+	if err := os.WriteFile(dst, att.Data, 0o600); err != nil {
 		m.status = "open .ics: " + err.Error()
 		m.isError = true
 		return nil
@@ -4588,7 +4641,7 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "d":
 		// Save to Drafts without sending.
-		return m, m.saveDraftCmd(m.presendIMAPClient(), m.presendFrom(), ps.to, ps.cc, ps.bcc, ps.subject, ps.body, m.attachments)
+		return m, m.saveDraftCmd(m.sentDraftsIMAPAccount(), m.presendFrom(), ps.to, ps.cc, ps.bcc, ps.subject, ps.body, m.attachments)
 	case "ctrl+b":
 		// Toggle CC/BCC fields — show input prompts to add/edit them.
 		m.compose.extraVisible = !m.compose.extraVisible
@@ -4636,7 +4689,8 @@ func (m Model) launchSpellCheckCmd(ps *pendingSendData) (tea.Model, tea.Cmd) {
 
 	// Open nvim with spell on and jump to first misspelled word.
 	// VimEnter + defer_fn ensures spell activates AFTER all plugins load.
-	cmd := exec.Command("nvim",
+	cmd := exec.Command(
+		"nvim",
 		"-c", `autocmd VimEnter * ++once lua vim.defer_fn(function() vim.wo.spell = true; vim.bo.spelllang = "en_us,de"; vim.cmd("normal! gg]s") end, 100)`,
 		tmpPath,
 	)
@@ -4781,7 +4835,8 @@ func (m Model) previewInBrowser() (tea.Model, tea.Cmd) {
 
 	// Inject HTML signature before </body> tag if enabled (matching send path)
 	if includeHTMLSig {
-		htmlSig := m.cfg.UI.HTMLSignature()
+		acct := m.presendSMTPAccount()
+		htmlSig := m.cfg.Signature(acct).HTML
 		if htmlSig != "" {
 			idx := strings.LastIndex(htmlBody, "</body>")
 			if idx >= 0 {
@@ -4822,8 +4877,9 @@ func (m Model) previewInBrowser() (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) saveDraftCmd(imapCli *imap.Client, from, to, cc, bcc, subject, body string, attachments []string) tea.Cmd {
-	folder := m.cfg.Folders.Drafts
+func (m Model) saveDraftCmd(acct config.AccountConfig, from, to, cc, bcc, subject, body string, attachments []string) tea.Cmd {
+	imapCli := m.imapCliForAccount(acct.Name)
+	folder := m.cfg.ResolveFolders(acct).Drafts
 	return func() tea.Msg {
 		raw, err := smtp.BuildDraftMessage(from, to, cc, bcc, subject, body, attachments)
 		if err != nil {
@@ -4845,7 +4901,8 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 
 	// When a mailto body is present, insert it before the signature so
 	// the signature always appears at the bottom of the composed message.
-	sig := m.cfg.UI.TextSignature()
+	acct := m.presendSMTPAccount()
+	sig := m.cfg.Signature(acct).Text
 	var prelude string
 	if mailtoBody != "" {
 		// Build headers without signature, append body, then signature.
@@ -5626,7 +5683,7 @@ func (m Model) viewReader() string {
 	} else {
 		b.WriteString(m.reader.View())
 	}
-	isDraft := m.openEmail != nil && m.openEmail.Folder == m.cfg.Folders.Drafts
+	isDraft := m.openEmail != nil && m.openEmail.Folder == m.cfg.ResolveFolders(m.activeAccount()).Drafts
 	if m.status != "" {
 		b.WriteString("\n" + statusBar(m.status, m.isError))
 	} else {

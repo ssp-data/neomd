@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -174,6 +175,117 @@ func TestBulkThreshold(t *testing.T) {
 			u := UIConfig{BulkProgressThreshold: tt.val}
 			if got := u.BulkThreshold(); got != tt.want {
 				t.Errorf("BulkThreshold() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSignature(t *testing.T) {
+	accountWithBoth := AccountConfig{Signature: SignatureConfig{Text: "acct-text", HTML: "<p>acct-html</p>"}}
+	accountTextOnly := AccountConfig{Signature: SignatureConfig{Text: "acct-text"}}
+	accountHTMLOnly := AccountConfig{Signature: SignatureConfig{HTML: "<p>acct-html</p>"}}
+	accountEmpty := AccountConfig{}
+
+	uiWithBlock := UIConfig{SignatureBlock: SignatureConfig{Text: "ui-text", HTML: "<p>ui-html</p>"}}
+	uiLegacyOnly := UIConfig{Signature: "legacy-sig"}
+	uiEmpty := UIConfig{}
+
+	tests := []struct {
+		name string
+		cfg  *Config
+		acct AccountConfig
+		want SignatureConfig
+	}{
+		{"account block wins when populated", &Config{UI: uiWithBlock}, accountWithBoth, SignatureConfig{Text: "acct-text", HTML: "<p>acct-html</p>"}},
+		{"account text-only does not leak ui html", &Config{UI: uiWithBlock}, accountTextOnly, SignatureConfig{Text: "acct-text"}},
+		{"account html-only does not leak ui text", &Config{UI: uiWithBlock}, accountHTMLOnly, SignatureConfig{HTML: "<p>acct-html</p>"}},
+		{"falls back to ui block when account empty", &Config{UI: uiWithBlock}, accountEmpty, SignatureConfig{Text: "ui-text", HTML: "<p>ui-html</p>"}},
+		{"falls back to legacy ui.signature", &Config{UI: uiLegacyOnly}, accountEmpty, SignatureConfig{Text: "legacy-sig"}},
+		{"all empty returns zero value", &Config{UI: uiEmpty}, accountEmpty, SignatureConfig{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.Signature(tt.acct); got != tt.want {
+				t.Errorf("Signature() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveFolders(t *testing.T) {
+	globalFolders := FoldersConfig{
+		Inbox:       "INBOX",
+		Sent:        "Sent",
+		Trash:       "Trash",
+		Drafts:      "Drafts",
+		ToScreen:    "ToScreen",
+		Feed:        "Feed",
+		PaperTrail:  "PaperTrail",
+		ScreenedOut: "ScreenedOut",
+		Archive:     "Archive",
+		Waiting:     "Waiting",
+		Scheduled:   "Scheduled",
+		Someday:     "Someday",
+		Spam:        "Spam",
+		Work:        "Work",
+		TabOrder:    []string{"inbox", "sent"},
+	}
+
+	tests := []struct {
+		name string
+		cfg  *Config
+		acct AccountConfig
+		want FoldersConfig
+	}{
+		{
+			name: "empty account folders inherit global as-is",
+			cfg:  &Config{Folders: globalFolders},
+			acct: AccountConfig{},
+			want: globalFolders,
+		},
+		{
+			name: "sparse override only changes that field",
+			cfg:  &Config{Folders: globalFolders},
+			acct: AccountConfig{Folders: AccountFoldersConfig{Sent: "[Gmail]/Sent Mail"}},
+			want: func() FoldersConfig {
+				f := globalFolders
+				f.Sent = "[Gmail]/Sent Mail"
+				return f
+			}(),
+		},
+		{
+			name: "full override of all four account-level fields, non-overridable stay global",
+			cfg:  &Config{Folders: globalFolders},
+			acct: AccountConfig{Folders: AccountFoldersConfig{
+				Sent:   "[Gmail]/Sent Mail",
+				Trash:  "[Gmail]/Trash",
+				Drafts: "[Gmail]/Drafts",
+				Spam:   "[Gmail]/Spam",
+			}},
+			want: FoldersConfig{
+				Inbox:       "INBOX",
+				Sent:        "[Gmail]/Sent Mail",
+				Trash:       "[Gmail]/Trash",
+				Drafts:      "[Gmail]/Drafts",
+				ToScreen:    "ToScreen",
+				Feed:        "Feed",
+				PaperTrail:  "PaperTrail",
+				ScreenedOut: "ScreenedOut",
+				Archive:     "Archive",
+				Waiting:     "Waiting",
+				Scheduled:   "Scheduled",
+				Someday:     "Someday",
+				Spam:        "[Gmail]/Spam",
+				Work:        "Work",
+				TabOrder:    []string{"inbox", "sent"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.ResolveFolders(tt.acct)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ResolveFolders() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}

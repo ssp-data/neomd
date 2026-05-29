@@ -322,6 +322,70 @@ BR Simon
 - The `text` field is backward compatible: if empty, neomd falls back to the legacy `signature` field
 - The `--` separator is added automatically before the text signature
 
+## Account signatures
+
+Dedicated account signatures are supported. To configure a signature only associated to certain account, create a `[accounts.signature_block]` under the account configuration. If an account signature is not created, NeoMD will default to the `[ui.signature_block]`
+
+```toml
+[[accounts]]
+name = "Personal"
+# ...
+[accounts.signature_block]
+text = "*Personal signature*"
+```
+
+Both text and HTML signatures are supported.
+
+## Account folders
+
+Some IMAP providers have different names for the some of the folders used by neomd. Because these folder names might conflict between providers, dedicated folders per account are supported for the following:
+- Sent
+- Drafts
+- Spam
+- Trash
+
+For example, Gmail use a label in front of these, like `[Gmail]Sent` while Microsoft uses `Sent Items` for Office365 accounts. 
+
+The folder configuration per account override the default folder names for the account specified. Below is an example how to configure this:
+
+```toml
+[[accounts]]
+  name = "Personal"
+  auth_type = "plain"
+  imap = "smtp.gmail.com:993"
+  smtp = "smtp.gmail.com:587"
+  user = "example@gmail.com"
+  # ...
+[accounts.folders]
+  sent = "[Gmail]/Sent"
+  trash = "[Gmail]/Trash"
+  drafts = "[Gmail]/Drafts"
+  spam = "[Gmail]/Spam"
+
+[[accounts]]
+  name = "Work"
+  auth_type = "oauth2"
+  imap = "outlook.office365.com:993"
+  smtp = "smtp.office365.com:587"
+  #...
+[accounts.folders]
+  sent = "Sent Items"
+
+[folders]
+  inbox = "INBOX"
+  sent = "Sent"
+  trash = "Trash"
+  drafts = "Drafts"
+  to_screen = "ToScreen"
+  feed = "Feed"
+  papertrail = "PaperTrail"
+  screened_out = "ScreenedOut"
+  archive = "Archive"
+  waiting = "Waiting"
+  scheduled = "Scheduled"
+  someday = "Someday"
+  spam = "Spam"
+```
 
 ## Theming
 
