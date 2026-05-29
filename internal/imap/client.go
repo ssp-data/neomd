@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"regexp"
 	"sort"
 	"strings"
@@ -1579,13 +1580,43 @@ func stripHTMLFallback(h string) string {
 	return strings.TrimSpace(strings.Join(out, "\n"))
 }
 
+// isNetErr reports whether err looks like a transient network failure that
+// should trigger a reconnect. Covers:
+//   - net.ErrClosed / io.EOF / io.ErrUnexpectedEOF (typed checks)
+//   - any error implementing net.Error with Timeout() == true
+//   - common substring patterns from TLS, syscall, and DNS layers that don't
+//     unwrap cleanly to a typed sentinel
 func isNetErr(err error) bool {
 	if err == nil {
 		return false
 	}
+	if errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
 	s := err.Error()
-	return strings.Contains(s, "use of closed network connection") ||
-		strings.Contains(s, "connection reset by peer") ||
-		strings.Contains(s, "broken pipe") ||
-		strings.Contains(s, "EOF")
+	patterns := []string{
+		"use of closed network connection",
+		"connection reset by peer",
+		"broken pipe",
+		"EOF",
+		"i/o timeout",
+		"connection timed out",
+		"connection refused",
+		"no route to host",
+		"network is unreachable",
+		"tls: ",          // generic TLS failures (tls: connection lost, etc.)
+		"unexpected EOF", // some libs format EOF differently
+	}
+	for _, p := range patterns {
+		if strings.Contains(s, p) {
+			return true
+		}
+	}
+	return false
 }

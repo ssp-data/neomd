@@ -115,8 +115,17 @@ func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, spyPixels i
 	if e.BCC != "" {
 		lines = append(lines, styleDate.Render("Bcc:     ")+e.BCC)
 	}
+	// displaySafe collapses complex-script runs to '·' so the rounded-border
+	// box doesn't wrap or misalign when the subject contains chars whose
+	// terminal-cell width disagrees with runewidth (Bengali, CJK, emoji, …).
+	// Then truncate to fit inside the box: border(2) + padding(2) + "Subject: "(9) = 13.
+	subjMax := width - 13
+	if subjMax < 8 {
+		subjMax = 8
+	}
+	subjVal := truncate(displaySafe(e.Subject), subjMax)
 	lines = append(lines,
-		styleSubject.Render("Subject: ")+e.Subject,
+		styleSubject.Render("Subject: ")+subjVal,
 		styleDate.Render("Date:    ")+fmtDateFull(e.Date),
 	)
 
@@ -143,8 +152,6 @@ func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, spyPixels i
 	}
 
 	content := strings.Join(lines, "\n")
-	_ = width
-
 	return styleEmailMeta.Render(content) + "\n"
 }
 

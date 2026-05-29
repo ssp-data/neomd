@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 )
 
 // Category is the inbox bucket for a sender.
@@ -51,7 +52,13 @@ type Config struct {
 }
 
 // Screener holds loaded allowlists in memory for fast classification.
+//
+// All exported methods are safe for concurrent use: mu guards every map.
+// Auto-screen, background sync, search, notify, and TUI mutation paths all
+// touch the same Screener, so we need explicit synchronisation — concurrent
+// map writes panic in Go.
 type Screener struct {
+	mu          sync.RWMutex
 	cfg         Config
 	screenedIn  map[string]bool
 	screenedOut map[string]bool
@@ -104,6 +111,8 @@ func New(cfg Config) (*Screener, error) {
 // IsEmpty returns true when all screener lists are empty (no senders classified yet).
 // This typically means neomd is running for the first time or lists were cleared.
 func (s *Screener) IsEmpty() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return len(s.screenedIn) == 0 && len(s.screenedOut) == 0 &&
 		len(s.feed) == 0 && len(s.paperTrail) == 0 && len(s.spam) == 0
 }
@@ -112,6 +121,8 @@ func (s *Screener) IsEmpty() bool {
 // from screened_in, feed, and papertrail lists. Useful for autocomplete.
 // Excludes screened_out and spam since you wouldn't want to email those.
 func (s *Screener) AllAddresses() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	seen := make(map[string]bool)
 	var addrs []string
 	for _, m := range []map[string]bool{s.screenedIn, s.feed, s.paperTrail} {
@@ -135,6 +146,8 @@ func (s *Screener) AllAddresses() []string {
 // crucially the per-list priority itself (spam > out > feed > papertrail >
 // in) is preserved across both passes by iterating the lists in order twice.
 func (s *Screener) Classify(from string) Category {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	addr := normalise(from)
 	switch {
 	case s.spam[addr]:
@@ -177,6 +190,8 @@ func (s *Screener) ClassifyDebug(from string) (Category, string) {
 // sender. True when from (or its domain via "@domain.tld") is in notify.txt.
 // Independent of the screening Category: notify and screening are orthogonal.
 func (s *Screener) ShouldNotify(from string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if len(s.notify) == 0 {
 		return false
 	}
@@ -197,6 +212,8 @@ func matchAddr(addr string, set map[string]bool) bool {
 // Independent of the screening category — does not touch screened_in /
 // screened_out / feed / papertrail / spam.
 func (s *Screener) AddNotify(from string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.cfg.Notify == "" {
 		return fmt.Errorf("notify list path not configured (set [screener].notify in config.toml)")
 	}
@@ -205,6 +222,8 @@ func (s *Screener) AddNotify(from string) error {
 
 // RemoveNotify deletes a sender (or "@domain" entry) from notify.txt.
 func (s *Screener) RemoveNotify(from string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.cfg.Notify == "" {
 		return nil
 	}
@@ -223,25 +242,27 @@ func domainMatch(addr string, set map[string]bool) bool {
 
 // Approve adds addr to screened_in.txt and removes it from all conflicting lists.
 func (s *Screener) Approve(from string) error {
-	snap := s.Snapshot()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap := s.snapshotLocked()
 	if err := s.removeFromList(s.cfg.ScreenedOut, s.screenedOut, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.Feed, s.feed, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.PaperTrail, s.paperTrail, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.Spam, s.spam, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.addToList(s.cfg.ScreenedIn, s.screenedIn, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	return nil
@@ -249,25 +270,27 @@ func (s *Screener) Approve(from string) error {
 
 // Block adds addr to screened_out.txt and removes it from all conflicting lists.
 func (s *Screener) Block(from string) error {
-	snap := s.Snapshot()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap := s.snapshotLocked()
 	if err := s.removeFromList(s.cfg.ScreenedIn, s.screenedIn, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.Feed, s.feed, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.PaperTrail, s.paperTrail, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.Spam, s.spam, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.addToList(s.cfg.ScreenedOut, s.screenedOut, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	return nil
@@ -275,25 +298,27 @@ func (s *Screener) Block(from string) error {
 
 // MarkSpam adds addr to spam.txt and removes it from all conflicting lists.
 func (s *Screener) MarkSpam(from string) error {
-	snap := s.Snapshot()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap := s.snapshotLocked()
 	if err := s.removeFromList(s.cfg.ScreenedIn, s.screenedIn, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.ScreenedOut, s.screenedOut, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.Feed, s.feed, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.PaperTrail, s.paperTrail, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.addToList(s.cfg.Spam, s.spam, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	return nil
@@ -301,25 +326,27 @@ func (s *Screener) MarkSpam(from string) error {
 
 // MarkFeed adds addr to feed.txt and removes it from all conflicting lists.
 func (s *Screener) MarkFeed(from string) error {
-	snap := s.Snapshot()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap := s.snapshotLocked()
 	if err := s.removeFromList(s.cfg.ScreenedIn, s.screenedIn, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.ScreenedOut, s.screenedOut, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.PaperTrail, s.paperTrail, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.Spam, s.spam, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.addToList(s.cfg.Feed, s.feed, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	return nil
@@ -327,25 +354,27 @@ func (s *Screener) MarkFeed(from string) error {
 
 // MarkPaperTrail adds addr to papertrail.txt and removes it from all conflicting lists.
 func (s *Screener) MarkPaperTrail(from string) error {
-	snap := s.Snapshot()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap := s.snapshotLocked()
 	if err := s.removeFromList(s.cfg.ScreenedIn, s.screenedIn, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.ScreenedOut, s.screenedOut, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.Feed, s.feed, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.removeFromList(s.cfg.Spam, s.spam, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	if err := s.addToList(s.cfg.PaperTrail, s.paperTrail, from); err != nil {
-		s.Restore(snap)
+		s.restoreLocked(snap)
 		return err
 	}
 	return nil
@@ -361,6 +390,13 @@ func cloneSet(src map[string]bool) map[string]bool {
 
 // Snapshot captures the current screener state so a caller can roll back.
 func (s *Screener) Snapshot() Snapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.snapshotLocked()
+}
+
+// snapshotLocked is the lock-free variant for callers that already hold s.mu.
+func (s *Screener) snapshotLocked() Snapshot {
 	return Snapshot{
 		ScreenedIn:  cloneSet(s.screenedIn),
 		ScreenedOut: cloneSet(s.screenedOut),
@@ -384,6 +420,13 @@ func writeSet(path string, m map[string]bool) error {
 
 // Restore rewrites all screener list files and in-memory sets from a snapshot.
 func (s *Screener) Restore(snapshot Snapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.restoreLocked(snapshot)
+}
+
+// restoreLocked is the lock-free variant for callers that already hold s.mu.
+func (s *Screener) restoreLocked(snapshot Snapshot) error {
 	if err := writeSet(s.cfg.ScreenedIn, snapshot.ScreenedIn); err != nil {
 		return err
 	}

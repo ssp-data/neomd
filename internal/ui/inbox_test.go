@@ -2,13 +2,22 @@ package ui
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/mattn/go-runewidth"
 	"github.com/sspaeti/neomd/internal/imap"
 )
+
+// ansiRe strips CSI sequences added by lipgloss for colour/style so the
+// remaining cell-width measurement reflects only visible glyphs.
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+
+func stripANSI(s string) string         { return ansiRe.ReplaceAllString(s, "") }
+func runewidthStringWidth(s string) int { return runewidth.StringWidth(s) }
 
 // renderRow renders a single emailItem via emailDelegate and returns the raw string.
 func renderRow(item emailItem, width int) string {
@@ -104,6 +113,74 @@ func TestReplyIndicatorWithThread(t *testing.T) {
 			t.Errorf("expected thread root prefix ╰, got: %s", row)
 		}
 	})
+}
+
+func TestDisplaySafe(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"ascii passes through", "Hello, World!", "Hello, World!"},
+		{"german umlauts pass through", "Grüße aus München, schön & groß", "Grüße aus München, schön & groß"},
+		{"greek passes through", "Καλημέρα", "Καλημέρα"},
+		{"cyrillic passes through", "Привет мир", "Привет мир"},
+		{"bengali word collapses to dot", "আপনার", "·"},
+		{"two bengali words separated by space", "আপনার দর্শকদের", "· ·"},
+		{"cjk collapses to single dot", "こんにちは世界", "·"},
+		{"arabic two words", "مرحبا بالعالم", "· ·"},
+		{"emoji collapses to single dot", "🚀🎉", "·"},
+		{"mixed runs keep ascii context", "Re: আপনার and back to ASCII", "Re: · and back to ASCII"},
+		{"trailing variation selector dropped", "werden︅", "werden"},
+		{"long bengali subject — one dot per space-separated word", "Re: আপনার দর্শকদের জন্য একটি আকর্ষণীয় বিষয়বস্তু", "Re: · · · · · ·"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := displaySafe(tc.in)
+			if got != tc.want {
+				t.Errorf("displaySafe(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRowFitsTerminalWidth is the regression for the "bubbles list loses its
+// top row when cursoring through a Bengali subject" bug. The invariant is
+// that no row's rendered cell width exceeds the requested terminal width —
+// if it does, the terminal soft-wraps and the list miscounts visible rows.
+func TestRowFitsTerminalWidth(t *testing.T) {
+	subjects := []string{
+		"Plain ASCII subject",
+		"Grüße aus München, schön & groß",                                            // Latin-1
+		"Re: আপনার দর্শকদের জন্য একটি আকর্ষণীয় বিষয়বস্তু",                                         // Bengali (was breaking)
+		"日本語のテストメールです件名サンプル",                                                              // Japanese
+		"한국어 제목 테스트입니다",                                                                     // Korean
+		"العربية موضوع البريد الإلكتروني",                                                  // Arabic
+		"Zahlungsmethode muss aktualisiert werden︅",                              // trailing variation selector
+		"🚀 Mixed emoji and text 🎉",                                                    // emoji
+	}
+	widths := []int{80, 120, 190}
+	for _, w := range widths {
+		for _, subj := range subjects {
+			row := renderRow(emailItem{
+				email: imap.Email{
+					UID:     1,
+					From:    "Someone <someone@example.com>",
+					Subject: subj,
+					Date:    time.Now(),
+					Seen:    true,
+					Size:    1024,
+				},
+				index: 1,
+			}, w)
+			// Strip ANSI escapes before measuring — lipgloss adds them for colour.
+			plain := stripANSI(row)
+			if got := runewidthStringWidth(plain); got > w {
+				t.Errorf("width=%d subject=%q: rendered row is %d cells (> %d)\n  row: %q",
+					w, subj, got, w, plain)
+			}
+		}
+	}
 }
 
 func TestSendDoneMsgUpdatesAnsweredFlag(t *testing.T) {

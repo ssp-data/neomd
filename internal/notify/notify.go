@@ -153,7 +153,7 @@ func (n *Notifier) MaybeNotify(account, sourceIMAP, sourceLabel string, emails [
 			continue
 		}
 		res.FolderAllowed++
-		title := "neomd: " + truncate(e.From, 80)
+		title := "󱡯: :" + truncate(e.From, 80)
 		body := e.Subject
 		if body == "" {
 			body = "(no subject)"

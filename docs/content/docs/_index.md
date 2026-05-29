@@ -211,7 +211,8 @@ neomd moves, deletes, and modifies emails directly on your IMAP server. These op
 {{< callout type="info" >}}
 **Optional Neovim & file picker helpers:**
 - `yazi` enables the built-in file picker used by pre-send `a`
-- custom Neovim integration in `custom.lua` enables inline `<leader>a` attachment insertion inside `neomd-*.md` buffers
+- custom Neovim integration in [`custom.lua`](https://github.com/sspaeti/dotfiles/blob/master/nvim/.config/nvim/lua/sspaeti/custom.lua) enables inline `<leader>a` attachment insertion inside `neomd-*.md` buffers
+- a tiny [yazi `init.lua`](https://github.com/sspaeti/dotfiles/blob/master/yazi/.config/yazi/init.lua) snippet (`ps.sub("cd", ...)` guard on `rt.args.chooser_file`) is recommended — it clears any stale yazi selection on every `cd`, so a stray `<Space>` (yazi's toggle-selection key) in the picker can't cause `--chooser-file` to write the wrong path. Only fires in chooser mode; standalone yazi usage is unaffected.
 - a small `markdown.lua` plugin spec gives you **live, beautiful rendered Markdown** (headings, code blocks, callouts) while composing — see [Beautiful Markdown Composer with Live-Preview in Neovim](https://neomd.ssp.sh/docs/sending/#beautiful-markdown-composer-with-live-preview-in-neovim)
 - without these, neomd still works; the inline Neovim attachment workflow and live rendering just won't be available
 {{< /callout >}}

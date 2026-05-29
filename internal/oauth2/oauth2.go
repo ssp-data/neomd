@@ -192,26 +192,48 @@ func runAuthFlow(ctx context.Context, cfg Config, oc *oauth2.Config) (*oauth2.To
 
 	mux := http.NewServeMux()
 	srv := &http.Server{Handler: mux}
+	// Non-blocking sends throughout: errCh / codeCh are buffered (size 1) but
+	// the browser may hit /callback more than once (refresh, double-redirect).
+	// A blocking send on a full channel would leak the handler goroutine.
+	sendErr := func(err error) {
+		select {
+		case errCh <- err:
+		default:
+		}
+	}
+	sendCode := func(code string) {
+		select {
+		case codeCh <- code:
+		default:
+		}
+	}
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("state") != state {
 			http.Error(w, "state mismatch", http.StatusBadRequest)
-			errCh <- fmt.Errorf("oauth2 state mismatch")
+			sendErr(fmt.Errorf("oauth2 state mismatch"))
 			return
 		}
 		code := r.URL.Query().Get("code")
 		if code == "" {
 			http.Error(w, "missing code", http.StatusBadRequest)
-			errCh <- fmt.Errorf("oauth2 callback: missing code parameter")
+			sendErr(fmt.Errorf("oauth2 callback: missing code parameter"))
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintln(w, successHTML)
-		codeCh <- code
+		sendCode(code)
 	})
 
 	go func() {
+		// Recover panics so a runtime error in net/http doesn't tear down the
+		// whole process — the auth flow simply fails and we report it.
+		defer func() {
+			if r := recover(); r != nil {
+				sendErr(fmt.Errorf("oauth2 callback server panicked: %v", r))
+			}
+		}()
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			errCh <- err
+			sendErr(err)
 		}
 	}()
 	defer srv.Close()

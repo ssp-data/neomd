@@ -6,9 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"unicode"
+
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	"github.com/sspaeti/neomd/internal/imap"
 )
 
@@ -111,20 +114,18 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	} else if d.draftFolder != "" && e.email.Folder == d.draftFolder {
 		sender = "→ " + e.email.To // show recipient in Drafts
 	}
-	from := truncate(cleanFrom(sender), fromMax)
+	from := truncate(displaySafe(cleanFrom(sender)), fromMax)
 	subjectText := e.email.Subject
 	if e.displaySubj != "" {
 		subjectText = e.displaySubj
 	}
-	subject := truncate(subjectText, subjectMax)
+	subject := truncate(displaySafe(subjectText), subjectMax)
 
 	if isSelected {
-		row := fmt.Sprintf("%s%s%s%s%s%s%s%-*s  %-*s  %s",
-			num, flag, replyStr, threadStr, dateStr, attachStr, spyStr,
-			fromMax, from,
-			subjectMax, subject,
-			sizeStr,
-		)
+		row := num + flag + replyStr + threadStr + dateStr + attachStr + spyStr +
+			padRight(from, fromMax) + "  " +
+			padRight(subject, subjectMax) + "  " +
+			sizeStr
 		fmt.Fprint(w, styleSelected.Render(row))
 		return
 	}
@@ -158,8 +159,8 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		fromStyle = lipgloss.NewStyle().Foreground(colorAuthorUnread).Bold(true)
 		subStyle = lipgloss.NewStyle().Foreground(colorSubjectUnread).Bold(true)
 	}
-	fromS := fromStyle.Render(fmt.Sprintf("%-*s", fromMax, from))
-	subS := subStyle.Render(fmt.Sprintf("%-*s", subjectMax, subject))
+	fromS := fromStyle.Render(padRight(from, fromMax))
+	subS := subStyle.Render(padRight(subject, subjectMax))
 	sizeS := lipgloss.NewStyle().Foreground(colorSizeCol).Render(sizeStr)
 
 	fmt.Fprint(w, numS+flagS+replyS+threadS+dateS+attachS+spyS+fromS+"  "+subS+"  "+sizeS)
@@ -215,20 +216,99 @@ func fmtDate(t time.Time) string {
 	return t.Format("Jan 06")
 }
 
+// displaySafe collapses every run of characters from scripts whose
+// terminal-cell-width is unpredictable (Bengali, CJK, Arabic, emoji,
+// combining marks, variation selectors …) into a single '·' placeholder.
+// Latin-derived scripts and common punctuation pass through unchanged.
+//
+// Why so blunt: terminal emulators and width libraries disagree on how many
+// cells a Bengali / Devanagari / CJK grapheme cluster occupies (see the
+// "Grapheme Clusters and Terminal Emulators" write-up and lipgloss #562).
+// Anything we measure with runewidth/uniseg can render wider in foot or
+// kitty, overflowing the row and making the bubbles list lose its top
+// when the cursor moves. Replacing the unpredictable runs with a single
+// 1-cell character gives every row a width we can actually control, at
+// the cost of not showing the original glyphs in the list. The reader
+// view applies the same transform so the rounded-border header box and
+// the body's first lines stay aligned.
+func displaySafe(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inMarker := false
+	for _, r := range s {
+		// Zero-width chars (combining marks, variation selectors, format chars)
+		// are silently dropped — keeps "werden︅" rendering as "werden" instead
+		// of "werden·". Doesn't reset inMarker so they also don't visually
+		// re-open a placeholder inside an already-collapsed unsafe run.
+		if unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || unicode.Is(unicode.Cf, r) {
+			continue
+		}
+		if safeForDisplay(r) {
+			b.WriteRune(r)
+			inMarker = false
+			continue
+		}
+		if !inMarker {
+			b.WriteRune('·')
+			inMarker = true
+		}
+	}
+	return b.String()
+}
+
+// safeForDisplay reports whether r is safe to render directly in a width-
+// constrained TUI column. Latin scripts, Greek, Cyrillic, common
+// punctuation, and ASCII control whitespace are safe; everything else
+// (complex scripts, emoji, combining marks, variation selectors) is not.
+func safeForDisplay(r rune) bool {
+	switch {
+	case r == '\t' || r == '\n' || r == '\r':
+		return true
+	case r < 0x20 || r == 0x7F:
+		return false
+	case r < 0x80:
+		return true
+	case r >= 0xA0 && r <= 0x024F:
+		// Latin-1 Supplement + Latin Extended A/B (umlauts, ß, accented letters)
+		return true
+	case r >= 0x1E00 && r <= 0x1EFF:
+		// Latin Extended Additional
+		return true
+	case r >= 0x0370 && r <= 0x03FF:
+		// Greek
+		return true
+	case r >= 0x0400 && r <= 0x04FF:
+		// Cyrillic
+		return true
+	case r >= 0x2010 && r <= 0x205E:
+		// General punctuation (en/em dash, quotes, ellipsis, …)
+		return true
+	case r >= 0x20A0 && r <= 0x20CF:
+		// Currency symbols
+		return true
+	}
+	return false
+}
+
+// truncate shortens s to fit within max terminal cells, appending "…" when
+// truncated. Assumes the caller has passed s through displaySafe so every
+// rune has predictable cell width.
 func truncate(s string, max int) string {
 	s = strings.TrimSpace(s)
 	if max <= 0 {
 		return ""
 	}
-	// Count runes not bytes for proper unicode truncation
-	runes := []rune(s)
-	if len(runes) <= max {
+	return runewidth.Truncate(s, max, "…")
+}
+
+// padRight right-pads s with spaces so its display width equals w cells.
+// Assumes s has been passed through displaySafe.
+func padRight(s string, w int) string {
+	pad := w - runewidth.StringWidth(s)
+	if pad <= 0 {
 		return s
 	}
-	if max <= 1 {
-		return "…"
-	}
-	return string(runes[:max-1]) + "…"
+	return s + strings.Repeat(" ", pad)
 }
 
 // newInboxList creates a bubbles/list configured for the email inbox.

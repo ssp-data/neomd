@@ -2101,7 +2101,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if !m.spyScannedKeys[key] {
 				m.spyScannedKeys[key] = true
-				safeGo(func() { saveSpyPixelCache(copyMap(m.spyPixelKeys), copyMap(m.spyScannedKeys)) })
+				// Snapshot maps before launching the goroutine — copyMap must
+				// run on the main goroutine so it cannot race with subsequent
+				// bodyLoadedMsg / spyScanProgressMsg mutations.
+				spy := copyMap(m.spyPixelKeys)
+				scn := copyMap(m.spyScannedKeys)
+				safeGo(func() { saveSpyPixelCache(spy, scn) })
 			}
 		}
 		// Store References header in the email struct for threading
@@ -2377,7 +2382,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Save cache and rebuild inbox on the main goroutine.
 		if len(msg.scannedKeys) > 0 {
-			safeGo(func() { saveSpyPixelCache(copyMap(m.spyPixelKeys), copyMap(m.spyScannedKeys)) })
+			// Copy under the main goroutine — see comment in bodyLoadedMsg.
+			spy := copyMap(m.spyPixelKeys)
+			scn := copyMap(m.spyScannedKeys)
+			safeGo(func() { saveSpyPixelCache(spy, scn) })
 		}
 		return m, m.applyFilter()
 
@@ -2576,7 +2584,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// as [attach] lines via appendAttachments, so a replace here is correct —
 		// append would duplicate them.
 		inlineAttach, cleanBody := extractInlineAttachments(stripPrelude(msg.body))
-		m.attachments = inlineAttach
+		validAttach, skippedAttach := filterValidAttachments(inlineAttach)
+		m.attachments = validAttach
 		m.applyEditedFrom(msg.from)
 
 		// Go to pre-send review instead of sending immediately.
@@ -2600,20 +2609,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.state = statePresend
-		m.status = ""
-		m.isError = false
+		if len(skippedAttach) > 0 {
+			m.status = fmt.Sprintf("⚠ Skipped %d invalid attachment path(s) (not a regular file): %s", len(skippedAttach), strings.Join(skippedAttach, ", "))
+			m.isError = true
+		} else {
+			m.status = ""
+			m.isError = false
+		}
 		return m, nil
 
 	case attachPickDoneMsg:
-		m.attachments = append(m.attachments, msg.paths...)
-		if len(msg.paths) > 0 {
-			m.status = fmt.Sprintf("Attached %d file(s).", len(msg.paths))
+		validPicked, skippedPicked := filterValidAttachments(msg.paths)
+		m.attachments = append(m.attachments, validPicked...)
+		switch {
+		case len(skippedPicked) > 0:
+			m.status = fmt.Sprintf("⚠ Skipped %d invalid path(s): %s", len(skippedPicked), strings.Join(skippedPicked, ", "))
+			m.isError = true
+		case len(validPicked) > 0:
+			m.status = fmt.Sprintf("Attached %d file(s).", len(validPicked))
 		}
 		return m, nil
 
 	case tea.KeyMsg:
-		// ? opens help from any state; q/esc/? closes it
-		if msg.String() == "?" {
+		// ? opens/closes help — but only from states without active text input.
+		// stateCompose feeds keys into a textinput where the user must be able
+		// to type "?" verbatim (To/CC/BCC/Subject fields). Other states either
+		// use single-letter command keys (Inbox, Reading, Presend, Reaction)
+		// or are dismissed by any key (Welcome) — safe to intercept there.
+		if msg.String() == "?" && m.state != stateCompose {
 			if m.state == stateHelp {
 				m.state = m.prevState
 			} else {
@@ -2665,7 +2688,12 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cmdText = ""
 			if input != "" {
 				m.cmdHistory = addCmdHistory(m.cmdHistory, input)
-				go saveCmdHistory(config.HistoryPath(), m.cmdHistory)
+				// Snapshot before launching: addCmdHistory returns a fresh
+				// slice, but future calls in this goroutine could grow it
+				// while the writer is still serialising — pass a copy.
+				hist := append([]string(nil), m.cmdHistory...)
+				path := config.HistoryPath()
+				safeGo(func() { saveCmdHistory(path, hist) })
 			}
 			if cmd := matchCmd(input); cmd != nil {
 				result, c := cmd.run(&m)
@@ -3133,7 +3161,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Pre-select the correct From address before fetching body.
-		if idx := m.matchFromIndex(e.To, e.CC); idx >= 0 {
+		if idx := m.matchFromForReply(e); idx >= 0 {
 			m.presendFromI = idx
 		}
 		m.pendingReply = true
@@ -3145,7 +3173,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if e == nil {
 			return m, nil
 		}
-		if idx := m.matchFromIndex(e.To, e.CC); idx >= 0 {
+		if idx := m.matchFromForReply(e); idx >= 0 {
 			m.presendFromI = idx
 		}
 		m.pendingReplyAll = true
@@ -3157,7 +3185,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if e == nil {
 			return m, nil
 		}
-		if idx := m.matchFromIndex(e.To, e.CC); idx >= 0 {
+		if idx := m.matchFromForReply(e); idx >= 0 {
 			m.presendFromI = idx
 		}
 		// Always fetch body first (needed for quoted message in reaction)
@@ -4018,7 +4046,12 @@ func (m Model) downloadOpenAttachmentCmd(a imap.Attachment) tea.Cmd {
 			return attachOpenDoneMsg{err: fmt.Errorf("create Downloads: %w", err)}
 		}
 		// Avoid overwriting existing files by appending a counter before the extension.
+		// Reject filenames that would escape the Downloads dir when joined.
+		// filepath.Base("..") returns "..", filepath.Base("") returns ".".
 		base := filepath.Base(a.Filename)
+		if base == "" || base == "." || base == ".." || base == "/" || strings.ContainsRune(base, os.PathSeparator) {
+			base = fmt.Sprintf("attachment-%d", time.Now().Unix())
+		}
 		dst := filepath.Join(dir, base)
 		if _, err := os.Stat(dst); err == nil {
 			ext := filepath.Ext(base)
@@ -4264,10 +4297,11 @@ func (m Model) openICSCmd() tea.Cmd {
 	}
 	// Path traversal hardening: filepath.Base() strips any directory
 	// components the sender may have stuck in Content-Disposition: filename
-	// (e.g. "../../../.bashrc" → ".bashrc"). The result is then joined under
-	// the cache dir so we can never write outside ~/.cache/neomd/ical/.
+	// (e.g. "../../../.bashrc" → ".bashrc"). Note that filepath.Base("..")
+	// returns ".." and filepath.Base("") returns "." — both would escape the
+	// cache dir when joined, so reject them and fall back to a safe default.
 	name := filepath.Base(att.Filename)
-	if name == "" || name == "." || name == "/" {
+	if name == "" || name == "." || name == ".." || name == "/" || strings.ContainsRune(name, os.PathSeparator) {
 		name = fmt.Sprintf("invite-%d.ics", time.Now().Unix())
 	}
 	dst := filepath.Join(dir, name)
@@ -5116,7 +5150,8 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 
 	// Auto-select the From address that matches the email's To/CC field.
 	// E.g. if email was sent to simon@ssp.sh, reply from simon@ssp.sh.
-	if idx := m.matchFromIndex(e.To, e.CC); idx >= 0 {
+	// In Sent folder, the user's own address is in From instead.
+	if idx := m.matchFromForReply(e); idx >= 0 {
 		m.presendFromI = idx
 	}
 
@@ -5235,6 +5270,16 @@ func (m Model) matchFromIndex(toField, ccField string) int {
 		}
 	}
 	return -1
+}
+
+// matchFromForReply picks the right From index for a reply. In the Sent folder
+// the user's own address lives in e.From (e.To is the original recipient);
+// elsewhere it lives in e.To/CC.
+func (m Model) matchFromForReply(e *imap.Email) int {
+	if len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent {
+		return m.matchFromIndex(e.From, "")
+	}
+	return m.matchFromIndex(e.To, e.CC)
 }
 
 func (m Model) matchFromAddress(from string) int {
@@ -5376,6 +5421,25 @@ func injectAttachmentsIntoPrelude(prelude string, paths []string) string {
 	return prelude[:idx+1] + b.String() + prelude[idx+1:]
 }
 
+// filterValidAttachments returns paths pointing to existing regular files.
+// Anything missing, a directory, or otherwise non-regular is split out into
+// 'skipped' so the caller can surface it. Silently attaching such a path makes
+// the SMTP send fail with "is a directory", or — worse — attach the wrong
+// file's contents if the path happens to be readable. Seen in the wild when
+// the yazi file picker (invoked via <leader>a in nvim or `a` in pre-send)
+// returns the path under the cursor rather than the path the user intended.
+func filterValidAttachments(paths []string) (valid, skipped []string) {
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil || !info.Mode().IsRegular() {
+			skipped = append(skipped, p)
+			continue
+		}
+		valid = append(valid, p)
+	}
+	return
+}
+
 // extractInlineAttachments scans body for [attach] /path lines and removes
 // them, returning the file paths separately. Two forms are recognized:
 //   - "[attach] /path"   — used by the <leader>a yazi helper in neovim for
@@ -5416,8 +5480,9 @@ func extractInlineAttachments(body string) (files []string, clean string) {
 		if !header && imageExts[strings.ToLower(filepath.Ext(rest))] {
 			// Inline: replace with markdown image ref so position is preserved.
 			// Images placed via <leader>a inline use plain "[attach] /img" and
-			// render where the user put them.
-			kept = append(kept, "![]("+rest+")")
+			// render where the user put them. Angle-bracket destination
+			// (CommonMark) lets goldmark parse paths containing spaces.
+			kept = append(kept, "![](<"+rest+">)")
 		} else {
 			files = append(files, rest)
 		}

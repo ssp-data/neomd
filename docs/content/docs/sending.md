@@ -162,6 +162,20 @@ Attachments are tightly integrated with both the pre-send screen and neovim.
 **Requires** [custom.lua](https://github.com/sspaeti/dotfiles/blob/master/nvim/.config/nvim/lua/sspaeti/custom.lua) added to your neovim config, and [yazi](https://github.com/sxyazi/yazi) installed.
 {{< /callout >}}
 
+{{< callout type="warning" >}}
+**Recommended: add the yazi-side selection-guard from [my yazi `init.lua`](https://github.com/sspaeti/dotfiles/blob/master/yazi/.config/yazi/init.lua).** When yazi is launched with `--chooser-file` (how neomd opens it), pressing `<Enter>` runs yazi's `open`, which writes the **selected** file(s) if any are selected, otherwise the hovered file (see `yazi-actor/src/mgr/open.rs:23-31`). A single stray `<Space>` press in yazi toggles selection on the file under cursor — and that selection survives a `cd`, so navigating to `~/Downloads` via `gd` / `Z` and pressing Enter on your PDF can write the wrong path (e.g. a directory from the launch dir) to the chooser file. The snippet below clears any selection on every `cd` *only when yazi was launched with `--chooser-file`*, so normal interactive yazi usage is untouched:
+
+```lua
+ps.sub("cd", function()
+  if rt.args.chooser_file then
+    ya.emit("escape", { select = true })
+  end
+end)
+```
+
+If you skip this, neomd's Go-side guard (`filterValidAttachments`) still catches the obvious failure — a directory written as the path will be rejected with a red warning on the pre-send screen instead of attached or sent.
+{{< /callout >}}
+
 neomd strips `[attach]` lines before sending:
 - **Image files** (`.png`, `.jpg`, `.gif`, `.webp`, `.svg`) → embedded inline in the HTML body; recipients see the image at that position
 - **Other files** → appended as a regular MIME attachment

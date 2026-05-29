@@ -139,8 +139,21 @@ func main() {
 
 	// Fork: run either headless daemon or TUI
 	if *headless {
-		// Headless daemon mode: run background screening loop
-		d := daemon.New(*cfg, imapClients[0], sc)
+		// Headless daemon mode: run background screening loop. Find the first
+		// IMAP-enabled account — imap_disabled accounts have a nil client and
+		// would crash the daemon's screening loop.
+		var daemonCli *goIMAP.Client
+		for _, c := range imapClients {
+			if c != nil {
+				daemonCli = c
+				break
+			}
+		}
+		if daemonCli == nil {
+			fmt.Fprintln(os.Stderr, "neomd: --headless requires at least one IMAP-enabled account")
+			os.Exit(1)
+		}
+		d := daemon.New(*cfg, daemonCli, sc)
 		if err := d.Run(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "neomd: daemon error: %v\n", err)
 			os.Exit(1)

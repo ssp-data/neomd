@@ -249,6 +249,49 @@ func TestBuildMessage_WithInlineImage(t *testing.T) {
 	}
 }
 
+// Regression: a local image whose path contains spaces (written by
+// extractInlineAttachments as `![](<path>)` so goldmark accepts it) must
+// still embed inline. Goldmark percent-encodes the destination, so the
+// path captured from <img src="..."> needs URL-unescaping before
+// os.ReadFile, otherwise the image is silently lost from the sent mail.
+func TestBuildMessage_InlineImagePathWithSpaces(t *testing.T) {
+	dir := t.TempDir()
+	subdir := filepath.Join(dir, "a folder with spaces")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	imgPath := filepath.Join(subdir, "img with space.png")
+	create1x1PNG(t, imgPath)
+
+	// extractInlineAttachments emits angle-bracket CommonMark form so the
+	// path with spaces is accepted as an image destination.
+	markdown := fmt.Sprintf("![](<%s>)", imgPath)
+	htmlBody, err := render.ToHTML(markdown)
+	if err != nil {
+		t.Fatalf("ToHTML: %v", err)
+	}
+
+	raw, err := buildMessage(
+		"Alice <alice@example.com>",
+		"Bob <bob@example.com>",
+		"",
+		"Inline image with spaces",
+		markdown,
+		htmlBody,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("buildMessage: %v", err)
+	}
+
+	if !strings.Contains(string(raw), "cid:img0@neomd") {
+		t.Errorf("expected cid reference in HTML, got:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), "Content-ID: <img0@neomd>") {
+		t.Errorf("expected inline image part with Content-ID, got:\n%s", raw)
+	}
+}
+
 func TestBuildMessage_Headers(t *testing.T) {
 	raw, err := buildMessage(
 		"Alice <alice@example.com>",
