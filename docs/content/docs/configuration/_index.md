@@ -322,6 +322,20 @@ BR Simon
 - The `text` field is backward compatible: if empty, neomd falls back to the legacy `signature` field
 - The `--` separator is added automatically before the text signature
 
+### Account signatures
+
+Dedicated account signatures are supported. To configure a signature only associated to certain account, create a `[accounts.signature_block]` under the account configuration. If an account signature is not created, NeoMD will default to the `[ui.signature_block]`
+
+```toml
+[[accounts]]
+name = "Personal"
+# ...
+[accounts.signature_block]
+text = "*Personal signature*"
+```
+
+Both text and HTML signatures are supported.
+
 
 ## Theming
 
