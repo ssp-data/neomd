@@ -322,19 +322,50 @@ BR Simon
 - The `text` field is backward compatible: if empty, neomd falls back to the legacy `signature` field
 - The `--` separator is added automatically before the text signature
 
-### Account signatures
+### Per-Account Signatures
 
-Dedicated account signatures are supported. To configure a signature only associated to certain account, create a `[accounts.signature_block]` under the account configuration. If an account signature is not created, NeoMD will default to the `[ui.signature_block]`
+Each account can override the global signature via an `[accounts.signature_block]` table nested inside its `[[accounts]]` entry. Accounts **without** a block fall back to the global `[ui.signature_block]` (or, if that is also unset, the legacy `[ui].signature`).
+
+Pick whichever shape fits the account.
+
+**Text-only — simple Markdown signature**
+
+For a casual account where a plain Markdown signature is enough. Goldmark renders the same Markdown into HTML for the `text/html` part, so links, bold, and headings still work in HTML clients.
 
 ```toml
 [[accounts]]
-name = "Personal"
-# ...
-[accounts.signature_block]
-text = "*Personal signature*"
+  name = "Personal"
+  # ...
+  [accounts.signature_block]
+  text = """**Simon**
+some [markdown](https://ssp.sh) text here"""
 ```
 
-Both text and HTML signatures are supported.
+The text is appended to the editor buffer when you press `c` — what you see is what recipients get.
+
+**Text + HTML — separate styled HTML signature**
+
+For a business account where you want a logo, table layout, and CSS that goldmark won't produce from Markdown. The `text` field carries the `[html-signature]` placeholder marker; at send time neomd strips it from the `text/plain` part and injects the `html` field into the `text/html` part instead. See [HTML Signatures](#html-signatures) above for the full mechanism.
+
+```toml
+[[accounts]]
+  name = "Business"
+  # ...
+  [accounts.signature_block]
+  text = """[html-signature]"""
+  html = """<table cellpadding="0" cellspacing="0" border="0" style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 14px;">
+    <tr>
+      <td><img src="https://example.com/logo.png" width="70" alt="Company"></td>
+      <td>
+        <strong>Your Name</strong><br>
+        <span>Your Title, Company Name</span>
+      </td>
+    </tr>
+  </table>"""
+```
+
+> [!NOTE]
+> The per-account block does **not** merge field-by-field with the global `[ui.signature_block]`. Whatever you set in `[accounts.signature_block]` *is* the signature for that account; the other field stays unset for that account. So only set `html` when you have an HTML signature to inject — otherwise `text` alone (Markdown) is enough.
 
 
 ## Theming
