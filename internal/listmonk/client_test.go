@@ -132,8 +132,8 @@ func TestResolveListIDs(t *testing.T) {
 
 func TestResolveTemplateID(t *testing.T) {
 	triggers := []Trigger{
-		{Address: "listmonk@ssp.sh", ListIDs: []int{2}},                       // no template override
-		{Address: "listmonk-book@ssp.sh", ListIDs: []int{4}, TemplateID: 5},   // override
+		{Address: "listmonk@ssp.sh", ListIDs: []int{2}},                     // no template override
+		{Address: "listmonk-book@ssp.sh", ListIDs: []int{4}, TemplateID: 5}, // override
 	}
 	if got := ResolveTemplateID(triggers, "listmonk-book@ssp.sh"); got != 5 {
 		t.Errorf("book override: got %d, want 5", got)

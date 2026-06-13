@@ -308,6 +308,7 @@ func (c *xoauth2Client) Next(_ []byte) ([]byte, error) {
 // Flow:
 //   - Save: try keyring (if AccountName set); if it fails (or no name), write to file.
 //   - Load: try keyring first; on ErrNotFound or any keyring failure, fall back to file.
+//
 // The TokenFile path remains useful for headless/SSH systems where the keyring
 // service is unavailable. Both paths use mode 0600.
 type tokenStorage struct {

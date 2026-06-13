@@ -81,11 +81,11 @@ func TestBuildRSVPMessage_ThreadingHeadersBracketed(t *testing.T) {
 	// is missing the angle brackets RFC 5322 requires.
 	calendarReply := []byte("BEGIN:VCALENDAR\nVERSION:2.0\nMETHOD:REPLY\nEND:VCALENDAR\n")
 	cases := []struct {
-		name             string
-		inReplyToInput   string
-		referencesInput  string
-		wantInReplyTo    string
-		wantReferences   string
+		name            string
+		inReplyToInput  string
+		referencesInput string
+		wantInReplyTo   string
+		wantReferences  string
 	}{
 		{
 			name:            "bare ids get wrapped",
@@ -128,12 +128,12 @@ func TestBuildRSVPMessage_ThreadingHeadersBracketed(t *testing.T) {
 
 func TestWrapMsgIDs(t *testing.T) {
 	cases := map[string]string{
-		"":                                  "",
-		"foo@bar":                           "<foo@bar>",
-		"<foo@bar>":                         "<foo@bar>",
-		"a@x b@y c@z":                       "<a@x> <b@y> <c@z>",
-		"<a@x> <b@y>":                       "<a@x> <b@y>",
-		"<a@x> b@y <c@z>":                   "<a@x> <b@y> <c@z>",
+		"":                "",
+		"foo@bar":         "<foo@bar>",
+		"<foo@bar>":       "<foo@bar>",
+		"a@x b@y c@z":     "<a@x> <b@y> <c@z>",
+		"<a@x> <b@y>":     "<a@x> <b@y>",
+		"<a@x> b@y <c@z>": "<a@x> <b@y> <c@z>",
 	}
 	for in, want := range cases {
 		if got := wrapMsgIDs(in); got != want {

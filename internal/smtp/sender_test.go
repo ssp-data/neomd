@@ -397,11 +397,11 @@ func TestBuildMessage_NoBccInHeaders(t *testing.T) {
 func TestBuildMessage_InvalidFrom(t *testing.T) {
 	// Test that buildMessage rejects invalid From addresses that would result in @localhost Message-IDs
 	invalidFromAddresses := []string{
-		"invalid",              // no @ sign
-		"user@",                // @ at end
-		"",                     // empty
-		"@domain.com",          // no user part
-		"user domain.com",      // missing @
+		"invalid",         // no @ sign
+		"user@",           // @ at end
+		"",                // empty
+		"@domain.com",     // no user part
+		"user domain.com", // missing @
 	}
 
 	for _, from := range invalidFromAddresses {
@@ -1010,7 +1010,7 @@ func TestBuildReactionMessage_ThreadingHeaders(t *testing.T) {
 
 func TestPlainTextFormatting_ReplyVsReaction(t *testing.T) {
 	// Test what plain text email clients actually see for both replies and reactions
-	
+
 	// 1. Build a regular reply
 	replyMarkdown := "Thanks for your email!\n\n---\n\n> **John** wrote:\n>\n> Can you help with [this issue](https://example.com/issue)?"
 	replyRaw, err := BuildMessageWithThreading(
@@ -1020,7 +1020,7 @@ func TestPlainTextFormatting_ReplyVsReaction(t *testing.T) {
 		"Re: Help needed",
 		replyMarkdown,
 		nil, // no attachments
-		"", // no HTML signature
+		"",  // no HTML signature
 		"<original@example.com>",
 		"<first@example.com>",
 	)

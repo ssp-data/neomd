@@ -1130,6 +1130,7 @@ func (c *Client) SaveDraft(ctx context.Context, folder string, raw []byte) error
 //   - rawHTML:      original HTML part verbatim (empty for plain-text emails)
 //   - webURL:       "view online" URL extracted from List-Post header or plain-text
 //     preamble (e.g. Substack's "View this post on the web at https://…")
+//
 // isCalendarPart returns true if a part is an iCalendar invite by either its
 // MIME type (text/calendar with optional method=…) or filename suffix.
 func isCalendarPart(contentType, filename string) bool {
@@ -1362,9 +1363,10 @@ type SpyPixelInfo struct {
 }
 
 // reSpyPixel matches <img> tags that look like tracking pixels in raw HTML:
-// - empty or whitespace-only alt attribute
-// - AND at least one of: width/height of 0 or 1, display:none, visibility:hidden,
-//   or known tracker URL patterns (track/open, pixel, beacon).
+//   - empty or whitespace-only alt attribute
+//   - AND at least one of: width/height of 0 or 1, display:none, visibility:hidden,
+//     or known tracker URL patterns (track/open, pixel, beacon).
+//
 // This avoids false positives on legitimate decorative images or image-only buttons.
 var reSpyPixel = regexp.MustCompile(`(?i)<img\b[^>]*\bsrc="(https?://[^"]+)"[^>]*>`)
 

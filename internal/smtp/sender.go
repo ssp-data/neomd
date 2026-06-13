@@ -5,6 +5,7 @@
 // Email format separation: Markdown input is converted to TWO independent formats:
 //   - Plain text: Callouts formatted as emoji text without blockquotes (> [!note] → 📘 Note)
 //   - HTML: Full goldmark rendering with styled callout boxes
+//
 // These formats never mix - each is derived independently from the markdown source.
 // Plain text removes blockquote markers because terminal renderers would strip them anyway.
 package smtp
@@ -745,9 +746,10 @@ func extractAddr(s string) string {
 // Uses net/mail.ParseAddress for RFC 5322 compliant parsing.
 //
 // Examples:
-//   "Simon Späti <simon@ssp.sh>" → "ssp.sh"
-//   "alice@example.com"           → "example.com"
-//   "invalid"                     → "localhost" (should never happen)
+//
+//	"Simon Späti <simon@ssp.sh>" → "ssp.sh"
+//	"alice@example.com"           → "example.com"
+//	"invalid"                     → "localhost" (should never happen)
 func extractDomain(from string) (string, bool) {
 	// Use net/mail for RFC 5322 compliant address parsing
 	addr, err := mail.ParseAddress(strings.TrimSpace(from))

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	zalandokeyring "github.com/zalando/go-keyring"
 	"github.com/sspaeti/neomd/internal/keyring"
+	zalandokeyring "github.com/zalando/go-keyring"
 )
 
 func TestExpandEnv(t *testing.T) {
@@ -71,8 +71,8 @@ func TestExpandPath(t *testing.T) {
 
 func TestTabLabels(t *testing.T) {
 	tests := []struct {
-		name     string
-		tabOrder []string
+		name      string
+		tabOrder  []string
 		wantFirst []string // check these labels appear at the start
 	}{
 		{
@@ -174,6 +174,38 @@ func TestBulkThreshold(t *testing.T) {
 			u := UIConfig{BulkProgressThreshold: tt.val}
 			if got := u.BulkThreshold(); got != tt.want {
 				t.Errorf("BulkThreshold() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSignature(t *testing.T) {
+	accountWithBoth := AccountConfig{Signature: SignatureConfig{Text: "acct-text", HTML: "<p>acct-html</p>"}}
+	accountTextOnly := AccountConfig{Signature: SignatureConfig{Text: "acct-text"}}
+	accountHTMLOnly := AccountConfig{Signature: SignatureConfig{HTML: "<p>acct-html</p>"}}
+	accountEmpty := AccountConfig{}
+
+	uiWithBlock := UIConfig{SignatureBlock: SignatureConfig{Text: "ui-text", HTML: "<p>ui-html</p>"}}
+	uiLegacyOnly := UIConfig{Signature: "legacy-sig"}
+	uiEmpty := UIConfig{}
+
+	tests := []struct {
+		name string
+		cfg  *Config
+		acct AccountConfig
+		want SignatureConfig
+	}{
+		{"account block wins when populated", &Config{UI: uiWithBlock}, accountWithBoth, SignatureConfig{Text: "acct-text", HTML: "<p>acct-html</p>"}},
+		{"account text-only does not leak ui html", &Config{UI: uiWithBlock}, accountTextOnly, SignatureConfig{Text: "acct-text"}},
+		{"account html-only does not leak ui text", &Config{UI: uiWithBlock}, accountHTMLOnly, SignatureConfig{HTML: "<p>acct-html</p>"}},
+		{"falls back to ui block when account empty", &Config{UI: uiWithBlock}, accountEmpty, SignatureConfig{Text: "ui-text", HTML: "<p>ui-html</p>"}},
+		{"falls back to legacy ui.signature", &Config{UI: uiLegacyOnly}, accountEmpty, SignatureConfig{Text: "legacy-sig"}},
+		{"all empty returns zero value", &Config{UI: uiEmpty}, accountEmpty, SignatureConfig{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.Signature(tt.acct); got != tt.want {
+				t.Errorf("Signature() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}
@@ -298,9 +330,9 @@ func TestValidateHostPort(t *testing.T) {
 		{"127.0.0.1:1143", false},
 		{"mail.example.com:65535", false},
 		// Invalid
-		{"imap.example.com", true},    // no port
-		{":993", true},                // no host
-		{"imap.example.com:0", true},  // port 0
+		{"imap.example.com", true},       // no port
+		{":993", true},                   // no host
+		{"imap.example.com:0", true},     // port 0
 		{"imap.example.com:99999", true}, // port > 65535
 		{"imap.example.com:abc", true},   // non-numeric port
 		{"", true},                       // empty

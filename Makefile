@@ -4,7 +4,7 @@ INSTALL := $(HOME)/.local/bin
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: build run install daemon clean test test-integration send-test vet fmt tidy release docs help check-go demo demo-reset demo-hp demo-hp-reset benchmark
+.PHONY: build run install daemon clean test test-integration send-test vet fmt fmt-check tidy release docs help check-go demo demo-reset demo-hp demo-hp-reset benchmark
 
 
 .DEFAULT_GOAL := install
@@ -91,6 +91,13 @@ vet:
 ## fmt: format all Go source files
 fmt:
 	gofmt -w .
+
+## fmt-check: report unformatted files (nonzero exit if any) — for CI / pre-commit
+fmt-check:
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "Unformatted files (run 'make fmt'):"; echo "$$unformatted"; exit 1; \
+	fi
 
 ## tidy: tidy go.mod and go.sum
 tidy:
