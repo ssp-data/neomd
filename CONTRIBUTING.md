@@ -39,34 +39,28 @@ See [CLAUDE.md](CLAUDE.md) for deeper architectural notes (state machine, MIME s
 
 ## Neovim setup (recommended)
 
-Since neomd is a Neovim-flavored email client, you're probably already in Neovim. Suggested format-on-save with [`conform.nvim`](https://github.com/stevearc/conform.nvim):
+Since neomd is a Neovim-flavored email client, you're probably already in Neovim. The simplest format-on-save uses `gopls` (the Go LSP) — no extra plugin needed:
 
 ```lua
--- lua/plugins/conform.lua
-return {
-  "stevearc/conform.nvim",
-  opts = {
-    formatters_by_ft = {
-      go = { "gofmt" },
-    },
-    format_on_save = {
-      timeout_ms = 1000,
-      lsp_format = "fallback",
-    },
-  },
-}
-```
+-- gopls config (e.g. via nvim-lspconfig)
+require("lspconfig").gopls.setup({})
 
-Or, without a plugin, a simple autocmd:
-
-```lua
+-- Format Go files on save via gopls (uses gofmt)
 vim.api.nvim_create_autocmd("BufWritePre", {
   pattern = "*.go",
-  callback = function() vim.cmd("silent! !gofmt -w " .. vim.fn.expand("%")) end,
+  callback = function(args)
+    vim.lsp.buf.format({
+      bufnr = args.buf,
+      filter = function(client) return client.name == "gopls" end,
+      timeout_ms = 2000,
+    })
+  end,
 })
 ```
 
-LSP for Go (`gopls`) is also recommended — install with `go install golang.org/x/tools/gopls@latest` and wire via `nvim-lspconfig` or your distro's defaults.
+Install `gopls` itself with `go install golang.org/x/tools/gopls@latest`.
+
+Alternative: [`conform.nvim`](https://github.com/stevearc/conform.nvim) configured with `formatters_by_ft = { go = { "gofmt" } }` — useful if you want a single formatter plugin across multiple languages.
 
 ## PR guidelines
 
