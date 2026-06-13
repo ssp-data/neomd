@@ -1096,6 +1096,85 @@ If everything works: you see the image, no popups, no iframe content.
 	t.Log("Open with O in neomd — you should see the image and green text, but NO popups and NO iframe content.")
 }
 
+// TestIntegration_SendMultiScriptDisplay sends an email packed with scripts that
+// exercise `displaySafe` (internal/ui/inbox.go): CJK (Hangul, kana, Hanzi) should
+// render as glyphs in the inbox list, while complex scripts (Bengali, Devanagari,
+// Thai, Arabic) and emoji should collapse to '·'. Latin extended, Cyrillic and
+// Greek pass through. The email is intentionally NOT cleaned up so you can compare
+// the inbox-list rendering before/after the CJK fix and confirm the reader view
+// still shows every glyph correctly.
+func TestIntegration_SendMultiScriptDisplay(t *testing.T) {
+	env := loadEnv(t)
+	cli := env.imapClient()
+	defer cli.Close()
+
+	// Subject mixes safe (CJK, Latin extended) and unsafe (Bengali, Arabic, emoji)
+	// runs so the inbox list shows both glyphs and '·' placeholders side-by-side.
+	subject := uniqueSubject("CJK 한국어 日本語 中文 — Bengali আপনার — Arabic مرحبا — Emoji 🚀")
+
+	body := "# Multi-script rendering test\n\n" +
+		"Compare the **inbox list** (uses `displaySafe`) with the **reader view** " +
+		"(renders every glyph). After the CJK fix, Korean / Japanese / Chinese should " +
+		"appear as real characters in the inbox list instead of collapsing to `·`.\n\n" +
+		"## CJK — should render as glyphs in the inbox list\n\n" +
+		"- Korean (Hangul): 한국어 제목 테스트입니다 — 안녕하세요 세계\n" +
+		"- Japanese (Hiragana/Katakana/Kanji): こんにちは世界 — カタカナ — 日本語\n" +
+		"- Chinese (Hanzi): 你好世界 — 中文测试 — 漢字\n\n" +
+		"## Complex scripts — should collapse to '·' in the inbox list\n\n" +
+		"- Bengali: আপনার দর্শকদের\n" +
+		"- Devanagari (Hindi): नमस्ते दुनिया\n" +
+		"- Arabic: مرحبا بالعالم\n" +
+		"- Thai: สวัสดีชาวโลก\n" +
+		"- Emoji: 🚀🎉✨\n\n" +
+		"## Latin / Cyrillic / Greek — should render as glyphs\n\n" +
+		"- Latin extended: Ünïcödé Tëst — Späti — naïve — café\n" +
+		"- Cyrillic: Привет мир\n" +
+		"- Greek: Γειά σου κόσμε\n\n" +
+		"*sent from [neomd](https://neomd.ssp.sh) — multi-script display test*\n"
+
+	err := smtp.Send(env.smtpConfig(), env.user+env.ccRecipient(), "", "", subject, body, nil)
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	// Intentionally NOT cleaned up — kept in INBOX so you can manually verify
+	// the inbox-list `displaySafe` transform vs. the reader view.
+	email := waitForEmail(t, cli, "INBOX", subject, 60*time.Second)
+
+	// Subject must survive Q-encoding for all scripts that the inbox list will display.
+	for _, want := range []string{"한국어", "日本語", "中文", "আপনার", "مرحبا", "🚀"} {
+		if !strings.Contains(email.Subject, want) {
+			t.Errorf("Subject missing %q after round-trip, got: %q", want, email.Subject)
+		}
+	}
+
+	// Body must round-trip every script in both the text/plain and text/html parts
+	// so the reader view (which renders the full glyphs) has something to show.
+	markdown, rawHTML, _, _, _, _, err := cli.FetchBody(context.Background(), "INBOX", email.UID)
+	if err != nil {
+		t.Fatalf("FetchBody: %v", err)
+	}
+	for _, want := range []string{
+		"한국어", "안녕하세요",
+		"こんにちは世界", "カタカナ",
+		"你好世界", "漢字",
+		"আপনার", "नमस्ते", // Bengali + Devanagari
+		"مرحبا",          // Arabic
+		"สวัสดี",         // Thai
+		"Ünïcödé", "Späti",
+		"Привет",
+	} {
+		if !strings.Contains(markdown, want) {
+			t.Errorf("plain text missing %q, got: %s", want, truncate(markdown, 400))
+		}
+		if !strings.Contains(rawHTML, want) {
+			t.Errorf("HTML missing %q, got: %s", want, truncate(rawHTML, 400))
+		}
+	}
+
+	t.Logf("Email kept in INBOX (UID=%d, Subject=%q) for manual displaySafe inspection", email.UID, email.Subject)
+}
+
 func extractUser(from string) string {
 	if i := strings.Index(from, "<"); i >= 0 {
 		if j := strings.Index(from, ">"); j > i {

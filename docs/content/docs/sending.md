@@ -315,6 +315,8 @@ This gives you full control: professional HTML signatures by default, plain sign
 
 For full HTML signature configuration examples, see [Configuration Reference](configuration#html-signatures).
 
+**Per-account override:** signatures can also be set per `[[accounts]]` entry via an `[accounts.signature_block]` table — useful when you sign personal mail with a Markdown blurb but business mail with a styled HTML table. Accounts without their own block fall back to `[ui.signature_block]`. See [Per-Account Signatures](configuration#per-account-signatures) for the full setup.
+
 For reading emails — images, links, attachments, and navigation — see [Reading Emails](reading).
 
 ## Callouts (Admonition)

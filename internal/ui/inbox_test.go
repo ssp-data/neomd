@@ -127,7 +127,9 @@ func TestDisplaySafe(t *testing.T) {
 		{"cyrillic passes through", "Привет мир", "Привет мир"},
 		{"bengali word collapses to dot", "আপনার", "·"},
 		{"two bengali words separated by space", "আপনার দর্শকদের", "· ·"},
-		{"cjk collapses to single dot", "こんにちは世界", "·"},
+		{"japanese passes through", "こんにちは世界", "こんにちは世界"},
+		{"korean passes through", "한국어 제목 테스트입니다", "한국어 제목 테스트입니다"},
+		{"chinese passes through", "你好世界", "你好世界"},
 		{"arabic two words", "مرحبا بالعالم", "· ·"},
 		{"emoji collapses to single dot", "🚀🎉", "·"},
 		{"mixed runs keep ascii context", "Re: আপনার and back to ASCII", "Re: · and back to ASCII"},
@@ -151,13 +153,13 @@ func TestDisplaySafe(t *testing.T) {
 func TestRowFitsTerminalWidth(t *testing.T) {
 	subjects := []string{
 		"Plain ASCII subject",
-		"Grüße aus München, schön & groß",                                            // Latin-1
-		"Re: আপনার দর্শকদের জন্য একটি আকর্ষণীয় বিষয়বস্তু",                                         // Bengali (was breaking)
-		"日本語のテストメールです件名サンプル",                                                              // Japanese
-		"한국어 제목 테스트입니다",                                                                     // Korean
-		"العربية موضوع البريد الإلكتروني",                                                  // Arabic
-		"Zahlungsmethode muss aktualisiert werden︅",                              // trailing variation selector
-		"🚀 Mixed emoji and text 🎉",                                                    // emoji
+		"Grüße aus München, schön & groß", // Latin-1
+		"Re: আপনার দর্শকদের জন্য একটি আকর্ষণীয় বিষয়বস্তু", // Bengali (was breaking)
+		"日本語のテストメールです件名サンプル",                                // Japanese
+		"한국어 제목 테스트입니다",                                     // Korean
+		"العربية موضوع البريد الإلكتروني",                   // Arabic
+		"Zahlungsmethode muss aktualisiert werden︅",         // trailing variation selector
+		"🚀 Mixed emoji and text 🎉",                          // emoji
 	}
 	widths := []int{80, 120, 190}
 	for _, w := range widths {

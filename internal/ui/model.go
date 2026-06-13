@@ -216,7 +216,7 @@ type MailtoParams struct {
 // a draft after a crash) and avoids cluttering /tmp/.
 func neomdTempDir() string {
 	dir := filepath.Join(os.TempDir(), "neomd")
-	os.MkdirAll(dir, 0700) //nolint
+	os.MkdirAll(dir, 0o700) //nolint
 	return dir
 }
 
@@ -277,7 +277,7 @@ func backupDraft(tmpPath string, maxBackups int) {
 	if err != nil || len(src) == 0 {
 		return
 	}
-	_ = os.WriteFile(dst, src, 0600)
+	_ = os.WriteFile(dst, src, 0o600)
 
 	// Prune oldest if over limit.
 	files := listBackupsByAge(dir)
@@ -367,11 +367,19 @@ func (m Model) writeDebugReport() tea.Cmd {
 		b.WriteString("\n## Folder Mapping\n\n")
 		f := m.cfg.Folders
 		folders := [][2]string{
-			{"Inbox", f.Inbox}, {"Sent", f.Sent}, {"Trash", f.Trash},
-			{"Drafts", f.Drafts}, {"ToScreen", f.ToScreen}, {"Feed", f.Feed},
-			{"PaperTrail", f.PaperTrail}, {"ScreenedOut", f.ScreenedOut},
-			{"Archive", f.Archive}, {"Waiting", f.Waiting},
-			{"Scheduled", f.Scheduled}, {"Someday", f.Someday}, {"Spam", f.Spam},
+			{"Inbox", f.Inbox},
+			{"Sent", f.Sent},
+			{"Trash", f.Trash},
+			{"Drafts", f.Drafts},
+			{"ToScreen", f.ToScreen},
+			{"Feed", f.Feed},
+			{"PaperTrail", f.PaperTrail},
+			{"ScreenedOut", f.ScreenedOut},
+			{"Archive", f.Archive},
+			{"Waiting", f.Waiting},
+			{"Scheduled", f.Scheduled},
+			{"Someday", f.Someday},
+			{"Spam", f.Spam},
 			{"Work", f.Work},
 		}
 		for _, kv := range folders {
@@ -390,8 +398,11 @@ func (m Model) writeDebugReport() tea.Cmd {
 		b.WriteString("\n## Screener Lists\n\n")
 		sc := m.cfg.Screener
 		lists := [][2]string{
-			{"screened_in", sc.ScreenedIn}, {"screened_out", sc.ScreenedOut},
-			{"feed", sc.Feed}, {"papertrail", sc.PaperTrail}, {"spam", sc.Spam},
+			{"screened_in", sc.ScreenedIn},
+			{"screened_out", sc.ScreenedOut},
+			{"feed", sc.Feed},
+			{"papertrail", sc.PaperTrail},
+			{"spam", sc.Spam},
 			{"notify", sc.Notify},
 		}
 		for _, kv := range lists {
@@ -450,7 +461,7 @@ func (m Model) writeDebugReport() tea.Cmd {
 
 		// Write to file
 		path := filepath.Join(neomdTempDir(), "debug.log")
-		if err := os.WriteFile(path, []byte(b.String()), 0600); err != nil {
+		if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
 			return errMsg{fmt.Errorf("write debug report: %w", err)}
 		}
 
@@ -903,7 +914,7 @@ func (m Model) sendEmailCmd(smtpAcct config.AccountConfig, from, to, cc, bcc, su
 	replyCli := m.imapCliForAccount(replyToAccount)
 	htmlSignature := ""
 	if includeHTMLSig {
-		htmlSignature = m.cfg.UI.HTMLSignature()
+		htmlSignature = m.cfg.Signature(smtpAcct).HTML
 	}
 	return func() tea.Msg {
 		// Build raw MIME once — reused for both SMTP delivery and Sent copy.
@@ -1591,8 +1602,10 @@ func (m Model) spyScanCmd() tea.Cmd {
 		for i, uid := range uids {
 			spy, err := cli.ScanSpyPixels(nil, folder, uid)
 			if err != nil {
-				return spyScanProgressMsg{err: err, scanned: i, total: total, found: found,
-					spyKeys: spyFound, scannedKeys: allScanned}
+				return spyScanProgressMsg{
+					err: err, scanned: i, total: total, found: found,
+					spyKeys: spyFound, scannedKeys: allScanned,
+				}
 			}
 			key := spyPixelKey(folder, uid)
 			allScanned = append(allScanned, key)
@@ -3219,7 +3232,7 @@ func loadCmdHistory(path string) []string {
 // Called in a goroutine — errors are silently ignored.
 func saveCmdHistory(path string, history []string) {
 	content := strings.Join(history, "\n") + "\n"
-	_ = os.WriteFile(path, []byte(content), 0600)
+	_ = os.WriteFile(path, []byte(content), 0o600)
 }
 
 // loadSpyPixelCache reads the spy pixel cache from disk.
@@ -3258,7 +3271,7 @@ func saveSpyPixelCache(spyKeys, scannedKeys map[string]bool) {
 			lines = append(lines, "-"+k)
 		}
 	}
-	_ = os.WriteFile(config.SpyPixelCachePath(), []byte(strings.Join(lines, "\n")+"\n"), 0600)
+	_ = os.WriteFile(config.SpyPixelCachePath(), []byte(strings.Join(lines, "\n")+"\n"), 0o600)
 }
 
 // safeGo runs fn in a goroutine with panic recovery. If the goroutine panics,
@@ -3279,7 +3292,7 @@ func safeGo(fn func()) {
 // writeCrashLog appends a panic record to the crash log file.
 func writeCrashLog(r interface{}, stack []byte) {
 	path := config.CrashLogPath()
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}
@@ -3837,7 +3850,7 @@ func (m Model) openInBrowser() (tea.Model, tea.Cmd) {
 			continue
 		}
 
-		if err := os.WriteFile(imgPath, a.Data, 0600); err != nil {
+		if err := os.WriteFile(imgPath, a.Data, 0o600); err != nil {
 			continue
 		}
 		tmpImages = append(tmpImages, imgPath)
@@ -3990,7 +4003,7 @@ func (m Model) downloadOpenAttachmentCmd(a imap.Attachment) tea.Cmd {
 			return attachOpenDoneMsg{err: err}
 		}
 		dir := filepath.Join(home, "Downloads")
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return attachOpenDoneMsg{err: fmt.Errorf("create Downloads: %w", err)}
 		}
 		// Avoid overwriting existing files by appending a counter before the extension.
@@ -4011,7 +4024,7 @@ func (m Model) downloadOpenAttachmentCmd(a imap.Attachment) tea.Cmd {
 				}
 			}
 		}
-		if err := os.WriteFile(dst, a.Data, 0644); err != nil {
+		if err := os.WriteFile(dst, a.Data, 0o644); err != nil {
 			return attachOpenDoneMsg{err: fmt.Errorf("save attachment: %w", err)}
 		}
 		ext := strings.ToLower(filepath.Ext(base))
@@ -4054,7 +4067,7 @@ func (m Model) downloadEMLCmd() tea.Cmd {
 			return emlDownloadedMsg{err: err}
 		}
 		dir := filepath.Join(home, "Downloads")
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return emlDownloadedMsg{err: fmt.Errorf("create Downloads: %w", err)}
 		}
 		// Sanitize subject for filename
@@ -4081,7 +4094,7 @@ func (m Model) downloadEMLCmd() tea.Cmd {
 				}
 			}
 		}
-		if err := os.WriteFile(dst, raw, 0644); err != nil {
+		if err := os.WriteFile(dst, raw, 0o644); err != nil {
 			return emlDownloadedMsg{err: fmt.Errorf("save EML: %w", err)}
 		}
 		return emlDownloadedMsg{path: dst}
@@ -4237,7 +4250,7 @@ func (m Model) openICSCmd() tea.Cmd {
 		return nil
 	}
 	dir := filepath.Join(home, ".cache", "neomd", "ical")
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		m.status = "open .ics: " + err.Error()
 		m.isError = true
 		return nil
@@ -4252,7 +4265,7 @@ func (m Model) openICSCmd() tea.Cmd {
 		name = fmt.Sprintf("invite-%d.ics", time.Now().Unix())
 	}
 	dst := filepath.Join(dir, name)
-	if err := os.WriteFile(dst, att.Data, 0600); err != nil {
+	if err := os.WriteFile(dst, att.Data, 0o600); err != nil {
 		m.status = "open .ics: " + err.Error()
 		m.isError = true
 		return nil
@@ -4636,7 +4649,8 @@ func (m Model) launchSpellCheckCmd(ps *pendingSendData) (tea.Model, tea.Cmd) {
 
 	// Open nvim with spell on and jump to first misspelled word.
 	// VimEnter + defer_fn ensures spell activates AFTER all plugins load.
-	cmd := exec.Command("nvim",
+	cmd := exec.Command(
+		"nvim",
 		"-c", `autocmd VimEnter * ++once lua vim.defer_fn(function() vim.wo.spell = true; vim.bo.spelllang = "en_us,de"; vim.cmd("normal! gg]s") end, 100)`,
 		tmpPath,
 	)
@@ -4781,7 +4795,8 @@ func (m Model) previewInBrowser() (tea.Model, tea.Cmd) {
 
 	// Inject HTML signature before </body> tag if enabled (matching send path)
 	if includeHTMLSig {
-		htmlSig := m.cfg.UI.HTMLSignature()
+		acct := m.presendSMTPAccount()
+		htmlSig := m.cfg.Signature(acct).HTML
 		if htmlSig != "" {
 			idx := strings.LastIndex(htmlBody, "</body>")
 			if idx >= 0 {
@@ -4845,7 +4860,8 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 
 	// When a mailto body is present, insert it before the signature so
 	// the signature always appears at the bottom of the composed message.
-	sig := m.cfg.UI.TextSignature()
+	acct := m.presendSMTPAccount()
+	sig := m.cfg.Signature(acct).Text
 	var prelude string
 	if mailtoBody != "" {
 		// Build headers without signature, append body, then signature.
