@@ -132,7 +132,7 @@ func TestConfig_RedirectPort(t *testing.T) {
 		port int
 		want int
 	}{
-		{0, 8085},   // default
+		{0, 8085},    // default
 		{9090, 9090}, // explicit
 	}
 	for _, tt := range tests {

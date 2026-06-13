@@ -194,6 +194,7 @@ func splitAddr(addr string) (host, port string) {
 //   - If userSTARTTLS is true: always use STARTTLS (user explicitly enabled it)
 //   - Standard ports: 993 → TLS, 143 → STARTTLS
 //   - Non-standard ports: default to TLS (e.g., Proton Mail Bridge on 1143)
+//
 // parseMailto parses a mailto: URI into MailtoParams.
 // Format: mailto:addr?subject=S&cc=C&bcc=B&body=B
 func parseMailto(raw string) *ui.MailtoParams {

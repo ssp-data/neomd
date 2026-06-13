@@ -4,8 +4,9 @@
 // Usage: go run ./cmd/docs   (or: make docs)
 //
 // It replaces the block between:
-//   <!-- keybindings-start -->
-//   <!-- keybindings-end -->
+//
+//	<!-- keybindings-start -->
+//	<!-- keybindings-end -->
 package main
 
 import (

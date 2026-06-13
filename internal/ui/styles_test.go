@@ -117,8 +117,8 @@ func TestGlamourStyleFor(t *testing.T) {
 		"rose-pine":      "dark",
 		"gruvbox":        "dark",
 		"osaka-jade":     "dark",
-		"":               "dark", // empty config falls through to dark
-		"unknown-theme":  "dark", // unknown names also fall through, never to notty
+		"":               "dark",  // empty config falls through to dark
+		"unknown-theme":  "dark",  // unknown names also fall through, never to notty
 		"light":          "light", // legacy literal still respected
 		"auto":           "dark",  // legacy "auto" collapses to dark for predictability
 	}

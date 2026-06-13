@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	zalandokeyring "github.com/zalando/go-keyring"
 	"github.com/sspaeti/neomd/internal/keyring"
+	zalandokeyring "github.com/zalando/go-keyring"
 )
 
 func TestExpandEnv(t *testing.T) {
@@ -71,8 +71,8 @@ func TestExpandPath(t *testing.T) {
 
 func TestTabLabels(t *testing.T) {
 	tests := []struct {
-		name     string
-		tabOrder []string
+		name      string
+		tabOrder  []string
 		wantFirst []string // check these labels appear at the start
 	}{
 		{
@@ -330,9 +330,9 @@ func TestValidateHostPort(t *testing.T) {
 		{"127.0.0.1:1143", false},
 		{"mail.example.com:65535", false},
 		// Invalid
-		{"imap.example.com", true},    // no port
-		{":993", true},                // no host
-		{"imap.example.com:0", true},  // port 0
+		{"imap.example.com", true},       // no port
+		{":993", true},                   // no host
+		{"imap.example.com:0", true},     // port 0
 		{"imap.example.com:99999", true}, // port > 65535
 		{"imap.example.com:abc", true},   // non-numeric port
 		{"", true},                       // empty

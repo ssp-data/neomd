@@ -6,12 +6,12 @@ import (
 
 func TestInferIMAPSecurity(t *testing.T) {
 	tests := []struct {
-		name          string
-		port          string
-		userSTARTTLS  bool
-		wantTLS       bool
-		wantSTARTTLS  bool
-		description   string
+		name         string
+		port         string
+		userSTARTTLS bool
+		wantTLS      bool
+		wantSTARTTLS bool
+		description  string
 	}{
 		// Standard ports
 		{
@@ -81,10 +81,10 @@ func TestInferIMAPSecurity(t *testing.T) {
 
 func TestParseMailtoQuery_PlusPreserved(t *testing.T) {
 	tests := []struct {
-		name     string
-		raw      string
-		key      string
-		want     string
+		name string
+		raw  string
+		key  string
+		want string
 	}{
 		{
 			name: "plus in cc address",
