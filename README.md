@@ -1,8 +1,8 @@
 # neomd
 
-A minimal terminal email client for people who write in Markdown and live in Neovim.
+A keyboard-first TUI email: write in Neovim, render as Markdown, screen senders first, organize emails once.
 
-*Neomd is my way of implementing an email TUI based on my experience with Neomutt, focusing on [Neovim](https://www.ssp.sh/brain/neovim) (input) and reading/writing in [Markdown](https://www.ssp.sh/brain/markdown) and navigating with [Vim Motions](https://www.ssp.sh/brain/vim-language-and-motions) with the GTD workflow and [HEY-Screener](https://www.hey.com/features/the-screener/).*
+_Neomd is my way of implementing an email TUI based on my experience with Neomutt, focusing on [Neovim](https://www.ssp.sh/brain/neovim) (input) and reading/writing in [Markdown](https://www.ssp.sh/brain/markdown) and navigating with [Vim Motions](https://www.ssp.sh/brain/vim-language-and-motions) with the GTD workflow and [HEY-Screener](https://www.hey.com/features/the-screener/)._
 
 ## The philosophy behind Neomd: What's unique?
 
@@ -15,7 +15,6 @@ With the [GTD approach](https://www.ssp.sh/brain/getting-things-done-gtd), using
 Also, we intentionally don't add more folders to the archive or file emails too, only archive (and work if you use business/personal - but that's not even needed). The goal is to let emails fade out, avoid the "busy work," and file them. We use search when we need it, or copy important information into Obsidian or our daily work. That's why we only have limited folders (and also why we currently can't add additional ones; see [FAQ](https://neomd.ssp.sh/docs/faq/#is-it-possible-to-create-new-directoriestabs).
 
 But we have two additional **Feed** and **Papertrail**, two dedicated folders from HEY where you can read newsletters (just hit F) on them automatically in their separate tab, or move all your receipts into the Papertrail. Once you mark them as feed or papertrail, they will moved there automatically going forward. So you decide whether to read emails or news by jumping to different tabs.
-
 
 ### Email Processing Workflow
 
@@ -66,16 +65,17 @@ flowchart TD
     classDef folderStyle fill:#54546d,stroke:#7fb4ca,stroke-width:2px,color:#dcd7ba
     class ToScreen,Inbox,ScreenedOut,Feed,PaperTrail,Archive,Waiting,Someday,Scheduled,Trash folderStyle
 ```
-*all colored boxes represent neomd folders*
+
+_all colored boxes represent neomd folders_
 
 **Key principles:**
+
 - **Screener first**: Unknown senders never clutter your Inbox, but get automatically wait in ToScreen for classification [more](https://neomd.ssp.sh/docs/screener/)
 - **One-time decision**: Once you classify a sender (`I/O/F/P`), all future emails from them are automatically routed [more](https://neomd.ssp.sh/docs/screener/#how-classification-works)
-- **GTD processing**: Emails in Inbox are processed once. Inbox acting as want/need to do *Next*, otherwise move to Waiting, Someday, or Scheduled 
-- **Minimal filing**: Only Archive when done; no complex folder hierarchies. Use search to find old emails 
-- **Separate contexts**: Feed for newsletters (read when you want), PaperTrail for receipts (search when needed) 
+- **GTD processing**: Emails in Inbox are processed once. Inbox acting as want/need to do _Next_, otherwise move to Waiting, Someday, or Scheduled
+- **Minimal filing**: Only Archive when done; no complex folder hierarchies. Use search to find old emails
+- **Separate contexts**: Feed for newsletters (read when you want), PaperTrail for receipts (search when needed)
 - See full features list below.
-
 
 ## Screenshots
 
@@ -83,7 +83,7 @@ flowchart TD
 
 Feed view with all Newsletters - also workflow with differnt tabs and unread counter only for certain tabs (not all):
 ![neomd](docs/static/images/neomd-hero.png)
-*Features seen: Reading newsletter directly in your email client (feed) - see spy pixel, if you have replied (dot) and thread mode if replied*
+_Features seen: Reading newsletter directly in your email client (feed) - see spy pixel, if you have replied (dot) and thread mode if replied_
 
 ### Reading Panel
 
@@ -92,10 +92,12 @@ Reading an email with Markdown 💙:
 ![neomd](docs/static/images/reading-email.png)
 
 ### Sent emails
+
 This is the markdown sent:
 
 ```markdown
 # [neomd: to: email@domain.com]
+
 # [neomd: subject: this is an email from neomd!]
 
 This email is from Neomd. Great I can add links such as [this](https://ssp.sh) with plain Markdown.
@@ -112,8 +114,7 @@ how does that look in an email?
 Best regards
 ```
 
-*Compose emails in your editor, read them rendered with [glamour](https://github.com/charmbracelet/glamour), and manage your inbox with a [HEY-style screener](https://www.hey.com/features/the-screener/) — all from the terminal.*
-
+_Compose emails in your editor, read them rendered with [glamour](https://github.com/charmbracelet/glamour), and manage your inbox with a [HEY-style screener](https://www.hey.com/features/the-screener/) — all from the terminal._
 
 Which looks like this:
 
@@ -122,12 +123,11 @@ Which looks like this:
 Or in Gmail:
 ![neomd](docs/static/images/gmail.png)
 
-
 ### Video
 
-  YouTube rundown of most features:
-  [![neomd demo](https://img.youtube.com/vi/lpmHqIrCC-w/maxresdefault.jpg)](https://youtu.be/8aKkldYLWV8)
-*(shorter but limited showcase [part 1 video](https://youtu.be/lpmHqIrCC-w))*
+YouTube rundown of most features:
+[![neomd demo](https://img.youtube.com/vi/lpmHqIrCC-w/maxresdefault.jpg)](https://youtu.be/8aKkldYLWV8)
+_(shorter but limited showcase [part 1 video](https://youtu.be/lpmHqIrCC-w))_
 
 ## Features
 
@@ -142,7 +142,6 @@ These features are the one that makes neomd different to other email clients out
 - **GitHub/Obsidian-style callouts** — compose emails with callout syntax `> [!note]`, `> [!tip]`, `> [!warning]` for styled alert boxes in HTML emails; rendered with colored left borders, subtle backgrounds, and emoji icons [→](https://neomd.ssp.sh/docs/sending/#callouts-admonition)
 - **Listmonk newsletter integration** — compose an email to a virtual address (e.g. `listmonk@ssp.sh`) and neomd creates a scheduled campaign in [Listmonk](https://listmonk.app) via API instead of sending via SMTP; configure multiple trigger addresses to target different subscriber lists; pre-send screen shows campaign details [→](https://neomd.ssp.sh/docs/integrations/listmonk/)
 
-
 ### Inbox & Screener
 
 Keep your inbox clean without effort.
@@ -153,7 +152,6 @@ Keep your inbox clean without effort.
 - **Headless daemon mode** — run `neomd --headless` on a server to continuously screen emails without the TUI; watches screener list files for changes via Syncthing; perfect for running on a NAS while using the TUI on laptop/Android [→](https://neomd.ssp.sh/docs/configuration/headless/)
 - **Desktop notifications for VIP senders** — opt-in `[notifications]` block fires `notify-send` only for senders/domains you list in `notify.txt`; independent of screener categories; first run silently records a baseline so you don't get flooded [→](https://neomd.ssp.sh/docs/notifications/)
 - **Folder tabs** — Inbox, ToScreen, Feed, PaperTrail, Archive, Waiting, Someday, Scheduled, Sent, Trash, ScreenedOut [→](https://neomd.ssp.sh/docs/keybindings/#folders)
-
 
 ### Composing & Sending
 
@@ -203,6 +201,7 @@ Keep your inbox clean without effort.
 
 > [!NOTE]
 > **Optional Neovim & file picker helpers:**
+>
 > - `yazi` enables the built-in file picker used by pre-send `a`
 > - custom Neovim integration in [`custom.lua`](https://github.com/sspaeti/dotfiles/blob/master/nvim/.config/nvim/lua/sspaeti/custom.lua) enables inline `<leader>a` attachment insertion inside `neomd-*.md` buffers
 > - a tiny [yazi `init.lua`](https://github.com/sspaeti/dotfiles/blob/master/yazi/.config/yazi/init.lua) snippet (`ps.sub("cd", ...)` guard on `rt.args.chooser_file`) is recommended — it clears any stale yazi selection on every `cd`, so a stray `<Space>` (yazi's toggle-selection key) in the picker can't cause `--chooser-file` to write the wrong path. Only fires in chooser mode; standalone yazi usage is unaffected.
@@ -223,17 +222,17 @@ make build
 ```
 
 Or if on Arch Linux (AUR), you can use my [neomd-bin](https://aur.archlinux.org/packages/neomd-bin) via:
+
 ```sh
 yay -S neomd-bin
 ```
 
-
 On first run, neomd:
+
 1. Creates `~/.config/neomd/config.toml` with placeholders — fill in your IMAP/SMTP credentials
-    - Important: Make sure that the Capitalization and naming of folder in `config.toml` is accroding to webmail IMAP, e.g. [Gmails](docs/content/docs/configuration/gmail.md) uses `sent = "[Gmail]/Sent Mail"` and not `sent` etc. 
+   - Important: Make sure that the Capitalization and naming of folder in `config.toml` is accroding to webmail IMAP, e.g. [Gmails](docs/content/docs/configuration/gmail.md) uses `sent = "[Gmail]/Sent Mail"` and not `sent` etc.
 2. Creates `~/.config/neomd/lists/` for screener allowlists (or uses your custom paths from config)
 3. Creates any missing IMAP folders (ToScreen, Feed, PaperTrail, etc.) automatically
-
 
 Neomd also runs on Android (more for fun) — see [docs/content/docs/configuration/android.md](docs/content/docs/android.md).
 
@@ -268,6 +267,7 @@ Use an app-specific password (Gmail, Fastmail, Hostpoint, etc.) rather than your
 For the full configuration reference including multiple accounts, OAuth2 authentication, `[[senders]]` aliases, folder customization, signatures, and UI options, see [docs/content/docs/configuration](docs/content/docs/configuration/_index.md).
 
 **Provider-specific guides:**
+
 - Gmail: [docs/content/docs/configuration/gmail.md](docs/content/docs/configuration/gmail.md) — folder name mapping and OAuth2 setup
 - Proton Mail Bridge: [docs/content/docs/configuration/proton-bridge.md](docs/content/docs/configuration/proton-bridge.md) — non-standard port configuration
 
@@ -301,6 +301,7 @@ You choose who can land in your Inbox. Bye-bye spam. This is the beauty of [HEY-
 ### Screener Workflow
 
 Find full Screener Workflow at [docs/content/docs/screener.md](docs/content/docs/screener.md), classification tables, and bulk re-classification instructions.
+
 ### Keybindings
 
 Press `?` inside neomd to open the interactive help overlay. Start typing to filter shortcuts.
@@ -313,7 +314,7 @@ Compose in Markdown, send as `multipart/alternative` (plain text + HTML). Attach
 
 Discarding unsent mail now asks for confirmation in compose/pre-send, and `:recover` reopens the latest backup if you want to resume after an abort.
 
-- See [docs/content/docs/sending.md](docs/content/docs/sending.md) for details on MIME structure, attachments, pre-send review, and drafts. 
+- See [docs/content/docs/sending.md](docs/content/docs/sending.md) for details on MIME structure, attachments, pre-send review, and drafts.
 - See [docs/content/docs/reading.md](docs/content/docs/reading.md) for the reader: images, inline links, attachments, and navigation.
 
 ### Dev: Makefile Commands
@@ -341,9 +342,10 @@ make help     print this list
 - [goldmark](https://github.com/yuin/goldmark) — Markdown → HTML for sending
 - [BurntSushi/toml](https://github.com/BurntSushi/toml) — config parsing
 
-
 ## FAQ
+
 You have more questions, check out the [docs](https://neomd.ssp.sh/) with more information, or check [Frequently Asked Questions](https://neomd.ssp.sh/docs/faq/).
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for what's new.
@@ -378,11 +380,11 @@ neomd's responsiveness depends entirely on your IMAP server. Every folder switch
 
 Interestingly, Gmail benchmarks fast on a **fresh single connection** (`scripts/imap-benchmark.sh` shows ~70ms total, same as Hostpoint). But on a **sustained session** with sequential commands — which is how neomd actually uses IMAP — Gmail adds ~180ms latency per command. This is likely Gmail's internal label-to-folder translation and session management overhead. The result: every action in neomd feels much slower on Gmail, while Hostpoint stays instant.
 
-
 > [!NOTE]
 > **Gmail is not recommended.** If you're on Gmail, consider a dedicated email provider (Hostpoint, Fastmail, HEY, Migadu, etc.) for the best neomd experience. Or use Gmail just for fun :). See [docs/content/docs/configuration/gmail.md](docs/content/docs/configuration/gmail.md) for Gmail-specific folder configuration.
 
 **Test your own provider:**
+
 ```bash
 # With password
 IMAP_HOST=imap.example.com IMAP_USER=me@example.com IMAP_PASS=secret ./scripts/imap-benchmark.sh
@@ -414,6 +416,7 @@ This TUI is mostly [vibe-coded](https://www.ssp.sh/brain/vibe-coding) in the sen
 I used my experience with Neomutt, TUIs, and the GTD workflow for handling emails with HEY Screener, and added some (hopefully) _taste_ using my favorite tools and aesthetics. Find the full history at [Twitter](https://xcancel.com/sspaeti/status/2036539855182627169#m) - inspired by seeing [Email.md](https://www.emailmd.dev/) on HackerNews.
 
 If you [rather read the prompt](https://www.ssp.sh/brain/id-rather-read-the-prompt), check out my [initial prompt](https://github.com/ssp-data/neomd/blob/main/docs/initial-prompt/prompt.md) and its generated [plan](https://github.com/ssp-data/neomd/blob/main/docs/initial-prompt/prompt-plan.md) - which I have iterated and added features by the 100s since then.
+
 ## Roadmap
 
 See at my second brain at [Roadmap](https://www.ssp.sh/brain/neomd#roadmap).
