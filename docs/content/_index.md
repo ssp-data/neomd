@@ -69,7 +69,7 @@ toc: false
 <br>
 
 ![neomd demo](/images/neomd-hero.png)
-*Reading newsletter directly in your email client (feed) - see spy pixel, if you have replied (dot) and thread mode if replied)*
+_Reading newsletter directly in your email client (feed) - see spy pixel, if you have replied (dot) and thread mode if replied)_
 
 <br>
 
@@ -77,9 +77,7 @@ toc: false
 <h2 class="hx-text-4xl hx-font-bold hx-tracking-tight hx-text-gray-900 dark:hx-text-gray-50">Video Demo - YouTube rundown of most features:</h2>
 </div>
 
-
 [![neomd demo](https://img.youtube.com/vi/lpmHqIrCC-w/maxresdefault.jpg)](https://youtu.be/8aKkldYLWV8)
-
 
 <br>
 <div class="hx-mt-12 hx-mb-8">
@@ -87,14 +85,14 @@ toc: false
 </div>
 
 {{< cards cols="3" >}}
-  {{< card link="docs" title="Overview & Philosophy" subtitle="Full feature list, installation (binary, AUR, source), philosophy, benchmarks, and inspiration" >}}
-  {{< card link="docs/configuration" title="Configuration Reference" subtitle="Full config with multiple accounts, OAuth2, signatures, and UI options" >}}
-  {{< card link="docs/keybindings" title="Keybindings" subtitle="Complete keyboard shortcuts reference (auto-generated from source)" >}}
-  {{< card link="docs/screener" title="Screener Workflow" subtitle="How to classify emails, bulk operations, and screener lists" >}}
-  {{< card link="docs/reading" title="Reading Emails" subtitle="Navigation, images, links, attachments, threading" >}}
-  {{< card link="docs/sending" title="Sending Emails" subtitle="Compose, attachments, CC/BCC, drafts, HTML signatures" >}}
-  {{< card link="docs/integrations/" title="Integrations" subtitle="Integrations with Newsletter such as Listmonk" >}}
-  {{< card link="docs/faq" title="FAQ" subtitle="Frequently asked questions" >}}
+{{< card link="docs" title="Overview & Philosophy" subtitle="Full feature list, installation (binary, AUR, source), philosophy, benchmarks, and inspiration" >}}
+{{< card link="docs/configuration" title="Configuration Reference" subtitle="Full config with multiple accounts, OAuth2, signatures, and UI options" >}}
+{{< card link="docs/keybindings" title="Keybindings" subtitle="Complete keyboard shortcuts reference (auto-generated from source)" >}}
+{{< card link="docs/screener" title="Screener Workflow" subtitle="How to classify emails, bulk operations, and screener lists" >}}
+{{< card link="docs/reading" title="Reading Emails" subtitle="Navigation, images, links, attachments, threading" >}}
+{{< card link="docs/sending" title="Sending Emails" subtitle="Compose, attachments, CC/BCC, drafts, HTML signatures" >}}
+{{< card link="docs/integrations/" title="Integrations" subtitle="Integrations with Newsletter such as Listmonk" >}}
+{{< card link="docs/faq" title="FAQ" subtitle="Frequently asked questions" >}}
 {{< /cards >}}
 
 <br>
