@@ -597,6 +597,82 @@ account = "Personal"
 	}
 }
 
+func TestResolveKeyringClientSecret(t *testing.T) {
+	zalandokeyring.MockInit()
+
+	t.Run("resolved when entry exists", func(t *testing.T) {
+		const acct = "TestAcctOAuth"
+		if err := keyring.SetClientSecret(acct, "the-client-secret"); err != nil {
+			t.Fatalf("SetClientSecret: %v", err)
+		}
+		got := resolveKeyringClientSecret(acct, "keyring")
+		if got != "the-client-secret" {
+			t.Errorf("got %q, want resolved client secret", got)
+		}
+		_ = keyring.DeleteClientSecret(acct)
+	})
+
+	t.Run("sentinel preserved when entry missing", func(t *testing.T) {
+		got := resolveKeyringClientSecret("MissingAcct", "keyring")
+		if got != "keyring" {
+			t.Errorf("got %q, want sentinel preserved", got)
+		}
+	})
+
+	t.Run("non-sentinel passthrough", func(t *testing.T) {
+		got := resolveKeyringClientSecret("any", "literal-secret")
+		if got != "literal-secret" {
+			t.Errorf("got %q, want passthrough", got)
+		}
+	})
+
+	t.Run("empty account name passthrough", func(t *testing.T) {
+		got := resolveKeyringClientSecret("", "keyring")
+		if got != "keyring" {
+			t.Errorf("got %q, want passthrough for empty account", got)
+		}
+	})
+}
+
+func TestLoad_KeyringResolvesClientSecret(t *testing.T) {
+	zalandokeyring.MockInit()
+	const acctName = "GMail"
+	const realSecret = "the-real-client-secret"
+	if err := keyring.SetClientSecret(acctName, realSecret); err != nil {
+		t.Fatalf("SetClientSecret: %v", err)
+	}
+	defer keyring.DeleteClientSecret(acctName)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfgBody := `
+[[accounts]]
+name               = "GMail"
+imap               = "imap.gmail.com:993"
+smtp               = "smtp.gmail.com:587"
+user               = "me@gmail.com"
+from               = "Me <me@gmail.com>"
+oauth2_client_id   = "client-id.apps.googleusercontent.com"
+oauth2_client_secret = "keyring"
+oauth2_issuer_url  = "https://accounts.google.com"
+oauth2_scopes      = ["https://mail.google.com/"]
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Accounts) != 1 {
+		t.Fatalf("expected 1 account, got %d", len(cfg.Accounts))
+	}
+	if got := cfg.Accounts[0].OAuth2ClientSecret; got != realSecret {
+		t.Errorf("Accounts[0].OAuth2ClientSecret = %q, want resolved %q", got, realSecret)
+	}
+}
+
 func TestLoad_AIConfigDefaultUsesInteractiveClaude(t *testing.T) {
 	// Regression for two prior bugs:
 	//   1. Defaults must NOT include `-p` (claude's print mode bills against

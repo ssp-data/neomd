@@ -26,6 +26,7 @@ import (
 	"github.com/sspaeti/neomd/internal/config"
 	"github.com/sspaeti/neomd/internal/editor"
 	"github.com/sspaeti/neomd/internal/imap"
+	"github.com/sspaeti/neomd/internal/keyring"
 	"github.com/sspaeti/neomd/internal/listmonk"
 	"github.com/sspaeti/neomd/internal/notify"
 	"github.com/sspaeti/neomd/internal/render"
@@ -44,6 +45,7 @@ const (
 	stateHelp               // help overlay
 	stateWelcome            // first-run welcome popup
 	stateReaction           // emoji reaction picker
+	statePasswordPrompt     // secure input prompt (:set-password / :set-oauth2-secret)
 )
 
 // async message types
@@ -516,10 +518,11 @@ type Model struct {
 	notifier    *notify.Notifier
 	notifyState *notify.State
 
-	state   viewState
-	width   int
-	height  int
-	loading bool
+	state          viewState
+	passwordPrompt passwordPromptModel
+	width          int
+	height         int
+	loading        bool
 
 	// Bulk operation progress — shared pointer, written by goroutines, read by view.
 	bulkProgress *bulkOp
@@ -698,6 +701,7 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 		cmdHistory:  loadCmdHistory(config.HistoryPath()),
 		cmdHistI:    -1,
 		// Note: Spam is intentionally excluded from tabs — use :go-spam to visit.
+		passwordPrompt: newPasswordPromptModel(),
 		compose:        compose,
 		spinner:        sp,
 		markedUIDs:     make(map[uint32]bool),
@@ -2593,6 +2597,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case passwordSubmittedMsg:
+		var err error
+		switch m.passwordPrompt.promptType {
+		case promptOAuth2Secret:
+			err = keyring.SetClientSecret(msg.account, msg.password)
+		default:
+			err = keyring.SetPassword(msg.account, msg.password)
+		}
+		m.state = m.prevState
+		if err != nil {
+			m.status = fmt.Sprintf("keyring error: %v", err)
+			m.isError = true
+		} else {
+			m.status = "Saved to keyring."
+			m.isError = false
+		}
+		return m, nil
+
+	case passwordCancelledMsg:
+		m.state = m.prevState
+		m.status = "Cancelled."
+		return m, nil
+
 	case tea.KeyMsg:
 		// ? opens/closes help — but only from states without active text input.
 		// stateCompose feeds keys into a textinput where the user must be able
@@ -2628,6 +2655,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case stateReaction:
 			return m.updateReaction(msg)
+		case statePasswordPrompt:
+			var cmd tea.Cmd
+			m.passwordPrompt, cmd = m.passwordPrompt.Update(msg)
+			return m, cmd
 		}
 	}
 
@@ -5487,6 +5518,8 @@ func (m Model) View() string {
 		return m.viewWelcome()
 	case stateReaction:
 		return m.viewReaction()
+	case statePasswordPrompt:
+		return m.passwordPrompt.View(m.width, m.height)
 	}
 	return ""
 }

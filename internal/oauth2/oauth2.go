@@ -13,6 +13,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -169,7 +170,9 @@ func TokenSource(ctx context.Context, cfg Config) (func() (string, error), error
 		if err != nil {
 			return "", err
 		}
-		_ = storage.Save(t)
+		if err := storage.Save(t); err != nil {
+			fmt.Fprintf(os.Stderr, "neomd: account %q: oauth2 token refresh save failed: %v\n", cfg.AccountName, err)
+		}
 		return t.AccessToken, nil
 	}, nil
 }
@@ -326,7 +329,9 @@ func (s *tokenStorage) Load() (*oauth2.Token, error) {
 		if err == nil {
 			return tok, nil
 		}
-		// Any keyring error (including ErrNotFound) — try file fallback.
+		if !errors.Is(err, keyring.ErrNotFound) {
+			fmt.Fprintf(os.Stderr, "neomd: account %q: oauth2 keyring load failed, falling back to file: %v\n", s.account, err)
+		}
 	}
 	if s.path == "" {
 		return nil, fmt.Errorf("oauth2: no token storage available (no account name and no token file path)")
@@ -336,10 +341,11 @@ func (s *tokenStorage) Load() (*oauth2.Token, error) {
 
 func (s *tokenStorage) Save(tok *oauth2.Token) error {
 	if s.account != "" {
-		if err := keyring.SetOAuth2Token(s.account, tok); err == nil {
+		err := keyring.SetOAuth2Token(s.account, tok)
+		if err == nil {
 			return nil
 		}
-		// Keyring failed — fall back to file.
+		fmt.Fprintf(os.Stderr, "neomd: account %q: oauth2 keyring save failed, falling back to file: %v\n", s.account, err)
 	}
 	if s.path == "" {
 		return fmt.Errorf("oauth2: no token storage available")
