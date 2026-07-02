@@ -17,7 +17,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"mime"
+	"net/http"
 	"net/mail"
 	"net/smtp"
 	"net/url"
@@ -33,6 +35,9 @@ import (
 
 // imgSrcRe matches <img src="/absolute/path"> produced by goldmark for local paths.
 var imgSrcRe = regexp.MustCompile(`<img\s[^>]*src="(/[^"]+)"`)
+
+// imgSrcHTTPRe matches <img src="https://..."> for remote images (e.g. in HTML signatures).
+var imgSrcHTTPRe = regexp.MustCompile(`<img\s[^>]*src="(https?://[^"]+)"`)
 
 // Config holds outgoing mail settings.
 type Config struct {
@@ -343,10 +348,13 @@ func BuildReactionMessage(from, to, cc, subject, markdownBody, inReplyTo, refere
 	return buildMessageWithBCC(from, to, cc, "", subject, plainText, htmlBody, nil, inReplyTo, refChain)
 }
 
-// inlineImage holds a local image path and its assigned Content-ID.
+// inlineImage holds either a local file path or pre-fetched remote image data.
 type inlineImage struct {
-	path string
-	cid  string // without angle brackets, e.g. "img0@neomd"
+	path     string // local file path (set for goldmark local images)
+	data     []byte // pre-fetched bytes (set for remote URL images)
+	mimeType string // MIME type for remote images
+	filename string // display name for remote images
+	cid      string // without angle brackets, e.g. "img0@neomd"
 }
 
 // buildMessage constructs a MIME message.
@@ -369,7 +377,7 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 		return nil, fmt.Errorf("invalid From address %q: cannot parse address for Message-ID (ensure address format is valid)", from)
 	}
 
-	// Find local image paths in htmlBody (<img src="/abs/path">), assign CIDs.
+	// First pass: local image paths (<img src="/abs/path">), assign CIDs.
 	var inlines []inlineImage
 	processedHTML := imgSrcRe.ReplaceAllStringFunc(htmlBody, func(match string) string {
 		m := imgSrcRe.FindStringSubmatch(match)
@@ -387,6 +395,33 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 		cid := fmt.Sprintf("img%d@neomd", len(inlines))
 		inlines = append(inlines, inlineImage{path: localPath, cid: cid})
 		return strings.Replace(match, `"`+srcAttr+`"`, `"cid:`+cid+`"`, 1)
+	})
+
+	// Second pass: remote URLs (<img src="https://...">) — fetched and embedded inline
+	// so Gmail and other clients that block external images still show them.
+	processedHTML = imgSrcHTTPRe.ReplaceAllStringFunc(processedHTML, func(match string) string {
+		m := imgSrcHTTPRe.FindStringSubmatch(match)
+		if len(m) < 2 {
+			return match
+		}
+		rawURL := m[1]
+		data, mimeType, err := fetchRemoteImage(rawURL)
+		if err != nil {
+			return match // leave URL as-is on fetch failure
+		}
+		filename := rawURL
+		if idx := strings.LastIndex(rawURL, "/"); idx >= 0 {
+			filename = rawURL[idx+1:]
+		}
+		if q := strings.IndexByte(filename, '?'); q >= 0 {
+			filename = filename[:q]
+		}
+		if filename == "" {
+			filename = "image"
+		}
+		cid := fmt.Sprintf("img%d@neomd", len(inlines))
+		inlines = append(inlines, inlineImage{data: data, mimeType: mimeType, filename: filename, cid: cid})
+		return strings.Replace(match, `"`+rawURL+`"`, `"cid:`+cid+`"`, 1)
 	})
 
 	altBoundary, err := randomBoundary()
@@ -567,14 +602,49 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 	return b.Bytes(), nil
 }
 
+// fetchRemoteImage downloads a remote image URL and returns its bytes and MIME type.
+// Uses a 10-second timeout so a slow CDN doesn't hang the send flow.
+func fetchRemoteImage(rawURL string) ([]byte, string, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(rawURL) //nolint:noctx
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("HTTP %d fetching image", resp.StatusCode)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+	mimeType := resp.Header.Get("Content-Type")
+	if mimeType == "" {
+		mimeType = http.DetectContentType(data)
+	}
+	if idx := strings.Index(mimeType, ";"); idx >= 0 {
+		mimeType = strings.TrimSpace(mimeType[:idx])
+	}
+	return data, mimeType, nil
+}
+
 // writeInlineImage appends a base64-encoded image part with Content-ID for inline display.
 func writeInlineImage(b *bytes.Buffer, boundary string, img inlineImage) error {
-	data, err := os.ReadFile(img.path)
-	if err != nil {
-		return err
+	var data []byte
+	var filename, mimeType string
+	if img.path != "" {
+		var err error
+		data, err = os.ReadFile(img.path)
+		if err != nil {
+			return err
+		}
+		filename = filepath.Base(img.path)
+		mimeType = mime.TypeByExtension(filepath.Ext(img.path))
+	} else {
+		data = img.data
+		filename = img.filename
+		mimeType = img.mimeType
 	}
-	filename := filepath.Base(img.path)
-	mimeType := mime.TypeByExtension(filepath.Ext(img.path))
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}

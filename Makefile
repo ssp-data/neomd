@@ -165,6 +165,13 @@ sync-headless: build
 	@echo "Checking logs for errors..."
 	@ssh ti "tail -20 ~/.local/share/neomd/daemon.log"
 
+## syncthing-tunnel: start syncthing on ti (if not running) and open SSH tunnel → http://localhost:8385
+syncthing-tunnel:
+	@echo "Starting syncthing on ti..."
+	ssh ti "pgrep syncthing || nohup syncthing >> ~/syncthing.log 2>&1 &"
+	@echo "Opening SSH tunnel — access Syncthing UI at http://localhost:8385"
+	ssh -L 8385:localhost:8384 ti
+
 ## help: print this list
 help:
 	@grep -E '^## ' Makefile | sed 's/^## //'

@@ -318,9 +318,20 @@ BR Simon
 **Notes:**
 
 - Use inline styles only (no `<style>` blocks or external CSS) for maximum email client compatibility
-- Host logo images externally (e.g., `https://example.com/logo.png`) so they display for recipients
 - The `text` field is backward compatible: if empty, neomd falls back to the legacy `signature` field
 - The `--` separator is added automatically before the text signature
+
+#### Automatic logo embedding (CID)
+
+Any `<img src="https://...">` in an HTML signature is automatically fetched at send time and embedded directly in the email as a `Content-ID` (`cid:`) inline part inside a `multipart/related` wrapper. This means:
+
+- **Logo always shows in Gmail** — no "display images" prompt needed
+- **No extra attachment** — `Content-Disposition: inline` inside `multipart/related` is invisible to clients' attachment lists
+- **Works offline for recipients** — the image travels with the email; no external request is made when the recipient opens it
+
+If the fetch fails (network error, HTTP error), neomd silently leaves the original `src` URL in place and the email sends normally. Each embedded image adds roughly its file size (~50 KB for a typical logo) to the email.
+
+You do not need to do anything special — just put a normal `https://` URL in your `src` attribute and neomd handles the rest.
 
 ### Per-Account Signatures
 

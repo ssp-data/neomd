@@ -4,9 +4,13 @@ INSTALL_PATH := ~/.local/bin/neomd
 
 .DEFAULT_GOAL := run-headless
 
-## run-headless: start daemon in background
+## run-headless: start neomd daemon in background
 run-headless:
 	nohup neomd --headless >> ~/.local/share/neomd/daemon.log 2>&1 &
+
+## run-syncthing: start syncthing in background (access UI via SSH tunnel from laptop: ssh -L 8385:localhost:8384 ti)
+run-syncthing:
+	nohup syncthing >> ~/syncthing.log 2>&1 &
 
 ## restart: stop and restart daemon
 restart: stop run-headless
