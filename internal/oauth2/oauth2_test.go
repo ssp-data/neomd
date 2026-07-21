@@ -125,6 +125,54 @@ func TestLoadToken_InvalidJSON(t *testing.T) {
 	}
 }
 
+// --- tokenStorage (file-only paths) ---
+
+// When no account name is configured, tokenStorage must go straight to the file.
+// This covers the headless/SSH fallback case where keyring is intentionally unused.
+func TestTokenStorage_FileOnlyRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tok.json")
+	s := newTokenStorage("", path)
+
+	tok := &oauth2.Token{
+		AccessToken:  "access123",
+		RefreshToken: "refresh456",
+		TokenType:    "Bearer",
+		Expiry:       time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC),
+	}
+	if err := s.Save(tok); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := s.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.AccessToken != tok.AccessToken {
+		t.Errorf("AccessToken = %q, want %q", loaded.AccessToken, tok.AccessToken)
+	}
+	if loaded.RefreshToken != tok.RefreshToken {
+		t.Errorf("RefreshToken = %q, want %q", loaded.RefreshToken, tok.RefreshToken)
+	}
+}
+
+func TestTokenStorage_NoBackendsConfigured(t *testing.T) {
+	s := newTokenStorage("", "")
+	if _, err := s.Load(); err == nil {
+		t.Error("Load with no account and no path should error")
+	}
+	if err := s.Save(&oauth2.Token{AccessToken: "x"}); err == nil {
+		t.Error("Save with no account and no path should error")
+	}
+}
+
+func TestTokenStorage_LoadMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	s := newTokenStorage("", filepath.Join(dir, "missing.json"))
+	if _, err := s.Load(); err == nil {
+		t.Error("expected error loading missing file")
+	}
+}
+
 // --- Config helpers ---
 
 func TestConfig_RedirectPort(t *testing.T) {

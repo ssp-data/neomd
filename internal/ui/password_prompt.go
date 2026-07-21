@@ -20,9 +20,10 @@ type passwordPromptModel struct {
 type promptType int
 
 const (
-	promptNewAccount promptType = iota // new account setup
-	promptAuthFailed                   // auth failed, need to re-enter
-	promptManualSet                    // user ran :set-password command
+	promptNewAccount   promptType = iota // new account setup
+	promptAuthFailed                     // auth failed, need to re-enter
+	promptManualSet                      // user ran :set-password command
+	promptOAuth2Secret                   // user ran :set-oauth2-secret command
 )
 
 // newPasswordPromptModel creates a new password prompt with masked input.
@@ -106,6 +107,8 @@ func (p passwordPromptModel) View(width, height int) string {
 		title = fmt.Sprintf("🔐 Authentication failed for %s", p.account)
 	case promptManualSet:
 		title = fmt.Sprintf("🔐 Update password for %s", p.account)
+	case promptOAuth2Secret:
+		title = fmt.Sprintf("🔐 Set OAuth2 client secret for %s", p.account)
 	}
 
 	var hint string
@@ -116,6 +119,8 @@ func (p passwordPromptModel) View(width, height int) string {
 		hint = "Your password may be incorrect or have expired.\nEnter the correct password to continue."
 	case promptManualSet:
 		hint = "Enter the new password to store in the OS keyring."
+	case promptOAuth2Secret:
+		hint = "Enter the OAuth2 client secret to store in the OS keyring."
 	}
 
 	// Build content

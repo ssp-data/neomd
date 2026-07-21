@@ -116,7 +116,7 @@ Values containing other text or multiple `$` signs are left as-is, so passwords 
 
 Credentials are stored only in `~/.config/neomd/config.toml` (mode 0600) and never written elsewhere; all IMAP connections use TLS (port 993) or STARTTLS (port 143).
 
-### Storing passwords in the OS keyring (Linux)
+### Storing passwords in the OS keyring (Linux/MacOS)
 
 Set `password = "keyring"` to fetch the password from your OS keyring (macOS Keychain, GNOME Keyring / KDE Wallet via Secret Service on Linux, Windows Credential Manager) at startup. The lookup uses the `[[accounts]].name` as the account identifier under service `neomd`.
 
@@ -127,6 +127,15 @@ password = "keyring"           # resolved at startup; see below for setup
 # ...rest of the account
 ```
 
+If you use OAuth2 authentication, set `oauth2_client_secret = "keyring"` instead of the password field.
+
+```toml
+[[accounts]]
+name                  = "Personal"
+oauth2_client_secret  = "keyring"   # resolved at startup; see below for setup
+# ...rest of the account
+```
+
 **Setup before first launch (Linux, using `secret-tool` from `libsecret`):**
 
 `zalando/go-keyring` writes Secret Service entries with two attributes — `service` (always `neomd`) and `username` (`account/<name>/password`, where `<name>` is the `[[accounts]].name` from your config). The `--label` is display-only; entries are identified by their **attributes**.
@@ -134,15 +143,21 @@ password = "keyring"           # resolved at startup; see below for setup
 ```sh
 # Add the entry (you'll be prompted for the password on stdin):
 secret-tool store --label "neomd Personal" service neomd username account/Personal/password
+  # or
+secret-tool store --label "neomd Personal" service neomd username account/Personal/oauth2_client_secret
 
 # Verify it was stored (read-only):
 secret-tool lookup service neomd username account/Personal/password
+  # or
+secret-tool lookup service neomd username account/Personal/oauth2_client_secret
 
 # Audit every neomd entry currently in your keyring:
 secret-tool search --all service neomd
 
 # Remove a specific entry if you want to start over:
 secret-tool clear service neomd username account/Personal/password
+  # or
+secret-tool clear service neomd username account/Personal/oauth2_client_secret
 ```
 
 > [!IMPORTANT]
@@ -161,6 +176,22 @@ secret-tool store --label "neomd WorkInfo"  service neomd username account/WorkI
 If the keyring entry is missing or the keyring service is unavailable, neomd prints a warning and the literal sentinel `"keyring"` is used as the password — IMAP/SMTP authentication will then fail with a clear error. `[[senders]]` aliases that reference an account inherit the resolved keyring password automatically.
 
 OAuth2 tokens are also stored in the keyring under `username = account/<name>/oauth2` with the same `service = neomd`, falling back to `~/.config/neomd/tokens/<account>.json` (mode `0600`) when no keyring is available (headless / SSH systems).
+
+**Setup before first launch (MacOS, using `security`)**
+
+```sh
+# Add the entry (add-generic-password does not prompt by default so we use read instead)
+read -rsp "Password: " pw && eho && security add-generic-passowrd -s neomd -a account/Personal/password -w "$pw"
+
+# Verify it was stored (read-only):
+security find-generic-password -s neomd -a account/Personal/password -w
+
+# Remove a specific entry if you want to start over:
+security delete-generic-passowrd -s neomd -a account/Personal/password
+
+```
+
+The rest of details are the same as for Linux.
 
 ## TLS and STARTTLS Configuration
 
