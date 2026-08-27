@@ -5859,7 +5859,8 @@ func extractInlineAttachments(body string) (files []string, clean string) {
 }
 
 // extractHTMLSignatureMarker scans body for [html-signature] marker.
-// If found, removes it and returns (true, cleanBody).
+// If found, replaces each marker line with a blank line and returns
+// (true, cleanBody), preserving Markdown block boundaries for Listmonk.
 // If not found, returns (false, body unchanged).
 func extractHTMLSignatureMarker(body string) (includeHTMLSig bool, clean string) {
 	const marker = "[html-signature]"
@@ -5868,6 +5869,13 @@ func extractHTMLSignatureMarker(body string) (includeHTMLSig bool, clean string)
 		trimmed := strings.TrimSpace(line)
 		if trimmed == marker {
 			includeHTMLSig = true
+			// Keep the CR payload from a CRLF marker line. strings.Join below
+			// supplies the LF, yielding a real CRLF blank line.
+			if strings.HasSuffix(line, "\r") {
+				kept = append(kept, "\r")
+			} else {
+				kept = append(kept, "")
+			}
 			continue
 		}
 		kept = append(kept, line)

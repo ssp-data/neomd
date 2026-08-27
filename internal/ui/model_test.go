@@ -36,17 +36,72 @@ func TestMaskEmail(t *testing.T) {
 	}
 }
 
-func TestExtractHTMLSignatureMarkerRemovesEveryTrimmedMarker(t *testing.T) {
-	body := "Before\n [html-signature]\t\nBetween\n[html-signature]\nAfter"
-	include, clean := extractHTMLSignatureMarker(body)
-	if !include {
-		t.Fatal("marker was not detected")
+func TestExtractHTMLSignatureMarkerPreservesBlankMarkdownBoundaries(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "horizontal rule stays separate",
+			body: "Before\n[html-signature]\n---\nAfter",
+			want: "Before\n\n---\nAfter",
+		},
+		{
+			name: "blockquote starts a new block",
+			body: "Before\n[html-signature]\n> quoted text",
+			want: "Before\n\n> quoted text",
+		},
+		{
+			name: "list starts a new block",
+			body: "Before\n[html-signature]\n- first item\n- second item",
+			want: "Before\n\n- first item\n- second item",
+		},
+		{
+			name: "callout starts a new block",
+			body: "Before\n[html-signature]\n> [!note]\n> Callout text",
+			want: "Before\n\n> [!note]\n> Callout text",
+		},
+		{
+			name: "duplicate markers preserve every boundary",
+			body: "Before\n[html-signature]\n[html-signature]\nAfter",
+			want: "Before\n\n\nAfter",
+		},
+		{
+			name: "leading marker preserves blank first line",
+			body: "[html-signature]\nAfter",
+			want: "\nAfter",
+		},
+		{
+			name: "trailing marker preserves blank final line",
+			body: "Before\n[html-signature]",
+			want: "Before\n",
+		},
+		{
+			name: "whitespace-trimmed marker",
+			body: "Before\n \t[html-signature] \t\nAfter",
+			want: "Before\n\nAfter",
+		},
+		{
+			name: "CRLF marker preserves CRLF blank line",
+			body: "Before\r\n \t[html-signature] \r\nAfter",
+			want: "Before\r\n\r\nAfter",
+		},
 	}
-	if strings.Contains(clean, "[html-signature]") {
-		t.Fatalf("marker remained in Listmonk-clean body: %q", clean)
-	}
-	if clean != "Before\nBetween\nAfter" {
-		t.Errorf("clean body = %q, want marker-free source", clean)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			include, clean := extractHTMLSignatureMarker(tt.body)
+			if !include {
+				t.Fatal("marker was not detected")
+			}
+			if clean != tt.want {
+				t.Errorf("clean body = %q, want marker lines replaced by blanks %q", clean, tt.want)
+			}
+			if strings.Contains(clean, "[html-signature]") {
+				t.Errorf("marker remained in Listmonk-clean body: %q", clean)
+			}
+		})
 	}
 }
 
