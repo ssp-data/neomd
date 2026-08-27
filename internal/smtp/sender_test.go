@@ -1262,3 +1262,116 @@ func TestBuildMessage_HTMLSignatureMarkerPosition(t *testing.T) {
 		}
 	})
 }
+
+func TestPrepareEmailBodiesWithHTMLSignature_PreservesMarkerBoundaries(t *testing.T) {
+	tests := []struct {
+		name             string
+		markdown         string
+		markerFreeSource string
+	}{
+		{
+			name:             "setext and horizontal rule stay separate",
+			markdown:         "Intro\n[html-signature]\n---\nAfter",
+			markerFreeSource: "Intro\n\n---\nAfter",
+		},
+		{
+			name:             "blockquote starts a new block",
+			markdown:         "Intro\n[html-signature]\n> quoted text",
+			markerFreeSource: "Intro\n\n> quoted text",
+		},
+		{
+			name:             "list starts a new block",
+			markdown:         "Intro\n[html-signature]\n- first item\n- second item",
+			markerFreeSource: "Intro\n\n- first item\n- second item",
+		},
+		{
+			name:             "callout starts a new block",
+			markdown:         "Intro\n[html-signature]\n> [!note]\n> Callout text",
+			markerFreeSource: "Intro\n\n> [!note]\n> Callout text",
+		},
+		{
+			name:             "duplicate markers preserve every boundary",
+			markdown:         "Intro\n[html-signature]\n[html-signature]\n---\nAfter",
+			markerFreeSource: "Intro\n\n\n---\nAfter",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source, found := htmlSignatureMarkerSource(tt.markdown, "", false)
+			if !found {
+				t.Fatal("marker was not found")
+			}
+			if source != tt.markerFreeSource {
+				t.Fatalf("marker-free source = %q, want %q", source, tt.markerFreeSource)
+			}
+
+			wantHTML, err := render.ToHTML(tt.markerFreeSource)
+			if err != nil {
+				t.Fatalf("render expected HTML: %v", err)
+			}
+			wantPlain := render.FormatCalloutsForPlainText(tt.markerFreeSource)
+			gotPlain, gotHTML, err := prepareEmailBodiesWithHTMLSignature(tt.markdown, "")
+			if err != nil {
+				t.Fatalf("prepare email bodies: %v", err)
+			}
+			if gotHTML != wantHTML {
+				t.Errorf("HTML changed Markdown semantics:\ngot:\n%s\nwant:\n%s", gotHTML, wantHTML)
+			}
+			if gotPlain != wantPlain {
+				t.Errorf("plain text changed Markdown semantics:\ngot:\n%s\nwant:\n%s", gotPlain, wantPlain)
+			}
+		})
+	}
+}
+
+func TestHTMLSignatureMarkerSource_DuplicateSentinelPreservesBoundaries(t *testing.T) {
+	const sentinel = "signature-sentinel"
+	got, found := htmlSignatureMarkerSource("Intro\n[html-signature]\n[html-signature]\n---\nAfter", sentinel, true)
+	if !found {
+		t.Fatal("marker was not found")
+	}
+	want := "Intro\n\n" + sentinel + "\n\n\n---\nAfter"
+	if got != want {
+		t.Errorf("sentinel source = %q, want %q", got, want)
+	}
+}
+
+func TestRenderHTMLWithSignature_BoundedSentinelCollisionFallback(t *testing.T) {
+	const signature = `<div class="signature-position-test">Work Signature</div>`
+	candidates := make([]string, 0, htmlSignatureMaxAttempts)
+	for attempt := 0; attempt < htmlSignatureMaxAttempts; attempt++ {
+		candidates = append(candidates, htmlSignatureSentinel(attempt))
+	}
+	markdown := strings.Join(candidates, "\n\n") + "\n\n[html-signature]\n\nAfter"
+	markerFreeSource, found := htmlSignatureMarkerSource(markdown, "", false)
+	if !found {
+		t.Fatal("marker was not found")
+	}
+	markerFreeHTML, err := render.ToHTML(markerFreeSource)
+	if err != nil {
+		t.Fatalf("render marker-free source: %v", err)
+	}
+	closeAt := strings.LastIndex(markerFreeHTML, "</body>")
+	if closeAt < 0 {
+		t.Fatal("marker-free HTML has no closing body tag")
+	}
+	want := markerFreeHTML[:closeAt] + "\n" + signature + "\n" + markerFreeHTML[closeAt:]
+
+	got, err := RenderHTMLWithSignature(markdown, signature)
+	if err != nil {
+		t.Fatalf("render HTML with signature: %v", err)
+	}
+	if got != want {
+		t.Errorf("exhausted candidates must use exact marker-free append fallback:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+	if strings.Count(got, "signature-position-test") != 1 {
+		t.Errorf("signature count = %d, want 1:\n%s", strings.Count(got, "signature-position-test"), got)
+	}
+	if strings.Contains(got, htmlSignatureSentinel(htmlSignatureMaxAttempts)) {
+		t.Errorf("fallback leaked an out-of-bounds generated sentinel:\n%s", got)
+	}
+	if strings.Contains(got, htmlSignatureMarker) {
+		t.Errorf("fallback leaked marker:\n%s", got)
+	}
+}

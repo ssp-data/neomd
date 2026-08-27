@@ -91,6 +91,7 @@ func prepareEmailBodies(markdownBody string) (plainText, htmlBody string, err er
 const (
 	htmlSignatureMarker       = "[html-signature]"
 	htmlSignatureSentinelBase = "NEOMD_HTML_SIGNATURE_SENTINEL_7e3a4c0d_54b8_4cf0_a826_2b79f1d63e91"
+	htmlSignatureMaxAttempts  = 8
 )
 
 // prepareEmailBodiesWithHTMLSignature renders the two multipart alternatives
@@ -132,41 +133,42 @@ func RenderHTMLWithSignature(markdownBody, htmlSignature string) (string, error)
 
 	// Marker-free rendering is part of collision avoidance: Goldmark can turn
 	// escaped source text into a token that never appeared literally in Markdown.
-	nextSuffix := 0
-	for {
-		sentinel, next := nextHTMLSignatureSentinel(markdownBody, markerFreeHTML, nextSuffix)
-		nextSuffix = next
+	// Keep the candidate set bounded so adversarial body content cannot make the
+	// send or preview path retry indefinitely.
+	for attempt := 0; attempt < htmlSignatureMaxAttempts; attempt++ {
+		sentinel := htmlSignatureSentinel(attempt)
+		if strings.Contains(markdownBody, sentinel) || strings.Contains(markerFreeHTML, sentinel) {
+			continue
+		}
 		htmlSource, _ := htmlSignatureMarkerSource(markdownBody, sentinel, true)
 		htmlBody, err := render.ToHTML(htmlSource)
 		if err != nil {
 			return "", err
 		}
 
-		switch strings.Count(htmlBody, sentinel) {
-		case 0:
-			// The renderer omitted the inserted token. The marker is still gone,
-			// so preserve the rendered body and use the compatibility fallback.
-			return appendHTMLSignature(htmlBody, htmlSignature), nil
-		case 1:
-			standaloneSentinel := "<p>" + sentinel + "</p>"
+		standaloneSentinel := "<p>" + sentinel + "</p>"
+		if strings.Count(htmlBody, sentinel) == 1 {
 			if idx := strings.Index(htmlBody, standaloneSentinel); idx >= 0 {
 				return htmlBody[:idx] + htmlSignature + htmlBody[idx+len(standaloneSentinel):], nil
 			}
-			// A sole non-standalone token comes from the inserted marker (the
-			// candidate is absent from source and marker-free HTML), such as in
-			// a fenced code block. Scrub it and retain append fallback behavior.
-			return appendHTMLSignature(strings.ReplaceAll(htmlBody, sentinel, ""), htmlSignature), nil
-		default:
-			// Rendering synthesized an additional occurrence. Advance to the
-			// next deterministic candidate and render again rather than risking
-			// replacement of user-authored output.
 		}
+		// A missing, non-standalone, or duplicated token is unsafe (for
+		// example, a marker in a fenced code block). Return the already-rendered
+		// marker-free body so fallback cannot leak a sentinel or alter Markdown
+		// block boundaries.
+		return appendHTMLSignature(markerFreeHTML, htmlSignature), nil
 	}
+
+	// Every deterministic candidate collided with user-authored source or
+	// rendered output. Preserve the marker-free rendering and compatibility
+	// append behavior rather than searching without bound.
+	return appendHTMLSignature(markerFreeHTML, htmlSignature), nil
 }
 
-// htmlSignatureMarkerSource removes every marker line. When insertSentinel is
-// true, it replaces only the first marker with a collision-resistant token on
-// blank-line boundaries so Goldmark renders it as a standalone paragraph.
+// htmlSignatureMarkerSource replaces every marker line with a blank line so
+// removing a marker cannot fuse adjacent Markdown blocks. When insertSentinel
+// is true, it replaces only the first marker with a collision-resistant token
+// on blank-line boundaries so Goldmark renders it as a standalone paragraph.
 func htmlSignatureMarkerSource(markdownBody, sentinel string, insertSentinel bool) (string, bool) {
 	var source []string
 	foundMarker := false
@@ -178,6 +180,7 @@ func htmlSignatureMarkerSource(markdownBody, sentinel string, insertSentinel boo
 		}
 		foundMarker = true
 		if !insertSentinel || insertedSentinel {
+			source = append(source, "")
 			continue
 		}
 		if len(source) == 0 || strings.TrimSpace(source[len(source)-1]) != "" {
@@ -194,20 +197,13 @@ func removeHTMLSignatureMarkers(markdownBody string) string {
 	return source
 }
 
-// nextHTMLSignatureSentinel returns a deterministic candidate absent from both
-// original Markdown and marker-free rendered HTML. The next suffix lets callers
-// make finite forward progress when tokenized rendering creates a collision.
-func nextHTMLSignatureSentinel(markdownBody, markerFreeHTML string, suffix int) (string, int) {
-	for {
-		sentinel := htmlSignatureSentinelBase
-		if suffix > 0 {
-			sentinel = fmt.Sprintf("%s_%d", htmlSignatureSentinelBase, suffix)
-		}
-		suffix++
-		if !strings.Contains(markdownBody, sentinel) && !strings.Contains(markerFreeHTML, sentinel) {
-			return sentinel, suffix
-		}
+// htmlSignatureSentinel returns one of the bounded deterministic candidates
+// used only while rendering a marker position.
+func htmlSignatureSentinel(attempt int) string {
+	if attempt == 0 {
+		return htmlSignatureSentinelBase
 	}
+	return fmt.Sprintf("%s_%d", htmlSignatureSentinelBase, attempt)
 }
 
 func appendHTMLSignature(htmlBody, htmlSignature string) string {

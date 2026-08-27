@@ -7,7 +7,7 @@
 
 # 2026-08-27
 
-- **Fix: HTML signatures now stay at their reply marker** — SMTP renders the first line-trim-exact `[html-signature]` marker as the configured account's raw HTML signature instead of always appending it after quoted history; plain text and duplicate markers are cleaned, malformed marker contexts safely fall back to the historical append position, and browser preview shares the same renderer. The reply workflow now passes the original draft to SMTP so selected-account signatures retain their authored position, while Listmonk receives its marker-free body. Tests: `TestBuildMessage_HTMLSignatureMarkerPosition`, `TestHardening_Workflow_ReplyAllUsesReceivingAccount`.
+- **Fix: HTML signatures now stay at their reply marker** — SMTP renders the first line-trim-exact `[html-signature]` marker as the configured account's raw HTML signature instead of always appending it after quoted history; SMTP marker removal preserves a blank Markdown boundary, duplicate markers are cleaned, and malformed or collision-exhausted contexts use a bounded marker-free append fallback. Browser preview shares the same renderer; Listmonk keeps its marker-free body. Tests: `TestBuildMessage_HTMLSignatureMarkerPosition`, `TestPrepareEmailBodiesWithHTMLSignature_PreservesMarkerBoundaries`, `TestRenderHTMLWithSignature_BoundedSentinelCollisionFallback`, `TestHardening_Workflow_ReplyAllUsesReceivingAccount`.
 
 # 2026-08-26
 

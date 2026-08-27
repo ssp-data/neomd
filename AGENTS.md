@@ -167,11 +167,14 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   all-or-nothing via `Config.Signature(account)`; text signature goes to editor + plain
   part, HTML signature to HTML part only; `[html-signature]` placeholder controls
   inclusion per-email and is extracted right before send. Test: `TestSignature`.
-- **HTML signature marker position** — a line-trim-exact `[html-signature]` is removed
-  from plain text and replaces its first HTML occurrence in place (before reply history);
-  duplicate markers never duplicate the signature, and malformed marker contexts fall
-  back without leaking a marker or sentinel. Pinning test:
-  `TestBuildMessage_HTMLSignatureMarkerPosition`.
+- **HTML signature marker position** — a line-trim-exact `[html-signature]` is replaced
+  with a blank line in SMTP rendering, so it cannot fuse Markdown blocks; its first HTML
+  occurrence is replaced in place (before reply history). Duplicate markers never duplicate
+  the signature, and malformed or collision-exhausted contexts use a bounded marker-free
+  append fallback without leaking a marker or sentinel. Pinning tests:
+  `TestBuildMessage_HTMLSignatureMarkerPosition`,
+  `TestPrepareEmailBodiesWithHTMLSignature_PreservesMarkerBoundaries`,
+  `TestRenderHTMLWithSignature_BoundedSentinelCollisionFallback`.
 - **Drafts** — saved as plain text only (multipart caused round-trip corruption), keep
   `Bcc`; every compose session is backed up to `~/.cache/neomd/drafts/` (`:recover`);
   discarding unsent mail always asks y/n confirmation.
