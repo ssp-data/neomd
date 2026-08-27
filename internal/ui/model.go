@@ -4907,12 +4907,12 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			from := m.presendFrom()
 			smtpAcct := m.presendSMTPAccount()
 			attachments := m.attachments
-			includeHTMLSig, cleanBody := extractHTMLSignatureMarker(ps.body)
+			includeHTMLSig, _ := extractHTMLSignatureMarker(ps.body)
 			m.attachments = nil
 			m.pendingSend = nil
 			m.pendingIsReply = false
 			m.harvestTypedRecipients(ps.to, ps.cc, ps.bcc)
-			return m, tea.Batch(m.spinner.Tick, m.scheduleSendCmd(smtpAcct, from, ps.to, ps.cc, ps.bcc, ps.subject, cleanBody, attachments, includeHTMLSig, ps.inReplyTo, ps.references, at))
+			return m, tea.Batch(m.spinner.Tick, m.scheduleSendCmd(smtpAcct, from, ps.to, ps.cc, ps.bcc, ps.subject, ps.body, attachments, includeHTMLSig, ps.inReplyTo, ps.references, at))
 		}
 		var cmd tea.Cmd
 		m.sendLaterInput, cmd = m.sendLaterInput.Update(msg)
@@ -4926,7 +4926,9 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		smtpAcct := m.presendSMTPAccount()
 		attachments := m.attachments
 		replyUID, replyFolder := ps.replyToUID, ps.replyToFolder
-		// Extract [html-signature] marker from body now (right before sending)
+		// Keep [html-signature] in the SMTP source so the shared renderer can
+		// place the active account's HTML signature at the marker. Listmonk
+		// still receives the clean marker-free body below.
 		includeHTMLSig, cleanBody := extractHTMLSignatureMarker(ps.body)
 		m.attachments = nil
 		m.pendingSend = nil
@@ -4942,7 +4944,7 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.spinner.Tick, m.sendListmonkCmd(ps.subject, cleanBody, listIDs, templateID))
 			}
 		}
-		return m, tea.Batch(m.spinner.Tick, m.sendEmailCmd(smtpAcct, from, ps.to, ps.cc, ps.bcc, ps.subject, cleanBody, attachments, includeHTMLSig, replyUID, replyFolder, ps.replyToAccount, ps.inReplyTo, ps.references))
+		return m, tea.Batch(m.spinner.Tick, m.sendEmailCmd(smtpAcct, from, ps.to, ps.cc, ps.bcc, ps.subject, ps.body, attachments, includeHTMLSig, replyUID, replyFolder, ps.replyToAccount, ps.inReplyTo, ps.references))
 	case "ctrl+f":
 		froms := m.presendFroms()
 		if len(froms) <= 1 {
@@ -5191,27 +5193,19 @@ func (m Model) previewInBrowser() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Extract [html-signature] marker the same way as the send path
-	// so the preview matches what recipients will actually receive
-	includeHTMLSig, cleanBody := extractHTMLSignatureMarker(ps.body)
-
-	htmlBody, err := render.ToHTML(cleanBody)
+	// Keep extractHTMLSignatureMarker as the inclusion control, while using the
+	// shared SMTP renderer with the original source so preview and delivery
+	// place the HTML signature at the same marker.
+	includeHTMLSig, _ := extractHTMLSignatureMarker(ps.body)
+	htmlSig := ""
+	if includeHTMLSig {
+		htmlSig = m.cfg.Signature(m.presendSMTPAccount()).HTML
+	}
+	htmlBody, err := smtp.RenderHTMLWithSignature(ps.body, htmlSig)
 	if err != nil {
 		m.status = "preview: " + err.Error()
 		m.isError = true
 		return m, nil
-	}
-
-	// Inject HTML signature before </body> tag if enabled (matching send path)
-	if includeHTMLSig {
-		acct := m.presendSMTPAccount()
-		htmlSig := m.cfg.Signature(acct).HTML
-		if htmlSig != "" {
-			idx := strings.LastIndex(htmlBody, "</body>")
-			if idx >= 0 {
-				htmlBody = htmlBody[:idx] + "\n" + htmlSig + "\n" + htmlBody[idx:]
-			}
-		}
 	}
 
 	// Convert absolute image paths to file:// URLs so the browser can display them.

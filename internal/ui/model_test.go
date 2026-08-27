@@ -36,6 +36,20 @@ func TestMaskEmail(t *testing.T) {
 	}
 }
 
+func TestExtractHTMLSignatureMarkerRemovesEveryTrimmedMarker(t *testing.T) {
+	body := "Before\n [html-signature]\t\nBetween\n[html-signature]\nAfter"
+	include, clean := extractHTMLSignatureMarker(body)
+	if !include {
+		t.Fatal("marker was not detected")
+	}
+	if strings.Contains(clean, "[html-signature]") {
+		t.Fatalf("marker remained in Listmonk-clean body: %q", clean)
+	}
+	if clean != "Before\nBetween\nAfter" {
+		t.Errorf("clean body = %q, want marker-free source", clean)
+	}
+}
+
 // isURLSchemeAllowed replicates the inline URL scheme check from model.go Update().
 func isURLSchemeAllowed(url string) bool {
 	lower := strings.ToLower(url)

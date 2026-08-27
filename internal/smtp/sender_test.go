@@ -1109,3 +1109,156 @@ func extractPlainTextPart(t *testing.T, raw []byte) string {
 	}
 	return ""
 }
+
+func TestBuildMessage_HTMLSignatureMarkerPosition(t *testing.T) {
+	const signature = `<div class="signature-position-test">Work Signature</div>`
+
+	buildBodies := func(t *testing.T, markdown, htmlSignature string) (string, string) {
+		t.Helper()
+		raw, err := BuildMessage("Alice <alice@example.com>", "Bob <bob@example.com>", "", "Signature position", markdown, nil, htmlSignature)
+		if err != nil {
+			t.Fatalf("BuildMessage: %v", err)
+		}
+		msg, _, params := parseMIME(t, raw)
+		parts := multipart.NewReader(msg.Body, params["boundary"])
+		decode := func(part *multipart.Part) string {
+			t.Helper()
+			body, err := io.ReadAll(part)
+			if err != nil {
+				t.Fatalf("decode quoted-printable part: %v", err)
+			}
+			return string(body)
+		}
+		plainPart, err := parts.NextPart()
+		if err != nil {
+			t.Fatalf("read plain part: %v", err)
+		}
+		plain := decode(plainPart)
+		htmlPart, err := parts.NextPart()
+		if err != nil {
+			t.Fatalf("read HTML part: %v", err)
+		}
+		return plain, decode(htmlPart)
+	}
+	assertReplyOrder := func(t *testing.T, html, reply string) {
+		t.Helper()
+		replyAt := strings.Index(html, reply)
+		separatorAt := strings.Index(html, "<p>--</p>")
+		sigAt := strings.Index(html, "signature-position-test")
+		hrAt := strings.Index(html, "<hr")
+		quoteAt := strings.Index(html, "<blockquote>")
+		if replyAt < 0 || separatorAt < 0 || sigAt < 0 || hrAt < 0 || quoteAt < 0 {
+			t.Fatalf("missing reply, separator, signature, rule, or quote:\n%s", html)
+		}
+		if !(replyAt < separatorAt && separatorAt < sigAt && sigAt < hrAt && hrAt < quoteAt) {
+			t.Errorf("reply ordering must be reply < separator < signature < hr < quote: reply=%d separator=%d signature=%d hr=%d quote=%d\n%s", replyAt, separatorAt, sigAt, hrAt, quoteAt, html)
+		}
+	}
+
+	t.Run("reply marker stays before history", func(t *testing.T) {
+		markdown := "Thanks for the update.\n\n--  \n \t[html-signature]  \n\n---\n\n> Original message"
+		plain, html := buildBodies(t, markdown, signature)
+		plain = strings.ReplaceAll(plain, "\r\n", "\n")
+
+		for _, want := range []string{"Thanks for the update.", "\n--  \n", "> Original message"} {
+			if !strings.Contains(plain, want) {
+				t.Errorf("plain part lost %q:\n%s", want, plain)
+			}
+		}
+		for _, forbidden := range []string{"[html-signature]", "NEOMD_HTML_SIGNATURE_SENTINEL"} {
+			if strings.Contains(plain, forbidden) || strings.Contains(html, forbidden) {
+				t.Errorf("internal value %q leaked:\nplain=%s\nhtml=%s", forbidden, plain, html)
+			}
+		}
+		assertReplyOrder(t, html, "Thanks for the update.")
+	})
+
+	t.Run("CRLF reply marker stays before history", func(t *testing.T) {
+		markdown := "Thanks from CRLF.\r\n\r\n--  \r\n[html-signature]\r\n\r\n---\r\n\r\n> Original message"
+		_, html := buildBodies(t, markdown, signature)
+		assertReplyOrder(t, html, "Thanks from CRLF.")
+	})
+
+	t.Run("no marker preserves append fallback", func(t *testing.T) {
+		_, html := buildBodies(t, "Body without a marker", signature)
+		bodyAt := strings.Index(html, "Body without a marker")
+		sigAt := strings.Index(html, "signature-position-test")
+		bodyClose := strings.Index(html, "</body>")
+		if bodyAt < 0 || sigAt < 0 || bodyClose < 0 || !(bodyAt < sigAt && sigAt < bodyClose) {
+			t.Errorf("fallback ordering must be body < signature < </body>: body=%d signature=%d close=%d\n%s", bodyAt, sigAt, bodyClose, html)
+		}
+	})
+
+	t.Run("marker with empty signature is removed", func(t *testing.T) {
+		plain, html := buildBodies(t, "Body\n\n[html-signature]\n\nAfter", "")
+		for _, got := range []string{plain, html} {
+			if strings.Contains(got, "[html-signature]") || strings.Contains(got, "NEOMD_HTML_SIGNATURE_SENTINEL") {
+				t.Errorf("marker leaked with empty HTML signature:\n%s", got)
+			}
+		}
+		if !strings.Contains(html, "Body") || !strings.Contains(html, "After") {
+			t.Errorf("body content lost with empty HTML signature:\n%s", html)
+		}
+	})
+
+	t.Run("marker in a code fence scrubs sentinel and falls back", func(t *testing.T) {
+		_, html := buildBodies(t, "Before\n\n```\n[html-signature]\n```\n\nAfter", signature)
+		if strings.Contains(html, "[html-signature]") || strings.Contains(html, "NEOMD_HTML_SIGNATURE_SENTINEL") {
+			t.Errorf("marker or sentinel leaked from code fence:\n%s", html)
+		}
+		sigAt := strings.Index(html, "signature-position-test")
+		bodyClose := strings.Index(html, "</body>")
+		if sigAt < 0 || bodyClose < 0 || sigAt >= bodyClose {
+			t.Errorf("code-fence fallback must append signature before </body>:\n%s", html)
+		}
+	})
+
+	t.Run("base sentinel collision is preserved", func(t *testing.T) {
+		markdown := "User-authored " + htmlSignatureSentinelBase + " text.\n\n[html-signature]\n\nAfter"
+		plain, html := buildBodies(t, markdown, signature)
+		generated := htmlSignatureSentinelBase + "_1"
+		if !strings.Contains(plain, htmlSignatureSentinelBase) || !strings.Contains(html, htmlSignatureSentinelBase) {
+			t.Errorf("user-authored base sentinel was removed:\nplain=%s\nhtml=%s", plain, html)
+		}
+		if strings.Contains(html, generated) || strings.Contains(html, "[html-signature]") {
+			t.Errorf("generated sentinel or marker leaked:\n%s", html)
+		}
+		if got := strings.Count(html, "signature-position-test"); got != 1 {
+			t.Errorf("signature count = %d, want 1:\n%s", got, html)
+		}
+	})
+
+	t.Run("rendered escaped sentinel collision is preserved", func(t *testing.T) {
+		escapedBase := strings.ReplaceAll(htmlSignatureSentinelBase, "_", "\\_")
+		markdown := escapedBase + "\n\nReply before marker.\n\n[html-signature]\n\nAfter"
+		plain, html := buildBodies(t, markdown, signature)
+		userAt := strings.Index(html, htmlSignatureSentinelBase)
+		replyAt := strings.Index(html, "Reply before marker.")
+		sigAt := strings.Index(html, "signature-position-test")
+		if !strings.Contains(plain, escapedBase) || userAt < 0 {
+			t.Errorf("escaped user text was not preserved:\nplain=%s\nhtml=%s", plain, html)
+		}
+		if got := strings.Count(html, "signature-position-test"); got != 1 || replyAt < 0 || sigAt < 0 || !(userAt < replyAt && replyAt < sigAt) {
+			t.Errorf("signature must replace the marker after escaped user text: user=%d reply=%d signature=%d count=%d\n%s", userAt, replyAt, sigAt, got, html)
+		}
+		if strings.Contains(html, htmlSignatureSentinelBase+"_1") || strings.Contains(html, "[html-signature]") {
+			t.Errorf("generated sentinel or marker leaked:\n%s", html)
+		}
+	})
+
+	t.Run("duplicate markers insert once at the first", func(t *testing.T) {
+		markdown := "First paragraph\n\n[html-signature]\n\nMiddle paragraph\n\n[html-signature]\n\n---\n\n> Original message"
+		_, html := buildBodies(t, markdown, signature)
+		if got := strings.Count(html, "signature-position-test"); got != 1 {
+			t.Errorf("signature count = %d, want 1:\n%s", got, html)
+		}
+		sigAt := strings.Index(html, "signature-position-test")
+		middleAt := strings.Index(html, "Middle paragraph")
+		if sigAt < 0 || middleAt < 0 || sigAt > middleAt {
+			t.Errorf("signature must replace the first marker: signature=%d middle=%d\n%s", sigAt, middleAt, html)
+		}
+		if strings.Contains(html, "[html-signature]") || strings.Contains(html, "NEOMD_HTML_SIGNATURE_SENTINEL") {
+			t.Errorf("marker or sentinel leaked:\n%s", html)
+		}
+	})
+}
