@@ -964,6 +964,8 @@ func (m Model) activeFolder() string {
 		return m.cfg.Folders.Feed
 	case "PaperTrail":
 		return m.cfg.Folders.PaperTrail
+	case "Drafts":
+		return m.cfg.Folders.Drafts
 	case "Sent":
 		return m.cfg.Folders.Sent
 	case "Trash":
@@ -3734,13 +3736,6 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			m.status = "Spam folder — press R to reload, tab to leave"
 			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Spam))
 		}
-		if key == "d" { // gd — go to Drafts (not in tab rotation)
-			m.loading = true
-			m.offTabFolder = "Drafts"
-			m.imapSearchText = ""
-			m.status = "Drafts folder — press R to reload, tab to leave"
-			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Drafts))
-		}
 		if key == "e" { // ge — Everything: latest emails across all folders
 			m.loading = true
 			return m, tea.Batch(m.spinner.Tick, m.fetchEverythingCmd())
@@ -3758,6 +3753,7 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			"c": "Scheduled",
 			"m": "Someday",
 			"o": "ScreenedOut",
+			"d": "Drafts",
 		}
 		if name, ok := folderMap[key]; ok {
 			for i, f := range m.folders {
@@ -3771,6 +3767,13 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 					m.loading = true
 					return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
 				}
+			}
+			if name == "Drafts" { // custom tab order may hide Drafts
+				m.loading = true
+				m.offTabFolder = "Drafts"
+				m.imapSearchText = ""
+				m.status = "Drafts folder — press R to reload, tab to leave"
+				return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Drafts))
 			}
 		}
 		m.status = fmt.Sprintf("unknown: g%s", key)

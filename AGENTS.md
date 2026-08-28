@@ -287,6 +287,12 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 
 ## Inbox Display
 
+- **Drafts tab and `gd` resolve the same mailbox** — when `drafts` is present in
+  `folders.tab_order` (including the default order), selecting its tab must map to
+  `Folders.Drafts`, never fall through to Inbox. `gd` reuses that visible tab and
+  only creates an off-tab Drafts view when a custom order hides it. Tests:
+  `TestActiveFolderMapsDraftsTab`, `TestGoToDraftsReusesVisibleTab`,
+  `TestGoToDraftsUsesOffTabFallbackWhenHidden`.
 - **Rows never overflow the terminal width** — complex scripts (Bengali/Arabic/Thai/emoji)
   collapse to `·` for display only; CJK passes through (East Asian Wide is deterministic);
   the original subject is never mutated (reply/forward/thread logic uses the real RFC

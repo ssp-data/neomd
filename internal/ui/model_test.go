@@ -454,6 +454,75 @@ func TestActiveFolderUsesOffTabFolder(t *testing.T) {
 	}
 }
 
+func TestActiveFolderMapsDraftsTab(t *testing.T) {
+	m := Model{
+		cfg: &config.Config{
+			Folders: config.FoldersConfig{
+				Inbox:  "INBOX",
+				Drafts: "[Gmail]/Drafts",
+			},
+		},
+		folders:       []string{"Inbox", "Drafts"},
+		activeFolderI: 1,
+	}
+
+	if got := m.activeFolder(); got != "[Gmail]/Drafts" {
+		t.Fatalf("activeFolder() on Drafts tab = %q, want %q", got, "[Gmail]/Drafts")
+	}
+}
+
+func TestGoToDraftsReusesVisibleTab(t *testing.T) {
+	m := Model{
+		cfg: &config.Config{
+			Folders: config.FoldersConfig{
+				Inbox:  "INBOX",
+				Drafts: "[Gmail]/Drafts",
+			},
+		},
+		folders:       []string{"Inbox", "Drafts", "Trash"},
+		activeFolderI: 0,
+	}
+
+	next, cmd := m.handleChord("g", "d")
+	got := next.(Model)
+	if cmd == nil {
+		t.Fatal("gd returned no fetch command")
+	}
+	if got.activeFolderI != 1 {
+		t.Fatalf("gd activeFolderI = %d, want 1", got.activeFolderI)
+	}
+	if got.offTabFolder != "" {
+		t.Fatalf("gd offTabFolder = %q, want empty when Drafts tab is visible", got.offTabFolder)
+	}
+	if folder := got.activeFolder(); folder != "[Gmail]/Drafts" {
+		t.Fatalf("gd activeFolder() = %q, want %q", folder, "[Gmail]/Drafts")
+	}
+}
+
+func TestGoToDraftsUsesOffTabFallbackWhenHidden(t *testing.T) {
+	m := Model{
+		cfg: &config.Config{
+			Folders: config.FoldersConfig{
+				Inbox:  "INBOX",
+				Drafts: "[Gmail]/Drafts",
+			},
+		},
+		folders: []string{"Inbox", "Trash"},
+	}
+
+	next, cmd := m.handleChord("g", "d")
+	got := next.(Model)
+	if cmd == nil {
+		t.Fatal("gd returned no fetch command")
+	}
+	if got.offTabFolder != "Drafts" {
+		t.Fatalf("gd offTabFolder = %q, want %q", got.offTabFolder, "Drafts")
+	}
+	if folder := got.activeFolder(); folder != "[Gmail]/Drafts" {
+		t.Fatalf("gd activeFolder() = %q, want %q", folder, "[Gmail]/Drafts")
+	}
+}
+
 func TestUpdateInboxEscClearsCommittedFilter(t *testing.T) {
 	m := Model{
 		filterText: "invoice",
