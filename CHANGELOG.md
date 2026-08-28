@@ -7,7 +7,7 @@
 
 # 2026-08-28
 
-- **Fix: the visible Drafts tab no longer loads Inbox** — `folders.tab_order` includes Drafts by default, but `activeFolder()` omitted its tab label and silently fell through to the Inbox mailbox; the separate `gd` off-tab path was correct, which produced two Drafts tabs with different contents. The tab now maps to `Folders.Drafts`, and `gd` reuses it when visible while retaining an off-tab fallback for custom orders that hide Drafts. Tests: `TestActiveFolderMapsDraftsTab`, `TestGoToDraftsReusesVisibleTab`, `TestGoToDraftsUsesOffTabFallbackWhenHidden`.
+- **Fix: the visible Drafts tab no longer loads Inbox** — `folders.tab_order` includes Drafts by default, but `activeFolder()` omitted its tab label and silently fell through to the Inbox mailbox; the separate `gd` off-tab path was correct, which produced two Drafts tabs with different contents. The tab now maps to `Folders.Drafts`, and `gd` reuses it when visible while retaining an off-tab fallback for custom orders that hide Drafts. Both paths clear stale IMAP search-result state, and the FAQ now documents when Drafts is a regular or off-tab folder. Tests: `TestActiveFolderMapsDraftsTab`, `TestGoToDraftsReusesVisibleTab`, `TestGoToDraftsUsesOffTabFallbackWhenHidden`.
 
 # 2026-08-26
 

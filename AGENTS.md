@@ -290,7 +290,8 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **Drafts tab and `gd` resolve the same mailbox** — when `drafts` is present in
   `folders.tab_order` (including the default order), selecting its tab must map to
   `Folders.Drafts`, never fall through to Inbox. `gd` reuses that visible tab and
-  only creates an off-tab Drafts view when a custom order hides it. Tests:
+  only creates an off-tab Drafts view when a custom order hides it; both paths clear
+  any active IMAP search-result state. Tests:
   `TestActiveFolderMapsDraftsTab`, `TestGoToDraftsReusesVisibleTab`,
   `TestGoToDraftsUsesOffTabFallbackWhenHidden`.
 - **Rows never overflow the terminal width** — complex scripts (Bengali/Arabic/Thai/emoji)

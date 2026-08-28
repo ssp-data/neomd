@@ -3758,11 +3758,12 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 		if name, ok := folderMap[key]; ok {
 			for i, f := range m.folders {
 				if f == name {
-					if i == m.activeFolderI && m.offTabFolder == "" {
+					if i == m.activeFolderI && m.offTabFolder == "" && !m.imapSearchResults {
 						return m, nil
 					}
 					m.activeFolderI = i
 					m.offTabFolder = ""
+					m.imapSearchResults = false
 					m.imapSearchText = ""
 					m.loading = true
 					return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
@@ -3771,6 +3772,7 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			if name == "Drafts" { // custom tab order may hide Drafts
 				m.loading = true
 				m.offTabFolder = "Drafts"
+				m.imapSearchResults = false
 				m.imapSearchText = ""
 				m.status = "Drafts folder — press R to reload, tab to leave"
 				return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Drafts))

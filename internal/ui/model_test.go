@@ -479,8 +479,11 @@ func TestGoToDraftsReusesVisibleTab(t *testing.T) {
 				Drafts: "[Gmail]/Drafts",
 			},
 		},
-		folders:       []string{"Inbox", "Drafts", "Trash"},
-		activeFolderI: 0,
+		folders:           []string{"Inbox", "Drafts", "Trash"},
+		activeFolderI:     0,
+		offTabFolder:      "Search",
+		imapSearchText:    "invoice",
+		imapSearchResults: true,
 	}
 
 	next, cmd := m.handleChord("g", "d")
@@ -494,8 +497,20 @@ func TestGoToDraftsReusesVisibleTab(t *testing.T) {
 	if got.offTabFolder != "" {
 		t.Fatalf("gd offTabFolder = %q, want empty when Drafts tab is visible", got.offTabFolder)
 	}
+	if got.imapSearchResults || got.imapSearchText != "" {
+		t.Fatalf("gd search state = (%v, %q), want cleared", got.imapSearchResults, got.imapSearchText)
+	}
 	if folder := got.activeFolder(); folder != "[Gmail]/Drafts" {
 		t.Fatalf("gd activeFolder() = %q, want %q", folder, "[Gmail]/Drafts")
+	}
+
+	// A stale search-result flag must not trigger the already-active no-op path.
+	got.imapSearchResults = true
+	got.imapSearchText = "stale query"
+	next, cmd = got.handleChord("g", "d")
+	got = next.(Model)
+	if cmd == nil || got.imapSearchResults || got.imapSearchText != "" {
+		t.Fatalf("gd on active Drafts with stale search state = (cmd nil: %v, %v, %q), want reload and cleared search", cmd == nil, got.imapSearchResults, got.imapSearchText)
 	}
 }
 
@@ -507,7 +522,10 @@ func TestGoToDraftsUsesOffTabFallbackWhenHidden(t *testing.T) {
 				Drafts: "[Gmail]/Drafts",
 			},
 		},
-		folders: []string{"Inbox", "Trash"},
+		folders:           []string{"Inbox", "Trash"},
+		offTabFolder:      "Search",
+		imapSearchText:    "invoice",
+		imapSearchResults: true,
 	}
 
 	next, cmd := m.handleChord("g", "d")
@@ -517,6 +535,9 @@ func TestGoToDraftsUsesOffTabFallbackWhenHidden(t *testing.T) {
 	}
 	if got.offTabFolder != "Drafts" {
 		t.Fatalf("gd offTabFolder = %q, want %q", got.offTabFolder, "Drafts")
+	}
+	if got.imapSearchResults || got.imapSearchText != "" {
+		t.Fatalf("gd search state = (%v, %q), want cleared", got.imapSearchResults, got.imapSearchText)
 	}
 	if folder := got.activeFolder(); folder != "[Gmail]/Drafts" {
 		t.Fatalf("gd activeFolder() = %q, want %q", folder, "[Gmail]/Drafts")
