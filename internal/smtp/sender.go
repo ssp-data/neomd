@@ -85,17 +85,132 @@ func (a *xoauth2Auth) Next(_ []byte, more bool) ([]byte, error) {
 // This separation ensures we never mix the two formats - plain text gets readable callout formatting,
 // HTML gets full goldmark rendering with styled callout boxes.
 func prepareEmailBodies(markdownBody string) (plainText, htmlBody string, err error) {
+	return prepareEmailBodiesWithHTMLSignature(markdownBody, "")
+}
+
+const (
+	htmlSignatureMarker       = "[html-signature]"
+	htmlSignatureSentinelBase = "NEOMD_HTML_SIGNATURE_SENTINEL_7e3a4c0d_54b8_4cf0_a826_2b79f1d63e91"
+	htmlSignatureMaxAttempts  = 8
+)
+
+// prepareEmailBodiesWithHTMLSignature renders the two multipart alternatives
+// from a single Markdown source. Signature marker lines are never sent in the
+// plain part; the HTML renderer replaces the first marker with the configured
+// raw HTML signature at that exact document position.
+func prepareEmailBodiesWithHTMLSignature(markdownBody, htmlSignature string) (plainText, htmlBody string, err error) {
 	// Plain text part: Format callouts as emoji text without blockquotes (> [!note] → 📘 Note)
 	// Blockquote markers are removed because terminal renderers strip them during display anyway.
-	plainText = render.FormatCalloutsForPlainText(markdownBody)
+	plainText = render.FormatCalloutsForPlainText(removeHTMLSignatureMarkers(markdownBody))
 
-	// HTML part: Full goldmark rendering with styled callout boxes
-	htmlBody, err = render.ToHTML(markdownBody)
+	// HTML part: Full goldmark rendering with styled callout boxes and the
+	// marker-aware signature placement used by browser preview as well.
+	htmlBody, err = RenderHTMLWithSignature(markdownBody, htmlSignature)
 	if err != nil {
 		return "", "", fmt.Errorf("markdown to html: %w", err)
 	}
 
 	return plainText, htmlBody, nil
+}
+
+// RenderHTMLWithSignature renders Markdown for an email HTML part and places a
+// configured raw HTML signature at the first line-trim-exact [html-signature]
+// marker. Without a marker it preserves the historical append-before-</body>
+// behavior. This is exported so browser preview and SMTP delivery share the
+// same marker handling.
+func RenderHTMLWithSignature(markdownBody, htmlSignature string) (string, error) {
+	markerFreeSource, hasMarker := htmlSignatureMarkerSource(markdownBody, "", false)
+	markerFreeHTML, err := render.ToHTML(markerFreeSource)
+	if err != nil {
+		return "", err
+	}
+	if htmlSignature == "" {
+		return markerFreeHTML, nil
+	}
+	if !hasMarker {
+		return appendHTMLSignature(markerFreeHTML, htmlSignature), nil
+	}
+
+	// Marker-free rendering is part of collision avoidance: Goldmark can turn
+	// escaped source text into a token that never appeared literally in Markdown.
+	// Keep the candidate set bounded so adversarial body content cannot make the
+	// send or preview path retry indefinitely.
+	for attempt := 0; attempt < htmlSignatureMaxAttempts; attempt++ {
+		sentinel := htmlSignatureSentinel(attempt)
+		if strings.Contains(markdownBody, sentinel) || strings.Contains(markerFreeHTML, sentinel) {
+			continue
+		}
+		htmlSource, _ := htmlSignatureMarkerSource(markdownBody, sentinel, true)
+		htmlBody, err := render.ToHTML(htmlSource)
+		if err != nil {
+			return "", err
+		}
+
+		standaloneSentinel := "<p>" + sentinel + "</p>"
+		if strings.Count(htmlBody, sentinel) == 1 {
+			if idx := strings.Index(htmlBody, standaloneSentinel); idx >= 0 {
+				return htmlBody[:idx] + htmlSignature + htmlBody[idx+len(standaloneSentinel):], nil
+			}
+		}
+		// A missing, non-standalone, or duplicated token is unsafe (for
+		// example, a marker in a fenced code block). Return the already-rendered
+		// marker-free body so fallback cannot leak a sentinel or alter Markdown
+		// block boundaries.
+		return appendHTMLSignature(markerFreeHTML, htmlSignature), nil
+	}
+
+	// Every deterministic candidate collided with user-authored source or
+	// rendered output. Preserve the marker-free rendering and compatibility
+	// append behavior rather than searching without bound.
+	return appendHTMLSignature(markerFreeHTML, htmlSignature), nil
+}
+
+// htmlSignatureMarkerSource replaces every marker line with a blank line so
+// removing a marker cannot fuse adjacent Markdown blocks. When insertSentinel
+// is true, it replaces only the first marker with a collision-resistant token
+// on blank-line boundaries so Goldmark renders it as a standalone paragraph.
+func htmlSignatureMarkerSource(markdownBody, sentinel string, insertSentinel bool) (string, bool) {
+	var source []string
+	foundMarker := false
+	insertedSentinel := false
+	for _, line := range strings.Split(markdownBody, "\n") {
+		if strings.TrimSpace(line) != htmlSignatureMarker {
+			source = append(source, line)
+			continue
+		}
+		foundMarker = true
+		if !insertSentinel || insertedSentinel {
+			source = append(source, "")
+			continue
+		}
+		if len(source) == 0 || strings.TrimSpace(source[len(source)-1]) != "" {
+			source = append(source, "")
+		}
+		source = append(source, sentinel, "")
+		insertedSentinel = true
+	}
+	return strings.Join(source, "\n"), foundMarker
+}
+
+func removeHTMLSignatureMarkers(markdownBody string) string {
+	source, _ := htmlSignatureMarkerSource(markdownBody, "", false)
+	return source
+}
+
+// htmlSignatureSentinel returns one of the bounded deterministic candidates
+// used only while rendering a marker position.
+func htmlSignatureSentinel(attempt int) string {
+	if attempt == 0 {
+		return htmlSignatureSentinelBase
+	}
+	return fmt.Sprintf("%s_%d", htmlSignatureSentinelBase, attempt)
+}
+
+func appendHTMLSignature(htmlBody, htmlSignature string) string {
+	if idx := strings.LastIndex(htmlBody, "</body>"); idx >= 0 {
+		return htmlBody[:idx] + "\n" + htmlSignature + "\n" + htmlBody[idx:]
+	}
+	return htmlBody
 }
 
 // Send composes and sends an email.
@@ -278,7 +393,8 @@ func sendSTARTTLSWithConfig(addr, host string, tlsCfg *tls.Config, auth smtp.Aut
 // BCC must not be passed — it must never appear in message headers.
 // When attachments is non-empty the message is wrapped in multipart/mixed;
 // otherwise the structure is unchanged (multipart/alternative only).
-// htmlSignature, if non-empty, is injected before the closing </body> tag in the HTML part.
+// htmlSignature is placed at the first [html-signature] marker when present,
+// otherwise it is appended before the closing </body> tag for compatibility.
 func BuildMessage(from, to, cc, subject, markdownBody string, attachments []string, htmlSignature string) ([]byte, error) {
 	return BuildMessageWithThreading(from, to, cc, subject, markdownBody, attachments, htmlSignature, "", "")
 }
@@ -287,18 +403,9 @@ func BuildMessage(from, to, cc, subject, markdownBody string, attachments []stri
 // Used for replies and forwards to maintain proper email conversation threading.
 func BuildMessageWithThreading(from, to, cc, subject, markdownBody string, attachments []string, htmlSignature, inReplyTo, references string) ([]byte, error) {
 	// Convert markdown to both formats (plain text with formatted callouts, HTML with styled boxes)
-	plainText, htmlBody, err := prepareEmailBodies(markdownBody)
+	plainText, htmlBody, err := prepareEmailBodiesWithHTMLSignature(markdownBody, htmlSignature)
 	if err != nil {
 		return nil, err
-	}
-	// Inject HTML signature before </body> tag if provided
-	if htmlSignature != "" {
-		// Replace the last occurrence of </body> with signature + </body>
-		// This ensures the signature is inside the HTML document structure
-		idx := strings.LastIndex(htmlBody, "</body>")
-		if idx >= 0 {
-			htmlBody = htmlBody[:idx] + "\n" + htmlSignature + "\n" + htmlBody[idx:]
-		}
 	}
 	return buildMessageWithBCC(from, to, cc, "", subject, plainText, htmlBody, attachments, inReplyTo, buildRefChain(references, inReplyTo))
 }

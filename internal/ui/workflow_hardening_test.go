@@ -363,9 +363,11 @@ func TestHardening_Workflow_ReplyAllUsesReceivingAccount(t *testing.T) {
 	cfg := &config.Config{
 		Accounts: []config.AccountConfig{
 			{Name: "Personal", User: "personal-login@provider.example", Password: "pw1",
-				From: "Simon Späti <simu@sspaeti.com>", SMTP: personalAddr},
+				From: "Simon Späti <simu@sspaeti.com>", SMTP: personalAddr,
+				Signature: config.SignatureConfig{HTML: `<div class="personal-signature">Personal signature</div>`}},
 			{Name: "Work", User: "work-login@provider.example", Password: "pw2",
-				From: "Work Persona <work@company.example>", SMTP: workAddr},
+				From: "Work Persona <work@company.example>", SMTP: workAddr,
+				Signature: config.SignatureConfig{HTML: `<div class="work-signature">Work signature</div>`}},
 		},
 		Senders: []config.SenderConfig{
 			{Name: "Support", From: "Support <support@sspaeti.com>", Account: "Work"},
@@ -403,8 +405,12 @@ func TestHardening_Workflow_ReplyAllUsesReceivingAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	replyText := "Grüezi Louise,\n\nGerne — der Termin **passt**.\n"
-	edited := string(content) + "\n" + replyText
+	replyText := "Grüezi Louise,\n\nGerne — der Termin **passt**.\n\n--  \n[html-signature]\n\n"
+	headerEnd := strings.Index(string(content), "\n\n")
+	if headerEnd < 0 {
+		t.Fatal("reply compose file has no header/body separator")
+	}
+	edited := string(content[:headerEnd+2]) + replyText + string(content[headerEnd+2:])
 	if err := os.WriteFile(composePath, []byte(edited), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -489,6 +495,19 @@ func TestHardening_Workflow_ReplyAllUsesReceivingAccount(t *testing.T) {
 	}
 	if !strings.Contains(w.html, "<strong>passt</strong>") {
 		t.Error("HTML part lost markdown rendering of the reply text")
+	}
+	replyAt := strings.Index(w.html, "<strong>passt</strong>")
+	separatorAt := strings.Index(w.html, "<p>--</p>")
+	workSignatureAt := strings.Index(w.html, "work-signature")
+	quoteAt := strings.Index(w.html, "<blockquote>")
+	if strings.Count(w.html, "work-signature") != 1 || replyAt < 0 || separatorAt < 0 || workSignatureAt < 0 || quoteAt < 0 || !(replyAt < separatorAt && separatorAt < workSignatureAt && workSignatureAt < quoteAt) {
+		t.Errorf("Work HTML signature ordering must be reply < separator < signature < quote: reply=%d separator=%d signature=%d quote=%d\n%s", replyAt, separatorAt, workSignatureAt, quoteAt, w.html)
+	}
+	if strings.Contains(w.html, "personal-signature") {
+		t.Error("Personal account HTML signature was used instead of the receiving Work account")
+	}
+	if strings.Contains(w.plain, "[html-signature]") || strings.Contains(w.html, "[html-signature]") {
+		t.Error("HTML signature marker leaked to the recipient")
 	}
 	if !strings.Contains(w.plain, "> Grüezi Simon,") {
 		t.Error("quoted original message missing from the reply")

@@ -36,10 +36,10 @@ func TestParseReadArgs(t *testing.T) {
 		t.Errorf("opts = %+v", opts)
 	}
 	for _, bad := range [][]string{
-		{"--uid", "42"},                      // missing folder
-		{"--folder", "Feed"},                 // missing uid
-		{"--folder", "Feed", "--uid", "x"},   // bad uid
-		{"--folder", "Feed", "--uid", "0"},   // zero uid
+		{"--uid", "42"},                    // missing folder
+		{"--folder", "Feed"},               // missing uid
+		{"--folder", "Feed", "--uid", "x"}, // bad uid
+		{"--folder", "Feed", "--uid", "0"}, // zero uid
 	} {
 		if _, err := parseReadArgs(bad); err == nil {
 			t.Errorf("parseReadArgs(%v): expected error, got nil", bad)
