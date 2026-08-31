@@ -454,6 +454,96 @@ func TestActiveFolderUsesOffTabFolder(t *testing.T) {
 	}
 }
 
+func TestActiveFolderMapsDraftsTab(t *testing.T) {
+	m := Model{
+		cfg: &config.Config{
+			Folders: config.FoldersConfig{
+				Inbox:  "INBOX",
+				Drafts: "[Gmail]/Drafts",
+			},
+		},
+		folders:       []string{"Inbox", "Drafts"},
+		activeFolderI: 1,
+	}
+
+	if got := m.activeFolder(); got != "[Gmail]/Drafts" {
+		t.Fatalf("activeFolder() on Drafts tab = %q, want %q", got, "[Gmail]/Drafts")
+	}
+}
+
+func TestGoToDraftsReusesVisibleTab(t *testing.T) {
+	m := Model{
+		cfg: &config.Config{
+			Folders: config.FoldersConfig{
+				Inbox:  "INBOX",
+				Drafts: "[Gmail]/Drafts",
+			},
+		},
+		folders:           []string{"Inbox", "Drafts", "Trash"},
+		activeFolderI:     0,
+		offTabFolder:      "Search",
+		imapSearchText:    "invoice",
+		imapSearchResults: true,
+	}
+
+	next, cmd := m.handleChord("g", "d")
+	got := next.(Model)
+	if cmd == nil {
+		t.Fatal("gd returned no fetch command")
+	}
+	if got.activeFolderI != 1 {
+		t.Fatalf("gd activeFolderI = %d, want 1", got.activeFolderI)
+	}
+	if got.offTabFolder != "" {
+		t.Fatalf("gd offTabFolder = %q, want empty when Drafts tab is visible", got.offTabFolder)
+	}
+	if got.imapSearchResults || got.imapSearchText != "" {
+		t.Fatalf("gd search state = (%v, %q), want cleared", got.imapSearchResults, got.imapSearchText)
+	}
+	if folder := got.activeFolder(); folder != "[Gmail]/Drafts" {
+		t.Fatalf("gd activeFolder() = %q, want %q", folder, "[Gmail]/Drafts")
+	}
+
+	// A stale search-result flag must not trigger the already-active no-op path.
+	got.imapSearchResults = true
+	got.imapSearchText = "stale query"
+	next, cmd = got.handleChord("g", "d")
+	got = next.(Model)
+	if cmd == nil || got.imapSearchResults || got.imapSearchText != "" {
+		t.Fatalf("gd on active Drafts with stale search state = (cmd nil: %v, %v, %q), want reload and cleared search", cmd == nil, got.imapSearchResults, got.imapSearchText)
+	}
+}
+
+func TestGoToDraftsUsesOffTabFallbackWhenHidden(t *testing.T) {
+	m := Model{
+		cfg: &config.Config{
+			Folders: config.FoldersConfig{
+				Inbox:  "INBOX",
+				Drafts: "[Gmail]/Drafts",
+			},
+		},
+		folders:           []string{"Inbox", "Trash"},
+		offTabFolder:      "Search",
+		imapSearchText:    "invoice",
+		imapSearchResults: true,
+	}
+
+	next, cmd := m.handleChord("g", "d")
+	got := next.(Model)
+	if cmd == nil {
+		t.Fatal("gd returned no fetch command")
+	}
+	if got.offTabFolder != "Drafts" {
+		t.Fatalf("gd offTabFolder = %q, want %q", got.offTabFolder, "Drafts")
+	}
+	if got.imapSearchResults || got.imapSearchText != "" {
+		t.Fatalf("gd search state = (%v, %q), want cleared", got.imapSearchResults, got.imapSearchText)
+	}
+	if folder := got.activeFolder(); folder != "[Gmail]/Drafts" {
+		t.Fatalf("gd activeFolder() = %q, want %q", folder, "[Gmail]/Drafts")
+	}
+}
+
 func TestUpdateInboxEscClearsCommittedFilter(t *testing.T) {
 	m := Model{
 		filterText: "invoice",
