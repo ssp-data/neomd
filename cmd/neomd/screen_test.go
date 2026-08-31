@@ -75,10 +75,10 @@ func TestParseScreenArgs(t *testing.T) {
 		t.Errorf("opts = %+v", opts)
 	}
 	for _, bad := range [][]string{
-		{"--action", "in"},                             // missing from
-		{"--from", "a@b.c"},                            // missing action
-		{"--from", "a@b.c", "--action", "yolo"},        // bad action
-		{"--from", "a@b.c", "--action", "in", "--x"},   // unknown flag
+		{"--action", "in"},                           // missing from
+		{"--from", "a@b.c"},                          // missing action
+		{"--from", "a@b.c", "--action", "yolo"},      // bad action
+		{"--from", "a@b.c", "--action", "in", "--x"}, // unknown flag
 	} {
 		if _, err := parseScreenArgs(bad); err == nil {
 			t.Errorf("parseScreenArgs(%v): expected error, got nil", bad)
@@ -128,9 +128,9 @@ func TestRunScreen_ApproveMovesAllFromSender(t *testing.T) {
 
 func TestRunScreen_ActionDestinations(t *testing.T) {
 	cases := []struct {
-		action  string
-		screen  string
-		dst     string
+		action string
+		screen string
+		dst    string
 	}{
 		{"in", "approve", "INBOX"},
 		{"out", "block", "ScreenedOutFolder"},

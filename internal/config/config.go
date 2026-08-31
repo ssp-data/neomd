@@ -388,13 +388,13 @@ type Config struct {
 // Only the headless daemon acts on it; the TUI ignores this block.
 type OOOConfig struct {
 	Enabled  bool     `toml:"enabled"`
-	Accounts []string `toml:"accounts"` // [[accounts]] names whose inboxes get auto-replies, each from its own address (e.g. ["Work", "WorkInfo"]); empty = the daemon's own account
-	Timezone string   `toml:"timezone"` // IANA name (e.g. "Europe/Zurich") that from/until are interpreted in; empty = the daemon machine's local time
-	From     string `toml:"from"`      // "YYYY-MM-DD" — active starting at 00:00 of this day (local time); empty = active immediately
-	Until    string `toml:"until"`     // "YYYY-MM-DD" — active through the END of this day (local time); empty = active until enabled=false
-	Subject  string `toml:"subject"`   // reply subject; default "Out of Office"
-	Body     string `toml:"body"`      // reply body in markdown (same rendering as composed emails)
-	BodyFile string `toml:"body_file"` // optional path to a markdown file; overrides body when set
+	Accounts []string `toml:"accounts"`  // [[accounts]] names whose inboxes get auto-replies, each from its own address (e.g. ["Work", "WorkInfo"]); empty = the daemon's own account
+	Timezone string   `toml:"timezone"`  // IANA name (e.g. "Europe/Zurich") that from/until are interpreted in; empty = the daemon machine's local time
+	From     string   `toml:"from"`      // "YYYY-MM-DD" — active starting at 00:00 of this day (local time); empty = active immediately
+	Until    string   `toml:"until"`     // "YYYY-MM-DD" — active through the END of this day (local time); empty = active until enabled=false
+	Subject  string   `toml:"subject"`   // reply subject; default "Out of Office"
+	Body     string   `toml:"body"`      // reply body in markdown (same rendering as composed emails)
+	BodyFile string   `toml:"body_file"` // optional path to a markdown file; overrides body when set
 }
 
 // ListmonkTrigger maps a virtual email address to Listmonk list IDs.
