@@ -123,6 +123,11 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **Reply From auto-selection** — replying picks the From address matching the email's
   To/CC; in the Sent folder the user's own address is in `From` instead
   (`matchFromForReply`, `internal/ui/model.go`).
+- **Replying from the Sent folder goes to the original recipients** — `r` on a mail I
+  sent addresses the reply to its original `To` (not to me, the sender); `ctrl+r` adds the
+  original `Cc` minus own addresses. Outside Sent the classic Reply-To/From → To and
+  To+Cc → Cc logic is unchanged (`replyRecipients`, `internal/ui/model.go`). Test:
+  `TestReplyFromSentFolderTargetsOriginalRecipients`.
 - **Reply-all excludes all own addresses** — both IMAP login addresses (`account.User`)
   and send-as addresses (accounts + `[[senders]]` aliases) are stripped from CC. Test:
   `TestReplyAllExcludesAllOwnAddresses`.

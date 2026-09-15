@@ -5527,11 +5527,7 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 		m.presendFromI = idx
 	}
 
-	// Use Reply-To if present, else From
-	to := e.ReplyTo
-	if to == "" {
-		to = e.From
-	}
+	to, cc := m.replyRecipients(e, replyAll)
 
 	subject := e.Subject
 	low := strings.ToLower(subject)
@@ -5543,31 +5539,6 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 		subject = "Re: " + subject
 	}
 
-	cc := ""
-	if replyAll {
-		// Collect original To + CC, exclude all own addresses.
-		// Build exclusion set from both account User (IMAP login) and From (send-as)
-		// to handle setups where they differ (e.g., user123@provider vs simon@domain).
-		ownAddrs := make(map[string]bool)
-		// Add all account User addresses (IMAP login)
-		for _, acc := range m.accounts {
-			ownAddrs[strings.ToLower(extractEmailAddr(acc.User))] = true
-		}
-		// Add all From addresses (accounts + sender aliases)
-		for _, from := range m.presendFroms() {
-			ownAddrs[strings.ToLower(extractEmailAddr(from))] = true
-		}
-		var parts []string
-		for _, addr := range splitAddrs(e.To + "," + e.CC) {
-			if a := strings.TrimSpace(addr); a != "" {
-				addrLower := strings.ToLower(extractEmailAddr(a))
-				if !ownAddrs[addrLower] {
-					parts = append(parts, a)
-				}
-			}
-		}
-		cc = strings.Join(parts, ", ")
-	}
 	if extraCC != "" {
 		if cc != "" {
 			cc += ", " + extraCC
@@ -5625,6 +5596,57 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 		}
 		return editorDoneMsg{to: pto, cc: pcc, bcc: "", from: pfrom, subject: psubject, body: string(raw)}
 	})
+}
+
+// replyRecipients computes the To and Cc for a reply (r) or reply-all (ctrl+r).
+//
+// Normal folders: To = Reply-To (else From); reply-all Cc = original To + Cc
+// minus every own address.
+//
+// Sent folder: the mail is one *I* sent, so From/Reply-To are me. Replying
+// must go back to the people I wrote to: To = original To; reply-all
+// Cc = original Cc minus own addresses. Without this, r in Sent would
+// address the reply to myself.
+func (m Model) replyRecipients(e *imap.Email, replyAll bool) (to, cc string) {
+	inSent := len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent
+
+	if inSent {
+		to = e.To
+	} else {
+		// Use Reply-To if present, else From
+		to = e.ReplyTo
+		if to == "" {
+			to = e.From
+		}
+	}
+
+	if !replyAll {
+		return to, ""
+	}
+
+	// Exclude all own addresses. Build the set from both account User (IMAP
+	// login) and From (send-as) to handle setups where they differ
+	// (e.g., user123@provider vs simon@domain).
+	ownAddrs := make(map[string]bool)
+	for _, acc := range m.accounts {
+		ownAddrs[strings.ToLower(extractEmailAddr(acc.User))] = true
+	}
+	for _, from := range m.presendFroms() {
+		ownAddrs[strings.ToLower(extractEmailAddr(from))] = true
+	}
+	src := e.To + "," + e.CC
+	if inSent {
+		src = e.CC // original To already went into `to`
+	}
+	var parts []string
+	for _, addr := range splitAddrs(src) {
+		if a := strings.TrimSpace(addr); a != "" {
+			if !ownAddrs[strings.ToLower(extractEmailAddr(a))] {
+				parts = append(parts, a)
+			}
+		}
+	}
+	return to, strings.Join(parts, ", ")
 }
 
 // matchFromIndex returns the presendFroms() index whose email address matches

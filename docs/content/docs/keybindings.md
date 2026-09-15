@@ -133,8 +133,8 @@ To update both the help overlay and this document at once, edit that file and ru
 | `N` | jump to next unread email |
 | `ctrl+n` | mark all in current folder as read |
 | `R` | reload / refresh folder |
-| `r` | reply  (from inbox or reader) |
-| `ctrl+r` | reply-all — reply to sender + all CC recipients  (from inbox or reader) |
+| `r` | reply  (from inbox or reader; in Sent: reply to the original To) |
+| `ctrl+r` | reply-all — reply to sender + all CC recipients  (from inbox or reader; in Sent: original To + Cc) |
 | `ctrl+e` | react with emoji  (from inbox or reader) |
 | `f` | forward email  (from reader or inbox) |
 | `T` | show full conversation thread across folders  (from inbox or reader) |

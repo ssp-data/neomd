@@ -1167,3 +1167,67 @@ func TestEditorDoneReplyTrackingSurvivesReEdit(t *testing.T) {
 		t.Fatalf("re-edit lost In-Reply-To: %q", got.pendingSend.inReplyTo)
 	}
 }
+
+// TestReplyFromSentFolderTargetsOriginalRecipients pins the Sent-folder reply
+// behaviour: replying to a mail *I* sent must go back to the people I wrote
+// to (To → To, Cc → Cc on reply-all), never to myself.
+func TestReplyFromSentFolderTargetsOriginalRecipients(t *testing.T) {
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{User: "simon@ssp.sh", From: "Simon Späti <simon@ssp.sh>"},
+		},
+		Folders: config.FoldersConfig{Sent: "Sent"},
+	}
+	sent := &imap.Email{
+		Folder:  "Sent",
+		From:    "Simon Späti <simon@ssp.sh>",
+		ReplyTo: "Simon Späti <simon@ssp.sh>",
+		To:      "Roman Pronskiy <roman@modernrelay.com>",
+		CC:      "Andrew Altshuler <andrew@modernrelay.com>, Ragnor Comerford <ragnor@modernrelay.com>",
+	}
+	received := &imap.Email{
+		Folder: "INBOX",
+		From:   "Roman Pronskiy <roman@modernrelay.com>",
+		To:     "Simon Späti <simon@ssp.sh>",
+		CC:     "Andrew Altshuler <andrew@modernrelay.com>",
+	}
+
+	tests := []struct {
+		name     string
+		folder   string
+		email    *imap.Email
+		replyAll bool
+		wantTo   string
+		wantCC   string
+	}{
+		{"r in Sent → original To only", "Sent", sent, false,
+			"Roman Pronskiy <roman@modernrelay.com>", ""},
+		{"ctrl+r in Sent → original To + original Cc", "Sent", sent, true,
+			"Roman Pronskiy <roman@modernrelay.com>",
+			"Andrew Altshuler <andrew@modernrelay.com>, Ragnor Comerford <ragnor@modernrelay.com>"},
+		{"r in Inbox unchanged → sender", "Inbox", received, false,
+			"Roman Pronskiy <roman@modernrelay.com>", ""},
+		{"ctrl+r in Inbox unchanged → sender + others minus me", "Inbox", received, true,
+			"Roman Pronskiy <roman@modernrelay.com>", "Andrew Altshuler <andrew@modernrelay.com>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				cfg:           cfg,
+				accounts:      cfg.ActiveAccounts(),
+				folders:       []string{tt.folder},
+				activeFolderI: 0,
+			}
+			gotTo, gotCC := m.replyRecipients(tt.email, tt.replyAll)
+			if gotTo != tt.wantTo {
+				t.Errorf("To = %q, want %q", gotTo, tt.wantTo)
+			}
+			if gotCC != tt.wantCC {
+				t.Errorf("Cc = %q, want %q", gotCC, tt.wantCC)
+			}
+			if strings.Contains(strings.ToLower(gotTo+gotCC), "simon@ssp.sh") {
+				t.Errorf("own address leaked into reply: To=%q Cc=%q", gotTo, gotCC)
+			}
+		})
+	}
+}
