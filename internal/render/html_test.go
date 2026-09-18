@@ -301,3 +301,38 @@ func TestImagePlaceholdersForPlainText(t *testing.T) {
 		t.Errorf("text without images changed: %q", got)
 	}
 }
+
+// Received HTML is transcoded to UTF-8 before it reaches the browser, but the
+// original <meta charset> (Outlook: Windows-1252) still sits in the document,
+// so the browser decoded UTF-8 bytes as Windows-1252 ("Späti" → "SpÃ¤ti").
+// SanitizeForBrowser must replace any charset declaration with UTF-8.
+func TestSanitizeForBrowser_ForcesUTF8Charset(t *testing.T) {
+	in := `<html><head><meta http-equiv="Content-Type" content="text/html; charset=Windows-1252"><meta charset="iso-8859-1"><title>x</title></head><body>Zoë Späti</body></html>`
+	got := SanitizeForBrowser(in)
+	lower := strings.ToLower(got)
+	if strings.Count(lower, `<meta charset="utf-8">`) != 1 {
+		t.Errorf("want exactly one utf-8 charset meta, got:\n%s", got)
+	}
+	if strings.Contains(lower, "windows-1252") || strings.Contains(lower, "iso-8859-1") {
+		t.Errorf("stale charset declaration survived:\n%s", got)
+	}
+	if !strings.Contains(got, browserCSP) || !strings.Contains(got, "Zoë Späti") {
+		t.Errorf("CSP or body lost:\n%s", got)
+	}
+	// The utf-8 meta must come before any other head content so it wins.
+	if strings.Index(lower, `<meta charset="utf-8">`) > strings.Index(lower, "<title>") {
+		t.Errorf("utf-8 meta must precede other head elements:\n%s", got)
+	}
+
+	// No <head>: still declares UTF-8 and the CSP.
+	got = SanitizeForBrowser("<p>plain ascii</p>")
+	if !strings.Contains(strings.ToLower(got), `<meta charset="utf-8">`) || !strings.Contains(got, browserCSP) || !strings.Contains(got, "<p>plain ascii</p>") {
+		t.Errorf("headless html not handled:\n%s", got)
+	}
+
+	// Our own template (already UTF-8 + CSP) is returned untouched.
+	own, _ := ToHTML("hi")
+	if SanitizeForBrowser(own) != own {
+		t.Error("own template should pass through unchanged")
+	}
+}

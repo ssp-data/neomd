@@ -72,14 +72,25 @@ func SanitizeForBrowser(html string) string {
 	if strings.Contains(html, browserCSP) {
 		return html
 	}
-	// Insert after <head> if present, otherwise prepend.
-	lower := strings.ToLower(html)
-	if idx := strings.Index(lower, "<head>"); idx >= 0 {
-		insert := idx + len("<head>")
-		return html[:insert] + "\n" + browserCSP + "\n" + html[insert:]
+	// The body was transcoded to UTF-8 when the message was parsed, but the
+	// original charset declaration (Outlook: Windows-1252) is still in the
+	// document and makes the browser misdecode every non-ASCII character.
+	// Drop any existing declaration and put ours first in <head>.
+	html = metaCharsetRe.ReplaceAllString(html, "")
+	inject := utf8Meta + "\n" + browserCSP
+	if loc := headOpenRe.FindStringIndex(html); loc != nil {
+		return html[:loc[1]] + "\n" + inject + "\n" + html[loc[1]:]
 	}
-	return browserCSP + "\n" + html
+	return inject + "\n" + html
 }
+
+const utf8Meta = `<meta charset="utf-8">`
+
+// metaCharsetRe matches <meta charset=…> and <meta http-equiv="Content-Type" …>.
+var metaCharsetRe = regexp.MustCompile(`(?i)<meta\s[^>]*?(?:\bcharset\s*=|http-equiv\s*=\s*["']?content-type)[^>]*>`)
+
+// headOpenRe matches the opening <head> tag, with or without attributes.
+var headOpenRe = regexp.MustCompile(`(?i)<head(?:\s[^>]*)?>`)
 
 // ToHTML converts a Markdown string to a complete HTML email document.
 func ToHTML(markdown string) (string, error) {

@@ -1424,6 +1424,11 @@ func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Atta
 		// Normalization adds trailing spaces for hard line breaks, which would
 		// mutate the draft content on each save/reopen cycle.
 		if isDraft {
+			// Only the wire line endings are undone: BuildDraftMessage writes
+			// CRLF, and a reopened draft mixed into the LF prelude would show
+			// ^M on every body line in the editor and drift on each re-save.
+			plainText = strings.ReplaceAll(plainText, "\r\n", "\n")
+			plainText = strings.ReplaceAll(plainText, "\r", "\n")
 			return plainText, "", webURL, attachments, references, SpyPixelInfo{}
 		}
 		return normalizePlainText(plainText), "", webURL, attachments, references, SpyPixelInfo{}

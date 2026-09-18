@@ -310,6 +310,12 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   `[Image: alt-or-filename]`) on the send path only; drafts keep the raw markdown so
   they can be resumed. Tests: `TestImagePlaceholdersForPlainText`,
   `TestBuildMessage_PlainPartHasNoImagePaths`.
+- **Draft round trip is byte-exact, attachments and image references included** —
+  `BuildDraftMessage` stores the raw markdown as text/plain (+ file parts); `parseBody`'s
+  `X-Neomd-Draft` branch returns it verbatim except for undoing the wire CRLF (a
+  multipart draft used to come back with `\r\n`, showing `^M` in the editor and drifting
+  on every re-save). Test: `TestHardening_DraftRoundTrip_InlineImageAndAttachment`
+  (image markdown at its spot, attachment name + bytes, two cycles).
 
 ## Screener (HEY-style)
 
@@ -382,6 +388,12 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **Timer-based mark-as-read** — opening an email marks `\Seen` only after
   `mark_as_read_after_secs` (default 7 s); quick peeks stay unread; reply/forward marks
   immediately.
+- **Browser view declares UTF-8** — `SanitizeForBrowser` strips every `<meta charset>` /
+  `http-equiv=Content-Type` tag from received HTML (the body is already transcoded to
+  UTF-8 by go-message) and injects `<meta charset="utf-8">` + the CSP first in `<head>`;
+  Outlook's `charset=Windows-1252` meta otherwise renders "Späti" as "SpÃ¤ti". Own
+  goldmark output (already UTF-8 + CSP) passes through unchanged. Test:
+  `TestSanitizeForBrowser_ForcesUTF8Charset`.
 
 ## IMAP & Runtime Resilience
 
