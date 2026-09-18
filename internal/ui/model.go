@@ -2988,9 +2988,13 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cmdMode = false
 			m.cmdText = ""
 			m.cmdHistI = -1
+			m.cmdTabI = 0
+			m.cmdTabBase = ""
 		case "enter":
 			m.cmdMode = false
 			m.cmdHistI = -1
+			m.cmdTabI = 0
+			m.cmdTabBase = ""
 			input := strings.TrimSpace(m.cmdText)
 			m.cmdText = ""
 			if input != "" {
@@ -3063,6 +3067,15 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cmdTabI++
 			}
 		case "ctrl+p": // cycle backward through completions
+			if m.cmdTabI == 0 {
+				m.cmdTabBase = m.cmdText
+			}
+			if titles := m.titleCompletions(m.cmdTabBase); len(titles) > 0 {
+				m.cmdTabI = (m.cmdTabI - 2 + len(titles)) % len(titles)
+				m.cmdText = titles[m.cmdTabI]
+				m.cmdTabI++
+				break
+			}
 			matches := matchCmds(m.cmdText)
 			if len(matches) > 0 {
 				m.cmdTabI = (m.cmdTabI - 2 + len(matches)) % len(matches)
@@ -3270,6 +3283,8 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cmdMode = true
 		m.cmdText = ""
 		m.cmdHistI = -1
+		m.cmdTabI = 0
+		m.cmdTabBase = ""
 		return m, nil
 
 	case "S":

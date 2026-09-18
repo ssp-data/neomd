@@ -283,7 +283,7 @@ func TestMergeSenderCmd_StoresRuleAndAppliesToLoaded(t *testing.T) {
 	}
 }
 
-func TestUnmergeCmd_OnCollapsedRowAsksThenDissolves(t *testing.T) {
+func TestUnmergeCmd_OnCollapsedRowAsksFirst(t *testing.T) {
 	m := cmdModel(t)
 	m.merges.Add("Bounces", "<b1>")
 	m.applyFilter()
@@ -297,6 +297,69 @@ func TestUnmergeCmd_OnCollapsedRowAsksThenDissolves(t *testing.T) {
 	}
 	if _, ok := m.merges.TitleOf("<b1>"); !ok {
 		t.Error("must not dissolve before confirmation")
+	}
+}
+
+func TestUnmergeCmd_YDissolves(t *testing.T) {
+	m := cmdModel(t)
+	m.merges.Add("Bounces", "<b1>")
+	m.applyFilter()
+	m.inbox.Select(2)
+	m = runCmd(t, m, "unmerge")
+	if m.pendingUnmerge != "Bounces" {
+		t.Fatalf("expected pending unmerge, got %q", m.pendingUnmerge)
+	}
+	res, _ := m.updateInbox(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = res.(Model)
+	if _, ok := m.merges.TitleOf("<b1>"); ok {
+		t.Error("y should dissolve the merge")
+	}
+	if m.pendingUnmerge != "" {
+		t.Errorf("pendingUnmerge should be cleared, got %q", m.pendingUnmerge)
+	}
+	if n := len(m.inbox.Items()); n != 3 {
+		t.Errorf("list should uncollapse after dissolve, got %d items", n)
+	}
+}
+
+func TestUnmergeCmd_NCancels(t *testing.T) {
+	m := cmdModel(t)
+	m.merges.Add("Bounces", "<b1>")
+	m.applyFilter()
+	m.inbox.Select(2)
+	m = runCmd(t, m, "unmerge")
+	if m.pendingUnmerge != "Bounces" {
+		t.Fatalf("expected pending unmerge, got %q", m.pendingUnmerge)
+	}
+	res, _ := m.updateInbox(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = res.(Model)
+	if _, ok := m.merges.TitleOf("<b1>"); !ok {
+		t.Error("n should not dissolve the merge")
+	}
+	if m.pendingUnmerge != "" {
+		t.Errorf("pendingUnmerge should be cleared, got %q", m.pendingUnmerge)
+	}
+	if m.status != "Cancelled." {
+		t.Errorf("status = %q, want %q", m.status, "Cancelled.")
+	}
+}
+
+func TestMergeCmd_ViaEnterDispatch(t *testing.T) {
+	m := cmdModel(t)
+	m.inbox.Select(2) // uid 1 (oldest, sorted last)
+	m.cmdMode = true
+	m.cmdText = "merge Via Enter"
+	res, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	switch v := res.(type) {
+	case *Model:
+		m = *v
+	case Model:
+		m = v
+	default:
+		t.Fatalf("unexpected result type %T", res)
+	}
+	if title, ok := m.merges.TitleOf("<b1>"); !ok || title != "Via Enter" {
+		t.Errorf("enter should dispatch runArgs and merge, got title=%q ok=%v", title, ok)
 	}
 }
 

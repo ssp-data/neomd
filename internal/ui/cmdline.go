@@ -352,7 +352,7 @@ func viewCmdLine(text string, width int) string {
 
 	// Ghost completion: rest of first matched name
 	ghost := ""
-	if first != nil && text != "" {
+	if first != nil && text != "" && !strings.Contains(strings.TrimSpace(text), " ") {
 		lower := strings.ToLower(firstWordOf(text))
 		if strings.HasPrefix(first.name, lower) && len(first.name) > len(lower) {
 			ghost = lipgloss.NewStyle().Foreground(colorMuted).Render(first.name[len(lower):])
