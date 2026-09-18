@@ -28,6 +28,7 @@ import (
 	"github.com/sspaeti/neomd/internal/editor"
 	"github.com/sspaeti/neomd/internal/imap"
 	"github.com/sspaeti/neomd/internal/listmonk"
+	"github.com/sspaeti/neomd/internal/merge"
 	"github.com/sspaeti/neomd/internal/notify"
 	"github.com/sspaeti/neomd/internal/render"
 	"github.com/sspaeti/neomd/internal/schedule"
@@ -624,6 +625,12 @@ type Model struct {
 	// outgoing To/Cc headers. Nil-safe: all Store methods accept a nil receiver.
 	contacts *contacts.Store
 
+	// merges holds user-defined merged threads (title → Message-IDs + optional
+	// sender rule), persisted at cfg.MergesFile. Nil-safe.
+	merges *merge.Store
+	// pendingUnmerge is a merge title awaiting y/n before :unmerge dissolves it.
+	pendingUnmerge string
+
 	// Undo stack: each entry is a batch of moves that can be reversed with u.
 	// Screener operations (I/O/F/P/$) are not undoable — they also modify .txt files.
 	undoStack [][]undoMove
@@ -740,6 +747,10 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 	// Autocomplete matches contact names ("max muster" → Max Muster <max@…>),
 	// not just screener-list addresses.
 	compose.contacts = cs
+	ms, err := merge.Load(cfg.MergesFile)
+	if err != nil {
+		notice = "merges.toml: " + err.Error()
+	}
 	return Model{
 		cfg:         cfg,
 		accounts:    cfg.ActiveAccounts(),
@@ -759,6 +770,7 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 		spyPixelKeys:   spyKeys,
 		spyScannedKeys: scannedKeys,
 		contacts:       cs,
+		merges:         ms,
 		startupNotice:  notice,
 		sortField:      "date",
 		sortReverse:    true, // newest first
@@ -1284,10 +1296,44 @@ func (m Model) targetEmails() []imap.Email {
 		}
 		return out
 	}
+	if it, ok := selectedItem(m.inbox); ok && it.merge != nil {
+		return append([]imap.Email(nil), it.merge.members...)
+	}
 	if e := selectedEmail(m.inbox); e != nil {
 		return []imap.Email{*e}
 	}
 	return nil
+}
+
+// applySenderRules adds every email whose sender matches a merge's sender
+// rule to that merge (by Message-ID) and persists the store when anything
+// changed. Returns the number of emails added.
+func (m *Model) applySenderRules(emails []imap.Email) int {
+	if m.merges == nil {
+		return 0
+	}
+	added := 0
+	for _, e := range emails {
+		if e.MessageID == "" {
+			continue
+		}
+		if _, already := m.merges.TitleOf(e.MessageID); already {
+			continue
+		}
+		if title, ok := m.merges.MatchSender(e.From); ok {
+			added += m.merges.Add(title, e.MessageID)
+		}
+	}
+	if added > 0 {
+		store := m.merges
+		safeGo(func() { _ = store.Save() })
+	}
+	return added
+}
+
+// inMergeView reports whether the list currently shows an opened merge.
+func (m Model) inMergeView() bool {
+	return strings.HasPrefix(m.offTabFolder, "Merged: ")
 }
 
 func normalizedSender(from string) string {
@@ -2153,6 +2199,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.emails = msg.emails
 		m.harvestContacts(msg.emails)
+		m.applySenderRules(msg.emails)
 		m.markedUIDs = make(map[uint32]bool) // clear marks on folder reload
 		m.filterActive = false
 		m.filterText = ""
@@ -2549,6 +2596,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case conversationResultMsg:
 		return m.handleConversationResult(msg)
+
+	case mergeResultMsg:
+		return m.handleMergeResult(msg)
 
 	case senderResultMsg:
 		return m.handleSenderResult(msg)
@@ -3403,6 +3453,10 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
 
 	case "enter", "l":
+		if it, ok := selectedItem(m.inbox); ok && it.merge != nil {
+			m.loading = true
+			return m, tea.Batch(m.spinner.Tick, m.fetchMergeCmd(it.merge.title, m.merges.IDs(it.merge.title), it.merge.members))
+		}
 		e := selectedEmail(m.inbox)
 		if e == nil {
 			return m, nil
@@ -3458,6 +3512,10 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.fetchBodyCmd(e))
 
 	case "T":
+		if it, ok := selectedItem(m.inbox); ok && it.merge != nil {
+			m.loading = true
+			return m, tea.Batch(m.spinner.Tick, m.fetchMergeCmd(it.merge.title, m.merges.IDs(it.merge.title), it.merge.members))
+		}
 		e := selectedEmail(m.inbox)
 		if e == nil {
 			return m, nil
@@ -3474,14 +3532,26 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.fetchSenderCmd(e))
 
 	case "m": // mark/unmark current email for batch, advance cursor
-		e := selectedEmail(m.inbox)
-		if e == nil {
+		it, ok := selectedItem(m.inbox)
+		if !ok {
 			break
 		}
-		if m.markedUIDs[e.UID] {
-			delete(m.markedUIDs, e.UID)
+		if it.merge != nil {
+			all := true
+			for _, mem := range it.merge.members {
+				all = all && m.markedUIDs[mem.UID]
+			}
+			for _, mem := range it.merge.members {
+				if all {
+					delete(m.markedUIDs, mem.UID)
+				} else {
+					m.markedUIDs[mem.UID] = true
+				}
+			}
+		} else if m.markedUIDs[it.email.UID] {
+			delete(m.markedUIDs, it.email.UID)
 		} else {
-			m.markedUIDs[e.UID] = true
+			m.markedUIDs[it.email.UID] = true
 		}
 		next := m.inbox.Index() + 1
 		if next < len(m.inbox.Items()) {
@@ -3611,6 +3681,9 @@ func copyMap(m map[string]bool) map[string]bool {
 }
 
 func (m Model) shouldPrefixFolderInSubject() bool {
+	if m.inMergeView() {
+		return true
+	}
 	switch m.offTabFolder {
 	case "Search", "Everything", "Thread", "Sender":
 		return true
@@ -3676,7 +3749,11 @@ func (m *Model) applyFilter() tea.Cmd {
 	}
 
 	noThread := len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent
-	return setEmails(&m.inbox, filtered, m.markedUIDs, m.spyPixelKeys, m.shouldPrefixFolderInSubject(), m.sortField, m.sortReverse, noThread, nil)
+	var titleOf func(string) (string, bool)
+	if m.merges != nil && !m.inMergeView() {
+		titleOf = m.merges.TitleOf
+	}
+	return setEmails(&m.inbox, filtered, m.markedUIDs, m.spyPixelKeys, m.shouldPrefixFolderInSubject(), m.sortField, m.sortReverse, noThread, titleOf)
 }
 
 // handleChord dispatches two-key sequences (g<x>, M<x>, space<x>).

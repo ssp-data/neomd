@@ -450,3 +450,9 @@ func selectedEmail(l list.Model) *imap.Email {
 	e := item.email
 	return &e
 }
+
+// selectedItem returns the highlighted list item (with merge info), or false.
+func selectedItem(l list.Model) (emailItem, bool) {
+	item, ok := l.SelectedItem().(emailItem)
+	return item, ok
+}

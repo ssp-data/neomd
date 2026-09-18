@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sspaeti/neomd/internal/config"
 	"github.com/sspaeti/neomd/internal/imap"
+	"github.com/sspaeti/neomd/internal/merge"
 )
 
 func TestMaskEmail(t *testing.T) {
@@ -1229,5 +1231,102 @@ func TestReplyFromSentFolderTargetsOriginalRecipients(t *testing.T) {
 				t.Errorf("own address leaked into reply: To=%q Cc=%q", gotTo, gotCC)
 			}
 		})
+	}
+}
+
+func mergedInboxModel(t *testing.T) Model {
+	t.Helper()
+	s, err := merge.Load(filepath.Join(t.TempDir(), "merges.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Add("Bounces", "<b1>", "<b2>")
+	cfg := &config.Config{}
+	m := Model{cfg: cfg, merges: s, markedUIDs: map[uint32]bool{}, spyPixelKeys: map[string]bool{}, sortField: "date", sortReverse: true}
+	m.inbox = newInboxList(100, 10, "", "")
+	m.emails = []imap.Email{
+		{UID: 1, MessageID: "<b1>", Subject: "Undelivered", From: "mailer-daemon@x", Date: time.Now().Add(-2 * time.Hour), Seen: true},
+		{UID: 2, MessageID: "<b2>", Subject: "Undelivered", From: "mailer-daemon@x", Date: time.Now().Add(-1 * time.Hour), Seen: true},
+		{UID: 3, MessageID: "<k>", Subject: "Keep", From: "k@x", Date: time.Now(), Seen: true},
+	}
+	m.applyFilter()
+	return m
+}
+
+func TestTargetEmails_ExpandsCollapsedRow(t *testing.T) {
+	m := mergedInboxModel(t)
+	m.inbox.Select(1) // second row = Bounces (Keep is newest)
+	it, ok := selectedItem(m.inbox)
+	if !ok || it.merge == nil {
+		t.Fatalf("row 1 should be the collapsed merge, got %+v", it)
+	}
+	targets := m.targetEmails()
+	if len(targets) != 2 {
+		t.Fatalf("targetEmails on collapsed row = %d, want 2 members", len(targets))
+	}
+	m.inbox.Select(0)
+	if got := m.targetEmails(); len(got) != 1 || got[0].UID != 3 {
+		t.Errorf("plain row should still resolve to itself, got %+v", got)
+	}
+}
+
+func TestMarkKey_TogglesAllMembers(t *testing.T) {
+	m := mergedInboxModel(t)
+	m.inbox.Select(1)
+	res, _ := m.updateInbox(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	mm := res.(Model)
+	if !mm.markedUIDs[1] || !mm.markedUIDs[2] || mm.markedUIDs[3] {
+		t.Errorf("m on collapsed row should mark uids 1,2 only; got %v", mm.markedUIDs)
+	}
+	mm.inbox.Select(1)
+	res, _ = mm.updateInbox(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	mm = res.(Model)
+	if len(mm.markedUIDs) != 0 {
+		t.Errorf("second m should unmark all members, got %v", mm.markedUIDs)
+	}
+}
+
+func TestApplySenderRules_PersistsMatches(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "merges.toml")
+	s, _ := merge.Load(path)
+	s.SetSender("Bounces", "mailer-daemon@")
+	m := Model{merges: s}
+	emails := []imap.Email{
+		{UID: 1, MessageID: "<new1>", From: "Mailer Daemon <MAILER-DAEMON@mx.x>"},
+		{UID: 2, MessageID: "", From: "mailer-daemon@mx.x"}, // no Message-ID → skipped
+		{UID: 3, MessageID: "<other>", From: "alice@x"},
+	}
+	if n := m.applySenderRules(emails); n != 1 {
+		t.Errorf("applySenderRules = %d, want 1", n)
+	}
+	if title, ok := s.TitleOf("<new1>"); !ok || title != "Bounces" {
+		t.Errorf("<new1> should now belong to Bounces, got %q %v", title, ok)
+	}
+	if n := m.applySenderRules(emails); n != 0 {
+		t.Errorf("second pass should add nothing, got %d", n)
+	}
+}
+
+func TestHandleMergeResult_OpensOffTab(t *testing.T) {
+	m := mergedInboxModel(t)
+	res, _ := m.handleMergeResult(mergeResultMsg{title: "Bounces", emails: m.emails[:2]})
+	mm := res.(*Model)
+	if mm.offTabFolder != "Merged: Bounces" || !mm.inMergeView() {
+		t.Errorf("offTabFolder = %q", mm.offTabFolder)
+	}
+	if n := len(mm.inbox.Items()); n != 2 {
+		t.Errorf("merge view should list members uncollapsed, got %d items", n)
+	}
+	if !mm.shouldPrefixFolderInSubject() {
+		t.Error("merge view should prefix subjects with the folder")
+	}
+}
+
+func TestHandleMergeResult_ErrorFallsBackToStatus(t *testing.T) {
+	m := mergedInboxModel(t)
+	res, _ := m.handleMergeResult(mergeResultMsg{title: "Bounces", err: errors.New("boom")})
+	mm := res.(*Model)
+	if !mm.isError || mm.offTabFolder != "" {
+		t.Errorf("error should set status and stay in folder; isError=%v offTab=%q", mm.isError, mm.offTabFolder)
 	}
 }

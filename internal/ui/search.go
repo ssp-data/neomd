@@ -339,3 +339,59 @@ func (m Model) viewIMAPSearchBar() string {
 	}
 	return styleHelp.Render(fmt.Sprintf("  search (all folders): %s%s  · enter search · esc cancel · e.g. newsletter  from:simon  subject:invoice  to:team@", m.imapSearchText, cursor))
 }
+
+// mergeResultMsg carries the members of an opened user-merged thread.
+type mergeResultMsg struct {
+	title  string
+	emails []imap.Email
+	err    error
+}
+
+// fetchMergeCmd fetches every stored member of the merge (plus direct
+// replies) across the same folders the T conversation view searches.
+// fallback (the members visible in the current list) is shown when the
+// server returns nothing, so the view never opens empty.
+func (m Model) fetchMergeCmd(title string, ids []string, fallback []imap.Email) tea.Cmd {
+	cli := m.imapCli()
+	f := m.cfg.Folders
+	folders := []string{f.Inbox, f.Sent, f.Archive, f.Waiting, f.Someday, f.Scheduled}
+	if f.Work != "" {
+		folders = append(folders, f.Work)
+	}
+	cur := m.activeFolder()
+	found := false
+	for _, fo := range folders {
+		if fo == cur {
+			found = true
+			break
+		}
+	}
+	if !found && cur != "" {
+		folders = append(folders, cur)
+	}
+	return func() tea.Msg {
+		emails, err := cli.SearchByMessageIDs(nil, folders, ids)
+		if err == nil && len(emails) == 0 {
+			emails = fallback
+		}
+		return mergeResultMsg{title: title, emails: emails, err: err}
+	}
+}
+
+// handleMergeResult displays the opened merge as an off-tab view.
+func (m *Model) handleMergeResult(msg mergeResultMsg) (tea.Model, tea.Cmd) {
+	m.loading = false
+	m.imapSearchResults = false
+	if msg.err != nil {
+		m.status = "Merge: " + msg.err.Error()
+		m.isError = true
+		return m, nil
+	}
+	m.offTabFolder = "Merged: " + msg.title
+	m.emails = msg.emails
+	m.markedUIDs = make(map[uint32]bool)
+	m.filterActive = false
+	m.filterText = ""
+	m.status = fmt.Sprintf("Merged %q — %d email(s). esc to close · :unmerge removes the cursor email.", msg.title, len(msg.emails))
+	return m, m.sortEmails()
+}
