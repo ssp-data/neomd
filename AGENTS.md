@@ -141,6 +141,20 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   `V` was chosen over `E`/`F` — both already bound (`E` = continue draft in the reader,
   `F` = mark as Feed). Tests: `TestSenderAddr`, `TestHandleSenderResultSetsOffTabAndEmails`,
   `TestHandleSenderResultNoMatches`.
+- **Merged threads (HEY-style)** — `:merge <title>` / `:merge-sender <title>` store
+  Message-IDs (never UIDs) in `<config dir>/merges.toml` (`internal/merge`); the list
+  collapses members — plus any automatic thread containing a member — into one `≡`
+  row placed by its newest member (`collapseMerges`, `internal/ui/thread.go`), rendered
+  as `<title> (n)` with `N`/`·` aggregated over members. Enter/`l`/`T` on that row opens
+  the members across folders (`SearchByMessageIDs`: Message-ID OR In-Reply-To) in a
+  `Merged: <title>` off-tab; `T` on a normal row is unchanged. Bulk keys and `m` expand
+  to the members via `targetEmails()`. Sender rules are applied on every folder load
+  and persisted. Absorbed replies are display-only until `:merge` is run on the row.
+  Tests: `TestCollapseMerges_*`, `TestRenderCollapsedMergeRow`, `TestSetEmails_CollapsesMembers`,
+  `TestTargetEmails_ExpandsCollapsedRow`, `TestMarkKey_TogglesAllMembers`,
+  `TestApplySenderRules_PersistsMatches`, `TestHandleMergeResult_*`, `TestMergeCmd_*`,
+  `TestMergeSenderCmd_*`, `TestUnmergeCmd_*`, `TestTitleCompletions`, `TestMessageIDCriteria`,
+  `internal/merge` `TestAddSaveLoad_RoundTrip`.
 
 ## Compose → Pre-send → Send Pipeline
 
