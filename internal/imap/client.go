@@ -531,15 +531,18 @@ func hasAttachment(bs imap.BodyStructure) bool {
 // Supports prefixes: "from:x", "subject:x", "to:x". Plain text searches all three.
 // Searches ALL messages on the server, not just loaded ones.
 func (c *Client) SearchMessages(ctx context.Context, folder, query string) ([]Email, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if query == "" {
 		return nil, nil
 	}
+	return c.searchFolder(ctx, folder, buildSearchCriteria(query))
+}
 
-	criteria := buildSearchCriteria(query)
-
+// searchFolder runs UID SEARCH with criteria in folder and fetches the
+// newest 100 matching headers.
+func (c *Client) searchFolder(ctx context.Context, folder string, criteria *imap.SearchCriteria) ([]Email, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var uids []uint32
 	err := c.withConnRetry(ctx, func(conn *imapclient.Client) error {
 		uids = nil // reset on retry
@@ -592,6 +595,57 @@ func (c *Client) SearchAllFolders(ctx context.Context, folders []string, query s
 		all = append(all, emails...)
 	}
 	return all, nil
+}
+
+// SearchByMessageIDs returns, across folders, every message whose
+// Message-ID is one of ids OR whose In-Reply-To points at one of ids —
+// the members of a user-merged thread plus direct replies to them.
+// Folders that fail to SELECT are skipped, like SearchAllFolders.
+func (c *Client) SearchByMessageIDs(ctx context.Context, folders []string, ids []string) ([]Email, error) {
+	criteria := messageIDCriteria(ids)
+	if criteria == nil {
+		return nil, nil
+	}
+	var all []Email
+	for _, folder := range folders {
+		emails, err := c.searchFolder(ctx, folder, criteria)
+		if err != nil {
+			continue
+		}
+		all = append(all, emails...)
+	}
+	return all, nil
+}
+
+// messageIDCriteria builds OR(HEADER Message-ID id, HEADER In-Reply-To id, …)
+// for every id. Angle brackets are stripped: HEADER is a substring match and
+// servers differ on whether they index the brackets.
+func messageIDCriteria(ids []string) *imap.SearchCriteria {
+	var parts []imap.SearchCriteria
+	for _, id := range ids {
+		id = strings.Trim(strings.TrimSpace(id), "<>")
+		if id == "" {
+			continue
+		}
+		parts = append(parts,
+			imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: id}}},
+			imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "In-Reply-To", Value: id}}},
+		)
+	}
+	return orCriteria(parts)
+}
+
+// orCriteria folds cs into a right-nested OR tree (go-imap only has binary OR).
+func orCriteria(cs []imap.SearchCriteria) *imap.SearchCriteria {
+	switch len(cs) {
+	case 0:
+		return nil
+	case 1:
+		c := cs[0]
+		return &c
+	}
+	rest := orCriteria(cs[1:])
+	return &imap.SearchCriteria{Or: [][2]imap.SearchCriteria{{cs[0], *rest}}}
 }
 
 // FetchConversation searches across folders for emails related to the given
