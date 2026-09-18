@@ -1505,6 +1505,38 @@ func (m Model) batchMoveCmd(emails []imap.Email, dst string) tea.Cmd {
 	}
 }
 
+// reselectEmail moves the list cursor back onto prev (matched by folder+UID)
+// after the items were rebuilt. Rows shift whenever mail arrives or leaves, and
+// keeping the bare index would silently put the cursor on a different email —
+// the next x/A/M would then act on mail the user never chose. When prev is
+// gone (it was just deleted/moved) the index is left where it is, so the
+// cursor lands on the next row as before.
+func (m *Model) reselectEmail(prev *imap.Email) {
+	if prev == nil {
+		return
+	}
+	for i, it := range m.inbox.Items() {
+		if e, ok := it.(emailItem); ok && e.email.UID == prev.UID && e.email.Folder == prev.Folder {
+			m.inbox.Select(i)
+			return
+		}
+	}
+}
+
+// undoableMoves drops moves whose destination UID is unknown (the server sent
+// no UIDPLUS COPYUID). Undoing those would mean guessing a UID in the
+// destination folder and possibly moving an unrelated message.
+func undoableMoves(moves []undoMove) (keep []undoMove, skipped int) {
+	for _, u := range moves {
+		if u.uid == 0 {
+			skipped++
+			continue
+		}
+		keep = append(keep, u)
+	}
+	return keep, skipped
+}
+
 // undoMovesCmd reverses a batch of moves by moving each email back to its
 // original folder. Non-fatal per-email errors are reported as a batchDoneMsg.
 func (m Model) undoMovesCmd(moves []undoMove) tea.Cmd {
@@ -2203,6 +2235,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case emailsLoadedMsg:
 		m.loading = false
+		prevCursor := selectedEmail(m.inbox) // keep the cursor on the same email after reload
 		m.emails = msg.emails
 		m.harvestContacts(msg.emails)
 		m.applySenderRules(msg.emails)
@@ -2214,6 +2247,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.startupNotice = ""
 		}
 		sortCmd := m.sortEmails() // applies sort and sets list items
+		m.reselectEmail(prevCursor)
 
 		// mailto: open compose with pre-filled fields on first inbox load.
 		if m.mailto != nil {
@@ -3254,8 +3288,17 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		last := m.undoStack[len(m.undoStack)-1]
 		m.undoStack = m.undoStack[:len(m.undoStack)-1]
+		keep, skipped := undoableMoves(last)
+		if len(keep) == 0 {
+			m.status = fmt.Sprintf("Cannot undo: the server gave no destination UID for %d move(s) — find them in the target folder and move them back with M.", skipped)
+			m.isError = true
+			return m, nil
+		}
+		if skipped > 0 {
+			m.status = fmt.Sprintf("Undoing %d move(s); %d skipped (no destination UID from server).", len(keep), skipped)
+		}
 		m.loading = true
-		return m, tea.Batch(m.spinner.Tick, m.undoMovesCmd(last))
+		return m, tea.Batch(m.spinner.Tick, m.undoMovesCmd(keep))
 
 	// ── Screener actions — operate on marked emails or cursor email ──
 	case "I", "O", "F", "P", "$":

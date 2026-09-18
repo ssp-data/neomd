@@ -470,6 +470,17 @@ func HistoryPath() string {
 	return filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_cmd_history", os.Getuid()))
 }
 
+// AuditLogPath returns ~/.cache/neomd/moves.log — every server-side MOVE and
+// EXPUNGE neomd performs (TUI, daemon, CLI) is appended there.
+func AuditLogPath() string {
+	if dir, err := os.UserCacheDir(); err == nil {
+		p := filepath.Join(dir, cacheDirName)
+		_ = os.MkdirAll(p, 0o700)
+		return filepath.Join(p, "moves.log")
+	}
+	return filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_moves.log", os.Getuid()))
+}
+
 // InlineImageDir returns ~/.cache/neomd/inline/, creating it if needed. Reply
 // and forward write the quoted mail's inline (cid:) images here so the send
 // pipeline can re-embed them like any local image.

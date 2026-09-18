@@ -3,6 +3,8 @@ package imap
 import (
 	"context"
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -762,4 +764,28 @@ func TestHTMLToMarkdown_PreservesImageSizeAsTitle(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
 	}
+}
+
+// Every server-side move/expunge is appended to the audit log so a "mail
+// vanished" report can be traced to the exact MOVE (folder, UID, destination,
+// time) instead of guessed at.
+func TestAuditLog_AppendsLines(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "moves.log")
+	SetAuditLogPath(p)
+	defer SetAuditLogPath("")
+	audit("MOVE %s uid=%d -> %s destUID=%d", "INBOX", 42, "Trash", 7)
+	audit("EXPUNGE %s uids=%v", "Trash", []uint32{7})
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], "MOVE INBOX uid=42 -> Trash destUID=7") || !strings.Contains(lines[1], "EXPUNGE Trash uids=[7]") {
+		t.Errorf("unexpected audit lines: %q", lines)
+	}
+	if !strings.HasPrefix(lines[0], "20") { // RFC 3339 timestamp first
+		t.Errorf("line lacks timestamp: %q", lines[0])
+	}
+	SetAuditLogPath("")
+	audit("ignored") // no path → no-op, must not panic
 }

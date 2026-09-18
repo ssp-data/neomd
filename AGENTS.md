@@ -418,6 +418,22 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **`imap_disabled = true` accounts produce nil clients by design** — every helper that
   resolves an IMAP client must skip nil entries (send, Sent-copy, `\Answered`, `:debug`,
   headless). Tests: `internal/ui/imap_client_helpers_test.go`.
+- **Every server-side MOVE/EXPUNGE is audited** — `MoveMessage` and `ExpungeAll`
+  (`internal/imap/client.go`) append `<RFC3339> MOVE <src> uid=<n> -> <dst> destUID=<m>` /
+  `MOVE-FAILED …` / `EXPUNGE <folder> uids=[…]` to `config.AuditLogPath()`
+  (`~/.cache/neomd/moves.log`), enabled in `cmd/neomd/main.go` right after `config.Load`
+  for TUI, daemon and CLI alike. A "mail vanished" report is traced there first.
+  Test: `TestAuditLog_AppendsLines`.
+- **Undo never guesses a UID** — `MoveMessage` returns `destUID = 0` when the server
+  sends no UIDPLUS COPYUID (it used to fall back to the source UID); `U` runs
+  `undoableMoves` and skips such entries with a status message instead of moving whatever
+  carries that UID in the destination folder. Test: `TestUndoableMovesSkipsUnknownDestUID`.
+- **The cursor follows the email across reloads** — `emailsLoadedMsg` remembers the
+  selected folder+UID and `reselectEmail` puts the cursor back on it after the list is
+  rebuilt; only when that email is gone does the index stay (cursor lands on the next
+  row, as after a delete). Keeping the bare index let the highlighted row change silently
+  whenever rows shifted, so the next `x`/`A`/`M` hit mail the user never chose.
+  Test: `TestReloadKeepsCursorOnSameEmail`.
 - **Envelope names/subjects decode every charset** — every go-imap connection is built by
   `clientOptions()` with `WordDecoder: envelopeWordDecoder` (charset-aware via
   go-message's `charset.Reader`). Without it go-imap's default decoder only knows UTF-8 /

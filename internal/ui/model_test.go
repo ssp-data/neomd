@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1385,5 +1386,49 @@ func TestInboxHKeyClosesOffTabView(t *testing.T) {
 	res, _ = plain.updateInbox(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
 	if res.(Model).offTabFolder != "" {
 		t.Error("h on a plain folder view must not set an off-tab")
+	}
+}
+
+// After any folder reload (the one that follows a delete/move, or a
+// background-screen pass) the list used to keep the cursor *index*, so when
+// rows shifted the highlighted row silently became a different email — the
+// next x/A/M would then act on mail the user never chose. The cursor must
+// follow the same email (folder+UID) across reloads.
+func TestReloadKeepsCursorOnSameEmail(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Folders.Inbox = "INBOX"
+	mk := func(uid uint32, h int) imap.Email {
+		return imap.Email{UID: uid, Folder: "INBOX", Subject: fmt.Sprintf("m%d", uid), From: "a@x", Date: time.Now().Add(-time.Duration(h) * time.Hour), Seen: true}
+	}
+	m := Model{cfg: cfg, folders: []string{"Inbox"}, inbox: newInboxList(100, 20, "", ""), markedUIDs: map[uint32]bool{}, spyPixelKeys: map[string]bool{}, sortField: "date", sortReverse: true}
+	m.emails = []imap.Email{mk(3, 1), mk(2, 2), mk(1, 3)}
+	m.applyFilter()
+	m.inbox.Select(1) // uid 2
+	if e := selectedEmail(m.inbox); e == nil || e.UID != 2 {
+		t.Fatalf("setup: cursor not on uid 2: %+v", e)
+	}
+
+	// A newer mail arrived: rows shift down by one.
+	res, _ := m.Update(emailsLoadedMsg{emails: []imap.Email{mk(4, 0), mk(3, 1), mk(2, 2), mk(1, 3)}, folder: "OTHER"})
+	mm := res.(Model)
+	if e := selectedEmail(mm.inbox); e == nil || e.UID != 2 {
+		t.Errorf("after reload with a new mail on top, cursor should still be on uid 2, got %+v (index %d)", e, mm.inbox.Index())
+	}
+
+	// The cursor email was deleted: fall back to the same index (the next row).
+	res, _ = mm.Update(emailsLoadedMsg{emails: []imap.Email{mk(4, 0), mk(3, 1), mk(1, 3)}, folder: "OTHER"})
+	mm = res.(Model)
+	if mm.inbox.Index() != 2 {
+		t.Errorf("after the cursor email vanished, index should stay 2, got %d", mm.inbox.Index())
+	}
+}
+
+// Undo must never guess: a move whose destination UID is unknown (server sent
+// no COPYUID) is skipped rather than moving whatever carries that UID in the
+// destination folder.
+func TestUndoableMovesSkipsUnknownDestUID(t *testing.T) {
+	keep, skipped := undoableMoves([]undoMove{{uid: 0, fromFolder: "INBOX", toFolder: "Trash"}, {uid: 77, fromFolder: "INBOX", toFolder: "Trash"}})
+	if len(keep) != 1 || keep[0].uid != 77 || skipped != 1 {
+		t.Errorf("undoableMoves = %+v, skipped %d; want only uid 77 kept, 1 skipped", keep, skipped)
 	}
 }

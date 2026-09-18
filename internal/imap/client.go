@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"mime"
 	"net"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -104,6 +105,39 @@ func InferSecurity(port string, userSTARTTLS bool) (useTLS, useSTARTTLS bool) {
 	default:
 		return true, false
 	}
+}
+
+// auditPath is the file every server-side MOVE/EXPUNGE is appended to
+// (set via SetAuditLogPath, normally ~/.cache/neomd/moves.log). It exists so a
+// "mail vanished" report can be traced to the exact operation instead of
+// reconstructed from UIDs. Empty = disabled.
+var (
+	auditMu   sync.Mutex
+	auditPath string
+)
+
+// SetAuditLogPath enables (non-empty) or disables ("") the move audit log.
+func SetAuditLogPath(p string) {
+	auditMu.Lock()
+	defer auditMu.Unlock()
+	auditPath = p
+}
+
+// audit appends one timestamped line to the audit log; failures are ignored
+// (the log must never block or fail a mail operation).
+func audit(format string, args ...any) {
+	auditMu.Lock()
+	p := auditPath
+	auditMu.Unlock()
+	if p == "" {
+		return
+	}
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s %s\n", time.Now().Format(time.RFC3339), fmt.Sprintf(format, args...))
 }
 
 // envelopeWordDecoder decodes RFC 2047 encoded-words in ENVELOPE fields
@@ -1045,13 +1079,15 @@ func (c *Client) FetchRaw(ctx context.Context, folder string, uid uint32) ([]byt
 
 // MoveMessage moves uid from src to dst using the IMAP MOVE command (RFC 6851).
 // Returns the UID assigned at the destination (may differ from src UID on some
-// servers). Falls back to the original uid if the server does not report UIDPLUS
+// servers). Returns 0 as destUID if the server does not report UIDPLUS (undo then skips the move)
 // COPYUID data. Callers that need the dest UID for undo should capture it.
 func (c *Client) MoveMessage(ctx context.Context, src string, uid uint32, dst string) (destUID uint32, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	destUID = uid // default: assume same UID
+	// destUID stays 0 unless the server reports the new UID (UIDPLUS COPYUID).
+	// Guessing "same UID" would let undo move an unrelated message that happens
+	// to carry that UID in the destination folder.
 	err = c.withConn(ctx, func(conn *imapclient.Client) error {
 		if err := c.selectMailbox(src); err != nil {
 			return err
@@ -1088,8 +1124,12 @@ func (c *Client) MoveMessage(ctx context.Context, src string, uid uint32, dst st
 			}
 		}
 		c.selectedMailbox = ""
+		audit("MOVE %s uid=%d -> %s destUID=%d", src, uid, dst, destUID)
 		return nil
 	})
+	if err != nil {
+		audit("MOVE-FAILED %s uid=%d -> %s err=%v", src, uid, dst, err)
+	}
 	return destUID, err
 }
 
@@ -1154,6 +1194,7 @@ func (c *Client) ExpungeAll(ctx context.Context, folder string, uids []uint32) e
 			return fmt.Errorf("UID EXPUNGE: %w", err)
 		}
 		c.selectedMailbox = ""
+		audit("EXPUNGE %s uids=%v", folder, uids)
 		return nil
 	})
 }
