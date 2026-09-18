@@ -3165,7 +3165,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 
-	case "esc":
+	case "esc", "h": // h = "back" like in the reader; falls through to the list (page up) when nothing is open
 		if m.filterText != "" || m.showUnreadOnly {
 			m.filterActive = false
 			m.filterText = ""

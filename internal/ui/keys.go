@@ -17,6 +17,7 @@ var HelpSections = []HelpSection{
 		{"G", "jump to bottom"},
 		{"enter / l", "open email"},
 		{"h / q / esc", "back to inbox (from reader)"},
+		{"h / esc  (inbox)", "back one level — close a temporary view (Search / Thread / Sender / Merged) or clear the / filter and z unread-only"},
 		{"?", "toggle help overlay (type to filter)"},
 	}},
 	{"Folders", [][2]string{

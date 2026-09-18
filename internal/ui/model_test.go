@@ -1364,3 +1364,26 @@ func TestHandleMergeResult_ErrorFallsBackToStatus(t *testing.T) {
 		t.Errorf("error should set status and stay in folder; isError=%v offTab=%q", mm.isError, mm.offTabFolder)
 	}
 }
+
+func TestInboxHKeyClosesOffTabView(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Folders.Inbox = "INBOX"
+	m := Model{cfg: cfg, folders: []string{"Inbox"}, inbox: newInboxList(80, 20, "", "")}
+	m.offTabFolder = "Merged: Bounces"
+
+	res, cmd := m.updateInbox(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	mm := res.(Model)
+	if mm.offTabFolder != "" {
+		t.Errorf("h should close the off-tab view, offTabFolder = %q", mm.offTabFolder)
+	}
+	if cmd == nil {
+		t.Error("h should schedule the folder reload like esc does")
+	}
+
+	// With nothing open, h falls through to the list (no view change).
+	plain := Model{cfg: cfg, folders: []string{"Inbox"}, inbox: newInboxList(80, 20, "", "")}
+	res, _ = plain.updateInbox(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if res.(Model).offTabFolder != "" {
+		t.Error("h on a plain folder view must not set an off-tab")
+	}
+}

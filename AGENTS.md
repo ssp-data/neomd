@@ -151,7 +151,9 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   list individual messages. Enter/`l`/`T` on that row opens the members across folders
   (`SearchByMessageIDs`: Message-ID OR In-Reply-To, capped at the `mergeSearchMaxIDs`
   = 100 most recently stored ids) in a `Merged: <title>` off-tab; `T` on a normal row is
-  unchanged. Bulk keys and `m` expand
+  unchanged. `esc` or `h` closes any off-tab view (or clears `/` and `z`) — `h` mirrors
+  the reader's "back" and still pages up when nothing is open (test
+  `TestInboxHKeyClosesOffTabView`). Bulk keys and `m` expand
   to the members via `targetEmails()`. Sender rules are applied on every folder load
   and persisted; `:unmerge` of a single member of a rule-bearing merge records its
   Message-ID in that merge's `Excluded` list (`merge.Store.Remove`/`IsExcluded`), so the
