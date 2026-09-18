@@ -297,9 +297,8 @@ func collapseMerges(rows []threadedEmail, titleOf func(string) (string, bool), s
 
 	// 2. Assign blocks to merges (first matching member wins).
 	type entry struct {
-		rep   imap.Email // sort representative
-		rows  []threadedEmail
-		merge *mergeRow
+		rep  imap.Email // sort representative
+		rows []threadedEmail
 	}
 	var entries []entry
 	byTitle := map[string]*mergeRow{}
@@ -339,7 +338,7 @@ func collapseMerges(rows []threadedEmail, titleOf func(string) (string, bool), s
 			return mr.members[i].Date.After(mr.members[j].Date)
 		})
 		rep := mr.members[0]
-		entries = append(entries, entry{rep: rep, rows: []threadedEmail{{email: rep, merge: mr}}, merge: mr})
+		entries = append(entries, entry{rep: rep, rows: []threadedEmail{{email: rep, merge: mr}}})
 	}
 
 	// 4. Stable sort so untouched blocks keep their order and merged rows

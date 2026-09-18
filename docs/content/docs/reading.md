@@ -168,7 +168,7 @@ Automatic threading only groups real replies. Some mail never threads yet arrive
 The members collapse into a single row wherever they live:
 
 ```
-  4 N 09:12  ≡ Mailer-Daemon         Bounces (12)                   (3.1K)
+  4 N  ≡ 09:12    Mailer-Daemon         Bounces (12)                   (3.1K)
 ```
 
 - `≡` marks a merged row; the subject shows the title and how many members sit in this folder
@@ -176,7 +176,7 @@ The members collapse into a single row wherever they live:
 - The row sorts by its newest member, like a normal thread
 - Replies to a merged email are absorbed automatically — the whole reply thread joins the row
 
-**Open:** press Enter, `l`, or `T` on the row to see every member across Inbox, Sent, Archive, Waiting, Someday, Scheduled, and Work in a temporary `Merged: <title>` tab (with `[Folder]` prefixes). Enter reads one email as usual; `esc` returns.
+**Open:** press Enter, `l`, or `T` on the row to see every member across Inbox, Sent, Archive, Waiting, Someday, Scheduled, and Work in a temporary `Merged: <title>` tab (with `[Folder]` prefixes). Enter reads one email as usual; `esc` returns. Opening a merge searches the 100 most recently added members; very large groups show a partial view.
 
 **Act on all members at once:** archive (`A`), delete (`x`), move (`M…`), toggle read (`n`), and the screener keys applied to a merged row apply to every member in the current folder. `m` marks or unmarks all of them. Undo (`U`) works as for any bulk move.
 

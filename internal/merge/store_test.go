@@ -96,6 +96,47 @@ func TestRemoveAndDissolve(t *testing.T) {
 	}
 }
 
+func TestRemove_ExcludesFromSenderRule(t *testing.T) {
+	p := tmpPath(t)
+	s, _ := Load(p)
+	s.Add("Bounces", "<a@x>", "<b@x>")
+	s.SetSender("Bounces", "mailer-daemon@")
+	if !s.Remove("<b@x>") {
+		t.Fatal("Remove(<b@x>) = false, want true")
+	}
+	if !s.IsExcluded("<b@x>") {
+		t.Error("removed id from a rule-bearing merge should be excluded")
+	}
+	if err := s.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	s2, err := Load(p)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !s2.IsExcluded("<b@x>") {
+		t.Error("exclusion lost across Save/Load")
+	}
+	// An explicit merge overrides the earlier removal.
+	if n := s2.Add("Bounces", "<b@x>"); n != 1 {
+		t.Errorf("re-Add returned %d, want 1", n)
+	}
+	if s2.IsExcluded("<b@x>") {
+		t.Error("explicit Add should clear the exclusion")
+	}
+}
+
+func TestRemove_NoRuleDoesNotExclude(t *testing.T) {
+	s, _ := Load(tmpPath(t))
+	s.Add("Bounces", "<a@x>", "<b@x>")
+	if !s.Remove("<b@x>") {
+		t.Fatal("Remove(<b@x>) = false, want true")
+	}
+	if s.IsExcluded("<b@x>") {
+		t.Error("merge without a sender rule must not record exclusions")
+	}
+}
+
 func TestMatchSender_NoRuleOrNoMatch(t *testing.T) {
 	s, _ := Load(tmpPath(t))
 	s.Add("NoRule", "<1>")
@@ -121,6 +162,9 @@ func TestNilStoreIsSafe(t *testing.T) {
 	}
 	if s.Add("x", "<1>") != 0 || s.Remove("<1>") || s.Dissolve("x") || s.Save() != nil {
 		t.Error("nil mutators should be no-ops")
+	}
+	if s.IsExcluded("<1>") {
+		t.Error("nil IsExcluded = true")
 	}
 	s.SetSender("x", "y") // must not panic
 }

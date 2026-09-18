@@ -145,16 +145,25 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   Message-IDs (never UIDs) in `<config dir>/merges.toml` (`internal/merge`); the list
   collapses members — plus any automatic thread containing a member — into one `≡`
   row placed by its newest member (`collapseMerges`, `internal/ui/thread.go`), rendered
-  as `<title> (n)` with `N`/`·` aggregated over members. Enter/`l`/`T` on that row opens
-  the members across folders (`SearchByMessageIDs`: Message-ID OR In-Reply-To) in a
-  `Merged: <title>` off-tab; `T` on a normal row is unchanged. Bulk keys and `m` expand
+  as `<title> (n)` with `N`/`·` aggregated over members. Collapsing is gated in
+  `applyFilter` (`internal/ui/model.go`) to folder views and the `Search`/`Everything`
+  off-tabs — the `T` conversation, the `V` sender view and an opened merge must always
+  list individual messages. Enter/`l`/`T` on that row opens the members across folders
+  (`SearchByMessageIDs`: Message-ID OR In-Reply-To, capped at the `mergeSearchMaxIDs`
+  = 100 most recently stored ids) in a `Merged: <title>` off-tab; `T` on a normal row is
+  unchanged. Bulk keys and `m` expand
   to the members via `targetEmails()`. Sender rules are applied on every folder load
-  and persisted. Absorbed replies are display-only until `:merge` is run on the row.
+  and persisted; `:unmerge` of a single member of a rule-bearing merge records its
+  Message-ID in that merge's `Excluded` list (`merge.Store.Remove`/`IsExcluded`), so the
+  rule can never silently undo the removal — an explicit `:merge` clears the exclusion.
+  Absorbed replies are display-only until `:merge` is run on the row.
   Tests: `TestCollapseMerges_*`, `TestRenderCollapsedMergeRow`, `TestSetEmails_CollapsesMembers`,
   `TestTargetEmails_ExpandsCollapsedRow`, `TestMarkKey_TogglesAllMembers`,
-  `TestApplySenderRules_PersistsMatches`, `TestHandleMergeResult_*`, `TestMergeCmd_*`,
+  `TestApplySenderRules_PersistsMatches`, `TestApplyFilter_NoCollapseInThreadView`,
+  `TestCmdLine_AcceptsUnicodeRune`, `TestHandleMergeResult_*`, `TestMergeCmd_*`,
   `TestMergeSenderCmd_*`, `TestUnmergeCmd_*`, `TestTitleCompletions`, `TestMessageIDCriteria`,
-  `internal/merge` `TestAddSaveLoad_RoundTrip`.
+  `internal/merge` `TestAddSaveLoad_RoundTrip`, `TestRemove_ExcludesFromSenderRule`,
+  `TestRemove_NoRuleDoesNotExclude`.
 
 ## Compose → Pre-send → Send Pipeline
 
@@ -389,7 +398,7 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 ## Keybindings & Docs
 
 - **`internal/ui/keys.go` is the single source of truth** — drives the `?` overlay and the
-  generated `docs/keybindings.md` (`make docs`, runs in `make build`). Never hand-edit the
+  generated `docs/content/docs/keybindings.md` (`make docs`, runs in `make build`). Never hand-edit the
   markdown tables.
 - **Avoid modifier keys for new bindings** — user's tmux prefix is `C-t`; `ctrl+a`/`ctrl+e`
   collide with textinput line-start/end. Prefer plain letters, especially on pre-send.

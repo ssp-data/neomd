@@ -26,16 +26,7 @@ type emailItem struct {
 	merge        *mergeRow // non-nil: collapsed user-merged group; email is its newest member
 }
 
-func (e emailItem) FilterValue() string {
-	if e.merge != nil {
-		parts := []string{e.merge.title}
-		for _, m := range e.merge.members {
-			parts = append(parts, m.From, m.Subject)
-		}
-		return strings.Join(parts, " ")
-	}
-	return e.email.From + " " + e.email.Subject
-}
+func (e emailItem) FilterValue() string { return e.email.From + " " + e.email.Subject }
 
 func (e emailItem) Title() string       { return e.email.Subject }
 func (e emailItem) Description() string { return e.email.From }

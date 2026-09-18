@@ -1305,6 +1305,40 @@ func TestApplySenderRules_PersistsMatches(t *testing.T) {
 	if n := m.applySenderRules(emails); n != 0 {
 		t.Errorf("second pass should add nothing, got %d", n)
 	}
+	// :unmerge inside the merge view removes the email; the rule must not
+	// silently re-add it on the next folder load.
+	if !s.Remove("<new1>") {
+		t.Fatal("Remove(<new1>) = false")
+	}
+	if n := m.applySenderRules(emails); n != 0 {
+		t.Errorf("excluded id was re-added by the sender rule (%d added)", n)
+	}
+	if _, ok := s.TitleOf("<new1>"); ok {
+		t.Error("<new1> should stay out of Bounces after :unmerge")
+	}
+}
+
+func TestApplyFilter_NoCollapseInThreadView(t *testing.T) {
+	m := mergedInboxModel(t)
+	m.offTabFolder = "Thread"
+	m.applyFilter()
+	if n := len(m.inbox.Items()); n != 3 {
+		t.Errorf("T conversation view must show every message, got %d items, want 3", n)
+	}
+	m.offTabFolder = ""
+	m.applyFilter()
+	if n := len(m.inbox.Items()); n != 2 {
+		t.Errorf("folder view should collapse the merge, got %d items, want 2", n)
+	}
+}
+
+func TestCmdLine_AcceptsUnicodeRune(t *testing.T) {
+	m := Model{cfg: &config.Config{}, cmdMode: true}
+	res, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ü")})
+	mm := res.(Model)
+	if mm.cmdText != "ü" {
+		t.Errorf("cmdText = %q, want %q", mm.cmdText, "ü")
+	}
 }
 
 func TestHandleMergeResult_OpensOffTab(t *testing.T) {

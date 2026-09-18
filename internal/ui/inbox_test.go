@@ -256,9 +256,6 @@ func TestRenderCollapsedMergeRow(t *testing.T) {
 	if strings.Contains(row, "Undelivered") {
 		t.Errorf("collapsed row should show the title, not a member subject: %s", row)
 	}
-	if fv := item.FilterValue(); !strings.Contains(fv, "Bounces") || !strings.Contains(fv, "Undelivered") {
-		t.Errorf("FilterValue should include title and member subjects, got %q", fv)
-	}
 }
 
 func TestSetEmails_CollapsesMembers(t *testing.T) {

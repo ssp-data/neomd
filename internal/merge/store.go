@@ -20,6 +20,11 @@ type Merge struct {
 	Title      string   `toml:"title"`
 	Sender     string   `toml:"sender,omitempty"` // case-insensitive substring of the bare From address
 	MessageIDs []string `toml:"message_ids"`
+	// Excluded holds Message-IDs the user removed by hand from a merge that
+	// has a Sender rule. Without it the next folder load would match the rule
+	// again and silently undo the removal. Only rule-bearing merges record
+	// exclusions — for the others the removal is already final.
+	Excluded []string `toml:"excluded,omitempty"`
 }
 
 type fileFormat struct {
@@ -117,9 +122,24 @@ func (s *Store) Add(title string, ids ...string) int {
 		}
 		have[id] = true
 		s.merges[i].MessageIDs = append(s.merges[i].MessageIDs, id)
+		s.unexclude(id)
 		added++
 	}
 	return added
+}
+
+// unexclude drops id from every merge's Excluded list: an explicit merge
+// overrides an earlier removal. Caller holds mu.
+func (s *Store) unexclude(id string) {
+	for i := range s.merges {
+		ex := s.merges[i].Excluded
+		for j, have := range ex {
+			if have == id {
+				s.merges[i].Excluded = append(ex[:j:j], ex[j+1:]...)
+				break
+			}
+		}
+	}
 }
 
 // SetSender stores the sender rule for title (created if missing).
@@ -137,7 +157,9 @@ func (s *Store) SetSender(title, addr string) {
 	s.merges[i].Sender = strings.ToLower(strings.TrimSpace(addr))
 }
 
-// Remove drops id from whichever merge holds it.
+// Remove drops id from whichever merge holds it. When that merge carries a
+// sender rule the id is remembered in Excluded, so the rule does not re-add
+// it on the next folder load.
 func (s *Store) Remove(id string) bool {
 	if s == nil {
 		return false
@@ -149,6 +171,27 @@ func (s *Store) Remove(id string) bool {
 		for j, have := range ids {
 			if have == id {
 				s.merges[i].MessageIDs = append(ids[:j:j], ids[j+1:]...)
+				if s.merges[i].Sender != "" {
+					s.merges[i].Excluded = append(s.merges[i].Excluded, id)
+				}
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// IsExcluded reports whether id was removed by hand from a merge with a
+// sender rule, and must therefore not be re-added by that rule.
+func (s *Store) IsExcluded(id string) bool {
+	if s == nil || id == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, m := range s.merges {
+		for _, have := range m.Excluded {
+			if have == id {
 				return true
 			}
 		}

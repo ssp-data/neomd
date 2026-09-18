@@ -1321,6 +1321,11 @@ func (m *Model) applySenderRules(emails []imap.Email) int {
 		if _, already := m.merges.TitleOf(e.MessageID); already {
 			continue
 		}
+		// Hand-removed from a rule-bearing merge (:unmerge inside the merge
+		// view) — the rule must not silently pull it back in.
+		if m.merges.IsExcluded(e.MessageID) {
+			continue
+		}
 		if title, ok := m.merges.MatchSender(e.From); ok {
 			added += m.merges.Add(title, e.MessageID)
 		}
@@ -3047,6 +3052,9 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cmdTabBase = ""
 			m.cmdHistI = -1
 		case "right": // accept ghost completion (first match)
+			if strings.Contains(strings.TrimSpace(m.cmdText), " ") {
+				break // an argument was typed (":merge Bounces") — nothing to complete
+			}
 			if first := matchCmd(m.cmdText); first != nil {
 				m.cmdText = first.name
 				m.cmdTabI = 0
@@ -3076,6 +3084,9 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cmdTabI++
 				break
 			}
+			if strings.Contains(strings.TrimSpace(m.cmdTabBase), " ") {
+				break // typed title with no completion — keep what the user wrote
+			}
 			matches := matchCmds(m.cmdText)
 			if len(matches) > 0 {
 				m.cmdTabI = (m.cmdTabI - 2 + len(matches)) % len(matches)
@@ -3083,7 +3094,10 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cmdTabI++
 			}
 		default:
-			if len(key) == 1 {
+			// One rune, not one byte: merge titles may contain umlauts and
+			// other non-ASCII characters. Special keys ("enter", "ctrl+p", …)
+			// are always multi-rune and stay out of this branch.
+			if len([]rune(key)) == 1 {
 				m.cmdText += key
 				m.cmdTabI = 0 // reset cycle on new input
 				m.cmdTabBase = ""
@@ -3801,7 +3815,11 @@ func (m *Model) applyFilter() tea.Cmd {
 
 	noThread := len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent
 	var titleOf func(string) (string, bool)
-	if m.merges != nil && !m.inMergeView() {
+	// Collapse merged rows in folder views and in the Search/Everything
+	// off-tabs only. The T conversation, the V sender view and an opened
+	// merge exist to show individual messages — collapsing there would hide
+	// the very rows the user opened the view for.
+	if m.merges != nil && (m.offTabFolder == "" || m.offTabFolder == "Search" || m.offTabFolder == "Everything") {
 		titleOf = m.merges.TitleOf
 	}
 	return setEmails(&m.inbox, filtered, m.markedUIDs, m.spyPixelKeys, m.shouldPrefixFolderInSubject(), m.sortField, m.sortReverse, noThread, titleOf)

@@ -347,11 +347,21 @@ type mergeResultMsg struct {
 	err    error
 }
 
+// mergeSearchMaxIDs caps how many Message-IDs one merge lookup sends. Each id
+// becomes two HEADER terms in a right-nested OR tree, so an unbounded group
+// would build an IMAP command long enough for servers to reject — and
+// searchFolder only returns the newest 100 hits per folder anyway, so the
+// extra terms could not widen the result. The newest members are kept.
+const mergeSearchMaxIDs = 100
+
 // fetchMergeCmd fetches every stored member of the merge (plus direct
 // replies) across the same folders the T conversation view searches.
 // fallback (the members visible in the current list) is shown when the
 // server returns nothing, so the view never opens empty.
 func (m Model) fetchMergeCmd(title string, ids []string, fallback []imap.Email) tea.Cmd {
+	if len(ids) > mergeSearchMaxIDs {
+		ids = ids[len(ids)-mergeSearchMaxIDs:] // most recently stored members
+	}
 	cli := m.imapCli()
 	f := m.cfg.Folders
 	folders := []string{f.Inbox, f.Sent, f.Archive, f.Waiting, f.Someday, f.Scheduled}
