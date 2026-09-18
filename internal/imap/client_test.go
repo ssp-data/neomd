@@ -706,3 +706,38 @@ func TestResetMailboxSelection(t *testing.T) {
 		t.Errorf("ResetMailboxSelection() did not clear selectedMailbox: got %q, want empty string", c.selectedMailbox)
 	}
 }
+
+// Outlook and other Windows senders encode display names and subjects as
+// RFC 2047 encoded-words in Windows-1252, which Go's default mime.WordDecoder
+// cannot decode (it only knows UTF-8, ISO-8859-1 and US-ASCII). The IMAP
+// client must hand go-imap a charset-aware decoder or the raw
+// "=?Windows-1252?Q?...?=" text leaks into the inbox, reader and reply screens.
+func TestEnvelopeWordDecoder_DecodesWindows1252(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"=?Windows-1252?Q?Ren=E9_M=FCller?=", "René Müller"},
+		{"=?Windows-1252?Q?Ren=E9_M=FCller?= <rene@example.com>", "René Müller <rene@example.com>"},
+		{"=?ISO-8859-15?Q?Preis_=A4?=", "Preis €"},
+		{"=?UTF-8?Q?Zo=C3=AB_Example?=", "Zoë Example"},
+		{"Plain Name <plain@example.com>", "Plain Name <plain@example.com>"},
+	}
+	for _, c := range cases {
+		got, err := envelopeWordDecoder.DecodeHeader(c.in)
+		if err != nil {
+			t.Errorf("DecodeHeader(%q) error: %v", c.in, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("DecodeHeader(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestClientOptions_SetWordDecoder(t *testing.T) {
+	opts := clientOptions(nil)
+	if opts.WordDecoder == nil {
+		t.Fatal("clientOptions must set WordDecoder so go-imap decodes non-UTF-8 envelope charsets")
+	}
+	if opts.WordDecoder != envelopeWordDecoder {
+		t.Error("clientOptions should wire the shared charset-aware envelopeWordDecoder")
+	}
+}

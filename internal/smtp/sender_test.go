@@ -1109,3 +1109,76 @@ func extractPlainTextPart(t *testing.T, raw []byte) string {
 	}
 	return ""
 }
+
+// Display names that reach the builder already decoded (IMAP envelope names,
+// contacts, user input) may contain non-ASCII text. RFC 5322 headers must be
+// 7-bit, so the builder Q-encodes such names (RFC 2047) while leaving
+// addresses, ASCII names and already-encoded words untouched.
+func TestEncodeAddressNames(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"ascii passthrough is byte-identical", "Bob Smith <bob@example.com>, carol@example.org", "Bob Smith <bob@example.com>, carol@example.org"},
+		{"already encoded word passes through", "=?Windows-1252?Q?Ren=E9?= <rene@example.com>", "=?Windows-1252?Q?Ren=E9?= <rene@example.com>"},
+		{"empty", "", ""},
+		{"non-ascii name is q-encoded", "René Müller <rene@example.com>", "=?utf-8?q?Ren=C3=A9_M=C3=BCller?= <rene@example.com>"},
+		{"mixed list keeps bare address", "René Müller <rene@example.com>, plain@example.org", "=?utf-8?q?Ren=C3=A9_M=C3=BCller?= <rene@example.com>, plain@example.org"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := encodeAddressNames(c.in); got != c.want {
+				t.Errorf("encodeAddressNames(%q)\n got %q\nwant %q", c.in, got, c.want)
+			}
+		})
+	}
+	// A quoted name with a comma must survive as ONE recipient and decode back.
+	got := encodeAddressNames(`"Müller, René" <rene@example.com>`)
+	list, err := mail.ParseAddressList(got)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("quoted-comma name: ParseAddressList(%q) = %v, %v; want 1 address", got, list, err)
+	}
+	if list[0].Name != "Müller, René" || list[0].Address != "rene@example.com" {
+		t.Errorf("quoted-comma name round-trip = %+v", list[0])
+	}
+}
+
+func TestBuildMessage_HeadersAre7BitWithNonASCIINames(t *testing.T) {
+	raw, err := BuildMessage(
+		"Zoë Example <zoe@example.org>",
+		"René Müller <rene@example.com>, plain@example.net",
+		"Åsa Lindqvist <asa@example.net>",
+		"Grüße",
+		"hello",
+		nil, "",
+	)
+	if err != nil {
+		t.Fatalf("BuildMessage: %v", err)
+	}
+	end := bytes.Index(raw, []byte("\r\n\r\n"))
+	if end < 0 {
+		t.Fatal("no header/body separator")
+	}
+	for i, b := range raw[:end] {
+		if b >= 0x80 {
+			t.Fatalf("non-ASCII byte 0x%02x at header offset %d:\n%s", b, i, raw[:end])
+		}
+	}
+	msg, _, _ := parseMIME(t, raw)
+	check := func(hdr, wantName, wantAddr string) {
+		t.Helper()
+		list, err := mail.ParseAddressList(msg.Header.Get(hdr))
+		if err != nil {
+			t.Fatalf("%s: %v (raw %q)", hdr, err, msg.Header.Get(hdr))
+		}
+		if list[0].Name != wantName || list[0].Address != wantAddr {
+			t.Errorf("%s = %+v, want %q <%s>", hdr, list[0], wantName, wantAddr)
+		}
+	}
+	check("From", "Zoë Example", "zoe@example.org")
+	check("Cc", "Åsa Lindqvist", "asa@example.net")
+	to, err := mail.ParseAddressList(msg.Header.Get("To"))
+	if err != nil || len(to) != 2 {
+		t.Fatalf("To: %v %v", to, err)
+	}
+	if to[0].Name != "René Müller" || to[1].Address != "plain@example.net" {
+		t.Errorf("To = %+v", to)
+	}
+}

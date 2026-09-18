@@ -374,6 +374,9 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 	if !ok {
 		return nil, fmt.Errorf("invalid From address %q: cannot parse address for Message-ID (ensure address format is valid)", from)
 	}
+	// Headers must be 7-bit (RFC 5322). Display names arrive already decoded
+	// (IMAP envelope, contacts, user input) and may carry non-ASCII text.
+	from, to, cc, bcc = encodeAddressNames(from), encodeAddressNames(to), encodeAddressNames(cc), encodeAddressNames(bcc)
 
 	// First pass: local image paths (<img src="/abs/path">), assign CIDs.
 	var inlines []inlineImage
@@ -693,6 +696,45 @@ func writeAltParts(b *bytes.Buffer, boundary, plainText, htmlBody string) {
 
 // sanitizeHeaderValue removes CR/LF so no value can terminate its header line
 // and inject additional headers (RFC 5322 header smuggling).
+// encodeAddressNames makes a comma-separated address field ("Name <addr>,
+// addr2") safe for a 7-bit header: non-ASCII display names are RFC 2047
+// encoded (Q- or B-encoding chosen by net/mail), addresses are untouched.
+// An all-ASCII field — including one that already carries encoded-words —
+// is returned byte-for-byte, so existing output never changes. A field that
+// net/mail cannot parse is returned unchanged rather than mangled.
+func encodeAddressNames(field string) string {
+	if isASCII(field) {
+		return field
+	}
+	list, err := mail.ParseAddressList(field)
+	if err != nil {
+		return field
+	}
+	parts := make([]string, len(list))
+	for i, a := range list {
+		if isASCII(a.Name) {
+			// Keep the original spelling for ASCII names (String() would add quotes).
+			if a.Name == "" {
+				parts[i] = a.Address
+			} else {
+				parts[i] = a.Name + " <" + a.Address + ">"
+			}
+			continue
+		}
+		parts[i] = a.String()
+	}
+	return strings.Join(parts, ", ")
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
 func sanitizeHeaderValue(v string) string {
 	if !strings.ContainsAny(v, "\r\n") {
 		return v

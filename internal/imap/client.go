@@ -5,10 +5,12 @@ package imap
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net"
 	"regexp"
 	"sort"
@@ -20,7 +22,7 @@ import (
 	imap "github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
-	_ "github.com/emersion/go-message/charset" // register charset decoders for ISO-8859-1, Windows-1252, etc.
+	"github.com/emersion/go-message/charset" // charset decoders for ISO-8859-1, Windows-1252, etc. (bodies via go-message, envelopes via envelopeWordDecoder)
 	"github.com/emersion/go-message/mail"
 	"github.com/sspaeti/neomd/internal/mailtls"
 	"github.com/sspaeti/neomd/internal/oauth2"
@@ -103,6 +105,19 @@ func InferSecurity(port string, userSTARTTLS bool) (useTLS, useSTARTTLS bool) {
 	}
 }
 
+// envelopeWordDecoder decodes RFC 2047 encoded-words in ENVELOPE fields
+// (From/To/Cc display names, Subject). go-imap falls back to Go's default
+// mime.WordDecoder, which only knows UTF-8, ISO-8859-1 and US-ASCII — an
+// Outlook sender's "=?Windows-1252?Q?...?=" name would then leak raw into the
+// inbox, reader and reply screens. go-message's charset.Reader covers
+// Windows-125x, ISO-8859-x, KOI8, Shift_JIS, GBK, etc.
+var envelopeWordDecoder = &mime.WordDecoder{CharsetReader: charset.Reader}
+
+// clientOptions builds the go-imap options every connection uses.
+func clientOptions(tlsCfg *tls.Config) *imapclient.Options {
+	return &imapclient.Options{TLSConfig: tlsCfg, WordDecoder: envelopeWordDecoder}
+}
+
 func (c *Client) addr() string {
 	return c.cfg.Host + ":" + c.cfg.Port
 }
@@ -117,7 +132,7 @@ func (c *Client) connect(_ context.Context) error {
 	if err != nil {
 		return err
 	}
-	opts := &imapclient.Options{TLSConfig: tlsCfg}
+	opts := clientOptions(tlsCfg)
 	var (
 		conn *imapclient.Client
 	)
@@ -131,7 +146,7 @@ func (c *Client) connect(_ context.Context) error {
 	}
 	if err != nil && mailtls.ShouldRetryInsecureLocalhost(c.cfg.Host, c.cfg.TLSCertFile, err) {
 		c.logger.Warn("retrying IMAP TLS connection with localhost self-signed certificate fallback", "host", c.cfg.Host, "port", c.cfg.Port)
-		opts = &imapclient.Options{TLSConfig: mailtls.InsecureLocalhostConfig(c.cfg.Host)}
+		opts = clientOptions(mailtls.InsecureLocalhostConfig(c.cfg.Host))
 		switch {
 		case c.cfg.TLS:
 			conn, err = imapclient.DialTLS(addr, opts)

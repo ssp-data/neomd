@@ -287,6 +287,12 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   must all follow the selected identity (accounts first, then `[[senders]]` aliases).
   Tests: `TestPresendSMTPAccount`, `TestReactionAutoSelectsCorrectFromAndSMTP`,
   `TestSentDraftsIMAPClient_*`.
+- **Address headers are always 7-bit** — `buildMessageWithBCC` runs From/To/Cc/Bcc through
+  `encodeAddressNames` (`internal/smtp/sender.go`): non-ASCII display names get RFC 2047
+  encoding via `net/mail`, addresses are untouched, and an all-ASCII field (including one
+  that already carries encoded-words) is returned byte-for-byte. SMTP RCPT TO is derived
+  from the caller's original strings, never from the built headers. Tests:
+  `TestEncodeAddressNames`, `TestBuildMessage_HeadersAre7BitWithNonASCIINames`.
 
 ## Screener (HEY-style)
 
@@ -374,6 +380,12 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **`imap_disabled = true` accounts produce nil clients by design** — every helper that
   resolves an IMAP client must skip nil entries (send, Sent-copy, `\Answered`, `:debug`,
   headless). Tests: `internal/ui/imap_client_helpers_test.go`.
+- **Envelope names/subjects decode every charset** — every go-imap connection is built by
+  `clientOptions()` with `WordDecoder: envelopeWordDecoder` (charset-aware via
+  go-message's `charset.Reader`). Without it go-imap's default decoder only knows UTF-8 /
+  ISO-8859-1 and Outlook's `=?Windows-1252?Q?...?=` names leak raw into the inbox, reader
+  and reply screens. Tests: `TestEnvelopeWordDecoder_DecodesWindows1252`,
+  `TestClientOptions_SetWordDecoder`.
 
 ## Notifications & Theming
 
