@@ -239,3 +239,52 @@ func TestSendLaterPrefix(t *testing.T) {
 		t.Errorf("regular mail must have no prefix: %q", got)
 	}
 }
+
+func TestRenderCollapsedMergeRow(t *testing.T) {
+	newest := imap.Email{UID: 9, From: "Mailer-Daemon <mailer-daemon@x>", Subject: "Undelivered", Date: time.Now(), Seen: true, Size: 512}
+	older := imap.Email{UID: 3, From: "Mailer-Daemon <mailer-daemon@x>", Subject: "Undelivered", Date: time.Now().Add(-48 * time.Hour), Seen: false, Answered: true, Size: 256}
+	item := emailItem{
+		email: newest, index: 1,
+		merge: &mergeRow{title: "Bounces", members: []imap.Email{newest, older}},
+	}
+	row := renderRow(item, 100)
+	for _, want := range []string{"≡", "Bounces (2)", "N", "·"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("collapsed row missing %q: %s", want, row)
+		}
+	}
+	if strings.Contains(row, "Undelivered") {
+		t.Errorf("collapsed row should show the title, not a member subject: %s", row)
+	}
+	if fv := item.FilterValue(); !strings.Contains(fv, "Bounces") || !strings.Contains(fv, "Undelivered") {
+		t.Errorf("FilterValue should include title and member subjects, got %q", fv)
+	}
+}
+
+func TestSetEmails_CollapsesMembers(t *testing.T) {
+	emails := []imap.Email{
+		{UID: 1, MessageID: "<b1>", Subject: "Undelivered", From: "d@x", Date: time.Now().Add(-2 * time.Hour), Seen: true},
+		{UID: 2, MessageID: "<b2>", Subject: "Undelivered", From: "d@x", Date: time.Now().Add(-1 * time.Hour), Seen: true},
+		{UID: 3, MessageID: "<k>", Subject: "Keep", From: "k@x", Date: time.Now(), Seen: true},
+	}
+	l := list.New(nil, emailDelegate{}, 100, 10)
+	titleOf := func(id string) (string, bool) {
+		if id == "<b1>" || id == "<b2>" {
+			return "Bounces", true
+		}
+		return "", false
+	}
+	setEmails(&l, emails, map[uint32]bool{}, map[string]bool{}, false, "date", true, false, titleOf)
+	if n := len(l.Items()); n != 2 {
+		t.Fatalf("items = %d, want 2", n)
+	}
+	it := l.Items()[1].(emailItem)
+	if it.merge == nil || it.merge.title != "Bounces" || it.index != 2 {
+		t.Errorf("second item should be the Bounces merge with index 2, got %+v", it)
+	}
+	// Without titleOf nothing collapses.
+	setEmails(&l, emails, map[uint32]bool{}, map[string]bool{}, false, "date", true, false, nil)
+	if n := len(l.Items()); n != 3 {
+		t.Errorf("items without titleOf = %d, want 3", n)
+	}
+}
