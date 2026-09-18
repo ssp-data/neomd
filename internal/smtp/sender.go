@@ -88,6 +88,9 @@ func prepareEmailBodies(markdownBody string) (plainText, htmlBody string, err er
 	// Plain text part: Format callouts as emoji text without blockquotes (> [!note] → 📘 Note)
 	// Blockquote markers are removed because terminal renderers strip them during display anyway.
 	plainText = render.FormatCalloutsForPlainText(markdownBody)
+	// Images become "[Image: name]" — the plain part must not leak local
+	// paths or cid: references (drafts keep the raw markdown; see BuildDraftMessage).
+	plainText = render.ImagePlaceholdersForPlainText(plainText)
 
 	// HTML part: Full goldmark rendering with styled callout boxes
 	htmlBody, err = render.ToHTML(markdownBody)
@@ -352,7 +355,7 @@ type inlineImage struct {
 	data     []byte // pre-fetched bytes (set for remote URL images)
 	mimeType string // MIME type for remote images
 	filename string // display name for remote images
-	cid      string // without angle brackets, e.g. "img0@neomd"
+	cid      string // without angle brackets, e.g. "img0.<hex>@example.com"
 }
 
 // buildMessage constructs a MIME message.
@@ -378,6 +381,15 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 	// (IMAP envelope, contacts, user input) and may carry non-ASCII text.
 	from, to, cc, bcc = encodeAddressNames(from), encodeAddressNames(to), encodeAddressNames(cc), encodeAddressNames(bcc)
 
+	// Content-IDs carry a per-message random tag: a fixed "img0@neomd" would
+	// collide with the same id inside quoted earlier neomd mails, and the new
+	// part would hijack every quoted image (RFC 2392 wants globally unique ids).
+	cidTag, err := randomMsgID()
+	if err != nil {
+		return nil, err
+	}
+	newCID := func(n int) string { return fmt.Sprintf("img%d.%s@%s", n, cidTag, domain) }
+
 	// First pass: local image paths (<img src="/abs/path">), assign CIDs.
 	var inlines []inlineImage
 	processedHTML := imgSrcRe.ReplaceAllStringFunc(htmlBody, func(match string) string {
@@ -393,7 +405,7 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 		if decoded, err := url.PathUnescape(srcAttr); err == nil {
 			localPath = decoded
 		}
-		cid := fmt.Sprintf("img%d@neomd", len(inlines))
+		cid := newCID(len(inlines))
 		inlines = append(inlines, inlineImage{path: localPath, cid: cid})
 		return strings.Replace(match, `"`+srcAttr+`"`, `"cid:`+cid+`"`, 1)
 	})
@@ -420,7 +432,7 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 		if filename == "" {
 			filename = "image"
 		}
-		cid := fmt.Sprintf("img%d@neomd", len(inlines))
+		cid := newCID(len(inlines))
 		inlines = append(inlines, inlineImage{data: data, mimeType: mimeType, filename: filename, cid: cid})
 		return strings.Replace(match, `"`+rawURL+`"`, `"cid:`+cid+`"`, 1)
 	})

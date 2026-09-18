@@ -125,6 +125,36 @@ var calloutIconMap = map[string]string{
 // Captures: (optional space after >)(type)(optional: + or -)(optional title)
 var calloutRegex = regexp.MustCompile(`(?m)^(>\s*)\[!(\w+)\]([+-])?\s*(.*)?$`)
 
+// mdImageRe matches markdown images: ![alt](dest) and ![alt](<dest with spaces>).
+var mdImageRe = regexp.MustCompile(`!\[([^\]]*)\]\(<?([^)>]*)>?\)`)
+
+// ImagePlaceholdersForPlainText replaces markdown images with "[Image: name]"
+// for the text/plain alternative. The HTML part embeds the pictures; the plain
+// part must never carry local file paths (they expose the sender's home
+// directory and mean nothing to the recipient) or raw cid: references. The
+// name is the alt text, else the last path/URL segment without query string.
+func ImagePlaceholdersForPlainText(md string) string {
+	return mdImageRe.ReplaceAllStringFunc(md, func(m string) string {
+		sub := mdImageRe.FindStringSubmatch(m)
+		name := strings.TrimSpace(sub[1])
+		if name == "" {
+			dest := sub[2]
+			if q := strings.IndexByte(dest, '?'); q >= 0 {
+				dest = dest[:q]
+			}
+			dest = strings.TrimRight(dest, "/")
+			if i := strings.LastIndexAny(dest, "/\\"); i >= 0 {
+				dest = dest[i+1:]
+			}
+			name = strings.TrimSpace(dest)
+		}
+		if name == "" {
+			name = "image"
+		}
+		return "[Image: " + name + "]"
+	})
+}
+
 // FormatCalloutsForPlainText converts callout markdown syntax to emoji-prefixed text.
 // Converts `> [!note] Title` to `📘 Note` (or custom title if provided).
 // Removes blockquote markers since markdown renderers (glamour) would strip them anyway.

@@ -293,6 +293,23 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   that already carries encoded-words) is returned byte-for-byte. SMTP RCPT TO is derived
   from the caller's original strings, never from the built headers. Tests:
   `TestEncodeAddressNames`, `TestBuildMessage_HeadersAre7BitWithNonASCIINames`.
+- **Inline-image Content-IDs are unique per message** — `buildMessageWithBCC` names parts
+  `img<n>.<random hex>@<sender domain>` (`newCID`). A fixed id (the old `img0@neomd`)
+  collides with the same id inside quoted earlier neomd mails and the new part hijacks
+  every quoted picture. Foreign `cid:` references in the HTML are never rewritten.
+  Tests: `TestBuildMessage_InlineCIDsAreUniquePerMessage`,
+  `TestBuildMessage_QuotedForeignCIDIsNotHijacked`, `TestHardening_RoundTrip_InlineImagePlusAttachment`.
+- **Reply/forward re-embed the quoted mail's inline images** — `Model.quotedBody()` →
+  `materializeInlineImages` (`internal/ui/inline_images.go`) writes every referenced
+  `cid:` part of the open email to `~/.cache/neomd/inline/<folder>-<uid>/` and rewrites
+  `(cid:…)` / `"cid:…"` to that path, so the sender's local-image pass embeds it under a
+  fresh Content-ID. Unreferenced parts are not written; unknown cids stay as-is; file
+  names are sanitised (no traversal). Tests: `TestMaterializeInlineImages_*`.
+- **The text/plain alternative never carries image paths or cid: markdown** —
+  `prepareEmailBodies` runs `render.ImagePlaceholdersForPlainText` (`![alt](dest)` →
+  `[Image: alt-or-filename]`) on the send path only; drafts keep the raw markdown so
+  they can be resumed. Tests: `TestImagePlaceholdersForPlainText`,
+  `TestBuildMessage_PlainPartHasNoImagePaths`.
 
 ## Screener (HEY-style)
 

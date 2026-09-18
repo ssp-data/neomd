@@ -5615,7 +5615,7 @@ func (m Model) launchForwardCmd() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	subject := e.Subject
-	prelude := editor.ForwardPrelude(subject, m.presendFrom(), e.From, e.Date.Format("Mon, 02 Jan 2006 15:04:05 -0700"), e.To, m.openBody)
+	prelude := editor.ForwardPrelude(subject, m.presendFrom(), e.From, e.Date.Format("Mon, 02 Jan 2006 15:04:05 -0700"), e.To, m.quotedBody())
 
 	f, err := os.CreateTemp(neomdTempDir(), "neomd-*.md")
 	if err != nil {
@@ -5693,7 +5693,7 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 		}
 	}
 
-	prelude := editor.ReplyPrelude(to, cc, subject, m.presendFrom(), e.From, m.openBody)
+	prelude := editor.ReplyPrelude(to, cc, subject, m.presendFrom(), e.From, m.quotedBody())
 
 	m.pendingIsReply = true
 	m.requeue = requeueRef{}

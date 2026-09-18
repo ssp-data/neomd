@@ -499,12 +499,19 @@ func TestHardening_RoundTrip_InlineImagePlusAttachment(t *testing.T) {
 	if !bytes.Contains(raw, []byte("multipart/related")) {
 		t.Error("inline image must live inside a multipart/related container")
 	}
-	if !strings.Contains(pm.html, "cid:img0@neomd") {
+	// Content-IDs are unique per message (img0.<hex>@<sender domain>) so a
+	// reply can never hijack the images quoted from an earlier neomd mail.
+	var cid string
+	for id := range pm.inline {
+		cid = id
+	}
+	if len(pm.inline) != 1 || !strings.HasPrefix(cid, "img0.") || !strings.HasSuffix(cid, "@ssp.sh") {
+		t.Fatalf("recipient view: want exactly one inline part with a unique img0.<hex>@ssp.sh id, got %v", pm.inline)
+	}
+	if !strings.Contains(pm.html, "cid:"+cid) {
 		t.Error("HTML part lost the cid: reference to the inline image")
 	}
-	if got, ok := pm.inline["img0@neomd"]; !ok {
-		t.Error("recipient view: inline image part missing")
-	} else if !bytes.Equal(got, imgContent) {
+	if !bytes.Equal(pm.inline[cid], imgContent) {
 		t.Error("recipient view: inline image bytes corrupted")
 	}
 	if got, ok := pm.attached["Angebot Q3.pdf"]; !ok {

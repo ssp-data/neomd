@@ -279,3 +279,25 @@ func TestFormatCalloutsForPlainText_MultiParagraphCallout(t *testing.T) {
 		}
 	}
 }
+
+// The plain-text alternative must never carry local file paths (they expose
+// the sender's home directory and are meaningless to the recipient) nor raw
+// cid: markdown. Images become a short placeholder built from the alt text
+// or, failing that, the file name.
+func TestImagePlaceholdersForPlainText(t *testing.T) {
+	in := "Hi\n\n![](</home/someone/secret dir/pic.png>)\n\n![diagram](/home/someone/d.png)\n\n> ![shot.png](cid:abc@example)\n\n![](https://example.com/a/b.png?x=1)\n\nbye"
+	got := ImagePlaceholdersForPlainText(in)
+	for _, want := range []string{"[Image: pic.png]", "[Image: diagram]", "> [Image: shot.png]", "[Image: b.png]", "Hi", "bye"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	for _, leak := range []string{"/home/", "cid:", "https://", "![", "secret"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("plain text leaks %q:\n%s", leak, got)
+		}
+	}
+	if got := ImagePlaceholdersForPlainText("no images here"); got != "no images here" {
+		t.Errorf("text without images changed: %q", got)
+	}
+}
