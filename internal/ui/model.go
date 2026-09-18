@@ -663,6 +663,7 @@ type Model struct {
 	cmdMode    bool
 	cmdText    string
 	cmdTabI    int      // cycle index for tab-completion
+	cmdTabBase string   // text typed before tab-cycling started (for title completion)
 	cmdHistory []string // up to 5 most-recent distinct commands (newest first)
 	cmdHistI   int      // -1 = not browsing history; 0..n = history index
 
@@ -3001,7 +3002,11 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				path := config.HistoryPath()
 				safeGo(func() { saveCmdHistory(path, hist) })
 			}
-			if cmd := matchCmd(input); cmd != nil {
+			word, args := splitCmdInput(input)
+			if cmd := matchCmd(word); cmd != nil {
+				if cmd.runArgs != nil {
+					return cmd.runArgs(&m, args)
+				}
 				result, c := cmd.run(&m)
 				return result, c
 			}
@@ -3017,6 +3022,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				m.cmdText = m.cmdHistory[m.cmdHistI]
 				m.cmdTabI = 0
+				m.cmdTabBase = ""
 			}
 		case "down":
 			if m.cmdHistI > 0 {
@@ -3027,19 +3033,30 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cmdText = ""
 			}
 			m.cmdTabI = 0
+			m.cmdTabBase = ""
 		case "backspace", "ctrl+h":
 			runes := []rune(m.cmdText)
 			if len(runes) > 0 {
 				m.cmdText = string(runes[:len(runes)-1])
 			}
 			m.cmdTabI = 0
+			m.cmdTabBase = ""
 			m.cmdHistI = -1
 		case "right": // accept ghost completion (first match)
 			if first := matchCmd(m.cmdText); first != nil {
 				m.cmdText = first.name
 				m.cmdTabI = 0
+				m.cmdTabBase = ""
 			}
 		case "tab", "ctrl+n": // cycle forward through completions
+			if m.cmdTabI == 0 {
+				m.cmdTabBase = m.cmdText
+			}
+			if titles := m.titleCompletions(m.cmdTabBase); len(titles) > 0 {
+				m.cmdText = titles[m.cmdTabI%len(titles)]
+				m.cmdTabI++
+				break
+			}
 			matches := matchCmds(m.cmdText)
 			if len(matches) > 0 {
 				m.cmdText = matches[m.cmdTabI%len(matches)].name
@@ -3056,6 +3073,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if len(key) == 1 {
 				m.cmdText += key
 				m.cmdTabI = 0 // reset cycle on new input
+				m.cmdTabBase = ""
 				m.cmdHistI = -1
 			}
 		}
@@ -3111,6 +3129,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pendingResetUIDs = nil
 		m.pendingDeleteAll = nil
 		m.pendingDomainOp = nil
+		m.pendingUnmerge = ""
 	}
 	m.status = ""
 	m.isError = false
@@ -3281,6 +3300,18 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "y":
+		if m.pendingUnmerge != "" {
+			title := m.pendingUnmerge
+			m.pendingUnmerge = ""
+			m.merges.Dissolve(title)
+			if err := m.merges.Save(); err != nil {
+				m.status = "merges.toml: " + err.Error()
+				m.isError = true
+				return m, nil
+			}
+			m.status = fmt.Sprintf("Dissolved merge %q.", title)
+			return m, m.applyFilter()
+		}
 		if m.pendingDomainOp != nil {
 			op := m.pendingDomainOp
 			m.pendingDomainOp = nil
@@ -3309,6 +3340,11 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.execAutoScreenCmd(moves))
 
 	case "n":
+		if m.pendingUnmerge != "" {
+			m.pendingUnmerge = ""
+			m.status = "Cancelled."
+			return m, nil
+		}
 		if m.pendingDomainOp != nil {
 			m.pendingDomainOp = nil
 			m.status = "Cancelled."

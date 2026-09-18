@@ -1,10 +1,14 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sspaeti/neomd/internal/imap"
+	"github.com/sspaeti/neomd/internal/merge"
 )
 
 func TestMatchCmds_EmptyReturnsAll(t *testing.T) {
@@ -171,5 +175,170 @@ func TestHasReplyPrefix(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("hasReplyPrefix(%q) = %v, want %v", tt.input, got, tt.want)
 		}
+	}
+}
+
+// --- Merge commands ---
+
+func TestSplitCmdInput(t *testing.T) {
+	cases := []struct{ in, word, args string }{
+		{"merge Bounces from ACME", "merge", "Bounces from ACME"},
+		{"merge   spaced  ", "merge", "spaced"},
+		{"unmerge", "unmerge", ""},
+		{"", "", ""},
+	}
+	for _, c := range cases {
+		w, a := splitCmdInput(c.in)
+		if w != c.word || a != c.args {
+			t.Errorf("splitCmdInput(%q) = %q,%q want %q,%q", c.in, w, a, c.word, c.args)
+		}
+	}
+}
+
+func TestMatchCmds_IgnoresArguments(t *testing.T) {
+	if c := matchCmd("merge Bounces"); c == nil || c.name != "merge" {
+		t.Fatalf("matchCmd with args should resolve merge, got %v", c)
+	}
+	if c := matchCmd("merge-sender X"); c == nil || c.name != "merge-sender" {
+		t.Fatalf("got %v", c)
+	}
+}
+
+func cmdModel(t *testing.T) Model {
+	t.Helper()
+	s, _ := merge.Load(filepath.Join(t.TempDir(), "merges.toml"))
+	m := Model{merges: s, markedUIDs: map[uint32]bool{}, spyPixelKeys: map[string]bool{}, sortField: "date", sortReverse: true}
+	m.inbox = newInboxList(100, 10, "", "")
+	m.emails = []imap.Email{
+		{UID: 1, MessageID: "<b1>", Subject: "Undelivered", From: "Mailer <mailer-daemon@x>", Date: time.Now().Add(-2 * time.Hour), Seen: true},
+		{UID: 2, MessageID: "", Subject: "No id", From: "mailer-daemon@x", Date: time.Now().Add(-1 * time.Hour), Seen: true},
+		{UID: 3, MessageID: "<k>", Subject: "Keep", From: "k@x", Date: time.Now(), Seen: true},
+	}
+	m.applyFilter()
+	return m
+}
+
+func runCmd(t *testing.T, m Model, input string) Model {
+	t.Helper()
+	word, args := splitCmdInput(input)
+	c := matchCmd(word)
+	if c == nil {
+		t.Fatalf("no command for %q", input)
+	}
+	var res tea.Model
+	if c.runArgs != nil {
+		res, _ = c.runArgs(&m, args)
+	} else {
+		res, _ = c.run(&m)
+	}
+	switch v := res.(type) {
+	case *Model:
+		return *v
+	case Model:
+		return v
+	}
+	t.Fatalf("unexpected result type %T", res)
+	return m
+}
+
+func TestMergeCmd_MarkedEmailsSkipsMissingID(t *testing.T) {
+	m := cmdModel(t)
+	m.markedUIDs[1] = true
+	m.markedUIDs[2] = true
+	m = runCmd(t, m, "merge My Bounces")
+	if title, ok := m.merges.TitleOf("<b1>"); !ok || title != "My Bounces" {
+		t.Errorf("<b1> not merged: %q %v", title, ok)
+	}
+	if !strings.Contains(m.status, "1 skipped") {
+		t.Errorf("status should report the skipped email without Message-ID, got %q", m.status)
+	}
+	if len(m.markedUIDs) != 0 {
+		t.Error("marks should be cleared after :merge")
+	}
+	if n := len(m.inbox.Items()); n != 3 { // uid1 collapsed alone, uid2, uid3
+		t.Errorf("items after merge = %d, want 3", n)
+	}
+}
+
+func TestMergeCmd_RequiresTitle(t *testing.T) {
+	m := cmdModel(t)
+	m = runCmd(t, m, "merge")
+	if !m.isError || !strings.Contains(m.status, "usage") {
+		t.Errorf("empty title should be a usage error, got %q", m.status)
+	}
+}
+
+func TestMergeSenderCmd_StoresRuleAndAppliesToLoaded(t *testing.T) {
+	m := cmdModel(t)
+	m.inbox.Select(2) // uid 1 (oldest, sorted last)
+	if e := selectedEmail(m.inbox); e == nil || e.UID != 1 {
+		t.Fatalf("cursor not on uid 1: %+v", e)
+	}
+	m = runCmd(t, m, "merge-sender Bounces")
+	if _, ok := m.merges.MatchSender("MAILER-DAEMON@x"); !ok {
+		t.Error("sender rule not stored")
+	}
+	if title, ok := m.merges.TitleOf("<b1>"); !ok || title != "Bounces" {
+		t.Errorf("cursor email not merged: %q %v", title, ok)
+	}
+}
+
+func TestUnmergeCmd_OnCollapsedRowAsksThenDissolves(t *testing.T) {
+	m := cmdModel(t)
+	m.merges.Add("Bounces", "<b1>")
+	m.applyFilter()
+	m.inbox.Select(2)
+	if it, ok := selectedItem(m.inbox); !ok || it.merge == nil {
+		t.Fatalf("cursor should be on the collapsed row, got %+v", it)
+	}
+	m = runCmd(t, m, "unmerge")
+	if m.pendingUnmerge != "Bounces" || !strings.Contains(m.status, "y/n") {
+		t.Fatalf("expected y/n prompt, status=%q pending=%q", m.status, m.pendingUnmerge)
+	}
+	if _, ok := m.merges.TitleOf("<b1>"); !ok {
+		t.Error("must not dissolve before confirmation")
+	}
+}
+
+func TestUnmergeCmd_InsideMergeViewRemovesCursor(t *testing.T) {
+	m := cmdModel(t)
+	m.merges.Add("Bounces", "<b1>", "<zz>")
+	m.offTabFolder = "Merged: Bounces"
+	m.emails = m.emails[:1]
+	m.applyFilter()
+	m.inbox.Select(0)
+	m = runCmd(t, m, "unmerge")
+	if _, ok := m.merges.TitleOf("<b1>"); ok {
+		t.Error("<b1> should be removed from the merge")
+	}
+	if _, ok := m.merges.TitleOf("<zz>"); !ok {
+		t.Error("other member must stay")
+	}
+	if n := len(m.inbox.Items()); n != 0 {
+		t.Errorf("removed email should leave the view, got %d items", n)
+	}
+}
+
+func TestUnmergeCmd_OutsideMergeIsError(t *testing.T) {
+	m := cmdModel(t)
+	m.inbox.Select(0)
+	m = runCmd(t, m, "unmerge")
+	if !m.isError {
+		t.Errorf("unmerge on a plain row should error, got %q", m.status)
+	}
+}
+
+func TestTitleCompletions(t *testing.T) {
+	m := cmdModel(t)
+	m.merges.Add("Bounces", "<b1>")
+	m.merges.Add("Newsletters", "<n1>")
+	if got := m.titleCompletions("merge Bo"); len(got) != 1 || got[0] != "merge Bounces" {
+		t.Errorf("got %v", got)
+	}
+	if got := m.titleCompletions("merge-sender "); len(got) != 2 {
+		t.Errorf("empty prefix should list all titles, got %v", got)
+	}
+	if got := m.titleCompletions("reload x"); got != nil {
+		t.Errorf("non-merge commands get no title completion, got %v", got)
 	}
 }
