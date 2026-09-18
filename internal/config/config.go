@@ -382,6 +382,9 @@ type Config struct {
 	// headless server, and the daemon re-reads it every pass (hot reload,
 	// no restart needed). Set during Load(), not a TOML field.
 	OOOFile string `toml:"-"`
+	// MergesFile is <config dir>/merges.toml — user-defined merged threads
+	// (see internal/merge). Set during Load(), not a TOML field.
+	MergesFile string `toml:"-"`
 }
 
 // OOOConfig holds out-of-office auto-reply settings ([ooo] in config.toml).
@@ -614,6 +617,8 @@ func Load(path string) (*Config, error) {
 	} else if override != nil {
 		cfg.OOO = *override
 	}
+
+	cfg.MergesFile = filepath.Join(filepath.Dir(path), "merges.toml")
 
 	// Ensure screener list directories and files exist so appending (I/O/F/P/$)
 	// works on a fresh install without manual mkdir or touching files.

@@ -643,3 +643,25 @@ from     = "Me <me@example.com>"
 		}
 	}
 }
+
+func TestLoad_SetsMergesFileNextToConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "neomd", "config.toml")
+	// Load creates a placeholder config and returns a "please fill in" error;
+	// we only need the side effect of a parsable file, so write a minimal valid one.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	minimal := "[[accounts]]\nname = \"t\"\nimap_host = \"imap.example.com:993\"\nsmtp_host = \"smtp.example.com:465\"\nuser = \"u@example.com\"\npassword = \"pw\"\nfrom = \"u@example.com\"\n"
+	if err := os.WriteFile(path, []byte(minimal), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := filepath.Join(dir, "neomd", "merges.toml")
+	if cfg.MergesFile != want {
+		t.Errorf("MergesFile = %q, want %q", cfg.MergesFile, want)
+	}
+}
