@@ -1316,3 +1316,25 @@ func TestBuildMessage_PlainPartHasNoImagePaths(t *testing.T) {
 		t.Errorf("draft lost the local image path:\n%s", draft)
 	}
 }
+
+// A quoted signature logo carries its size as the markdown title; after the
+// local/remote image is embedded as cid: the <img> must keep width/height so
+// it does not blow up to the file's natural dimensions in the reply.
+func TestBuildMessage_SizedImageKeepsWidthHeightAfterEmbedding(t *testing.T) {
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "logo.png")
+	create1x1PNG(t, imgPath)
+	raw, err := BuildMessage("Alice <alice@example.com>", "Bob <bob@example.com>", "", "s",
+		"> ![Example GmbH](<"+imgPath+`> "70x70")`, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	flat := qpFlat(raw)
+	m := regexp.MustCompile(`<img src="cid:[^"]+" alt="Example GmbH" width="70" height="70">`).FindString(flat)
+	if m == "" {
+		t.Errorf("embedded image lost its size attributes:\n%s", flat)
+	}
+	if strings.Contains(flat, `title="70x70"`) {
+		t.Error("size marker leaked as title attribute")
+	}
+}

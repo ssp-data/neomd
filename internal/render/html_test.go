@@ -336,3 +336,29 @@ func TestSanitizeForBrowser_ForcesUTF8Charset(t *testing.T) {
 		t.Error("own template should pass through unchanged")
 	}
 }
+
+func TestToHTML_ImageSizeTitleBecomesWidthHeight(t *testing.T) {
+	out, err := ToHTML(`![Logo](https://example.org/logo.png "70x70")` + "\n\n" +
+		`![H](https://example.org/h.png "x30")` + "\n\n" +
+		`![Plain](https://example.org/plain.png)` + "\n\n" +
+		`![Real](https://example.org/t.png "a real title")`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`src="https://example.org/logo.png" alt="Logo" width="70" height="70"`,
+		`src="https://example.org/h.png" alt="H" height="30"`,
+		`src="https://example.org/plain.png" alt="Plain">`,
+		`title="a real title"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `title="70x70"`) || strings.Contains(out, `title="x30"`) {
+		t.Errorf("size marker title leaked into HTML:\n%s", out)
+	}
+	if got := ImagePlaceholdersForPlainText(`![](https://example.org/a.png "70x70")`); got != "[Image: a.png]" {
+		t.Errorf("plain placeholder with size title = %q", got)
+	}
+}

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	htmlmd "github.com/JohannesKaufmann/html-to-markdown"
+	"github.com/PuerkitoBio/goquery"
 	imap "github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
@@ -1510,11 +1511,57 @@ func htmlToMarkdown(h string) (string, SpyPixelInfo) {
 	})
 
 	converter := htmlmd.NewConverter("", true, nil)
+	converter.AddRules(sizedImageRule)
 	result, err := converter.ConvertString(h)
 	if err != nil {
 		return stripHTMLFallback(h), spy
 	}
 	return cleanMarkdown(strings.TrimSpace(result)), spy
+}
+
+// sizedImageRule mirrors html-to-markdown's default <img> rule but carries an
+// explicit width/height (attribute or inline style, px) as the image title in
+// the form "WxH" — e.g. ![Logo](https://x/logo.png "70x70"). Markdown has no
+// image size, so without this a signature logo constrained to 70px comes back
+// at its natural size in every reply that quotes it. render.ToHTML turns the
+// marker back into width/height attributes; the marker is plain CommonMark, so
+// drafts and the editor round-trip it unchanged.
+var sizedImageRule = htmlmd.Rule{
+	Filter: []string{"img"},
+	Replacement: func(content string, selec *goquery.Selection, opt *htmlmd.Options) *string {
+		src := strings.TrimSpace(selec.AttrOr("src", ""))
+		if src == "" {
+			return htmlmd.String("")
+		}
+		src = opt.GetAbsoluteURL(selec, src, "")
+		alt := strings.ReplaceAll(selec.AttrOr("alt", ""), "\n", " ")
+		w := imageDimension(selec, "width")
+		h := imageDimension(selec, "height")
+		text := "![" + alt + "](" + src
+		if w != "" || h != "" {
+			text += ` "` + w + "x" + h + `"`
+		}
+		text += ")"
+		return &text
+	},
+}
+
+var stylePxRe = map[string]*regexp.Regexp{
+	"width":  regexp.MustCompile(`(?i)(?:^|;)\s*width\s*:\s*(\d+)px`),
+	"height": regexp.MustCompile(`(?i)(?:^|;)\s*height\s*:\s*(\d+)px`),
+}
+var digitsRe = regexp.MustCompile(`^\d+$`)
+
+// imageDimension returns the pixel value of an <img>'s width/height from the
+// attribute ("70", "70px") or the inline style ("width:70px"), else "".
+func imageDimension(selec *goquery.Selection, dim string) string {
+	if v := strings.TrimSuffix(strings.TrimSpace(selec.AttrOr(dim, "")), "px"); digitsRe.MatchString(v) {
+		return v
+	}
+	if m := stylePxRe[dim].FindStringSubmatch(selec.AttrOr("style", "")); m != nil {
+		return m[1]
+	}
+	return ""
 }
 
 // SpyPixelInfo holds the results of tracking pixel detection.

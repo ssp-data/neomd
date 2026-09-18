@@ -316,6 +316,15 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   multipart draft used to come back with `\r\n`, showing `^M` in the editor and drifting
   on every re-save). Test: `TestHardening_DraftRoundTrip_InlineImageAndAttachment`
   (image markdown at its spot, attachment name + bytes, two cycles).
+- **Image sizes survive HTML → markdown → HTML** — `htmlToMarkdown` (`sizedImageRule`,
+  `internal/imap/client.go`) writes an `<img>`'s explicit width/height (attribute or
+  inline `px` style) as the markdown title `![alt](src "WxH")`; `render.ToHTML`
+  (`applyImageSizeTitles`) turns that marker back into `width`/`height` attributes and
+  drops it, keeping real titles. Without this a signature logo constrained to 70px
+  came back at its natural size in every reply that quoted it. The marker is plain
+  CommonMark (editor, drafts, plain-text placeholder all cope). Tests:
+  `TestHTMLToMarkdown_PreservesImageSizeAsTitle`, `TestToHTML_ImageSizeTitleBecomesWidthHeight`,
+  `TestBuildMessage_SizedImageKeepsWidthHeightAfterEmbedding`.
 
 ## Screener (HEY-style)
 

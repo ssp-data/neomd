@@ -98,7 +98,27 @@ func ToHTML(markdown string) (string, error) {
 	if err := md.Convert([]byte(markdown), &fragment); err != nil {
 		return "", fmt.Errorf("markdown to html: %w", err)
 	}
-	return fmt.Sprintf(htmlTemplate, fragment.String()), nil
+	return fmt.Sprintf(htmlTemplate, applyImageSizeTitles(fragment.String())), nil
+}
+
+// imgSizeTitleRe matches goldmark's <img … title="WxH"> where the title is the
+// size marker written by the HTML→markdown converter (see internal/imap).
+var imgSizeTitleRe = regexp.MustCompile(`(<img\b[^>]*?)\s+title="(\d*)x(\d*)"([^>]*>)`)
+
+// applyImageSizeTitles converts a "WxH" image title into width/height
+// attributes (either may be empty) and drops the marker. Real titles are kept.
+func applyImageSizeTitles(html string) string {
+	return imgSizeTitleRe.ReplaceAllStringFunc(html, func(tag string) string {
+		m := imgSizeTitleRe.FindStringSubmatch(tag)
+		attrs := ""
+		if m[2] != "" {
+			attrs += ` width="` + m[2] + `"`
+		}
+		if m[3] != "" {
+			attrs += ` height="` + m[3] + `"`
+		}
+		return m[1] + attrs + m[4]
+	})
 }
 
 // calloutIconMap maps callout types to their emoji icons (same as in the fork's ast.go).
@@ -150,6 +170,9 @@ func ImagePlaceholdersForPlainText(md string) string {
 		name := strings.TrimSpace(sub[1])
 		if name == "" {
 			dest := sub[2]
+			if i := strings.Index(dest, ` "`); i >= 0 { // strip a markdown title
+				dest = dest[:i]
+			}
 			if q := strings.IndexByte(dest, '?'); q >= 0 {
 				dest = dest[:q]
 			}

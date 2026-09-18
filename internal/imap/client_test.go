@@ -741,3 +741,25 @@ func TestClientOptions_SetWordDecoder(t *testing.T) {
 		t.Error("clientOptions should wire the shared charset-aware envelopeWordDecoder")
 	}
 }
+
+// Signatures constrain a large logo with width/height (e.g. a 192px PNG shown
+// at 70px). Markdown has no image size, so quoting a mail used to re-render
+// the logo at full size in every reply. The converter now carries the size as
+// the image title ("WxH"), which render.ToHTML turns back into attributes.
+func TestHTMLToMarkdown_PreservesImageSizeAsTitle(t *testing.T) {
+	html := `<p><img src="https://example.org/logo.png" alt="Example GmbH" width="70" height="70" style="display:block"></p>` +
+		`<p><img src="https://example.org/wide.png" alt="Wide" style="width:120px; height:40px;"></p>` +
+		`<p><img src="https://example.org/h.png" alt="H" height="30"></p>` +
+		`<p><img src="https://example.org/plain.png" alt="Plain"></p>`
+	got, _ := htmlToMarkdown(html)
+	for _, want := range []string{
+		`![Example GmbH](https://example.org/logo.png "70x70")`,
+		`![Wide](https://example.org/wide.png "120x40")`,
+		`![H](https://example.org/h.png "x30")`,
+		`![Plain](https://example.org/plain.png)`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}
