@@ -612,13 +612,12 @@ func Load(path string) (*Config, error) {
 	// ooo.toml next to config.toml replaces the whole [ooo] block when it
 	// exists (single syncable file; the daemon also re-reads it every pass).
 	cfg.OOOFile = filepath.Join(filepath.Dir(path), "ooo.toml")
+	cfg.MergesFile = filepath.Join(filepath.Dir(path), "merges.toml")
 	if override, err := LoadOOOOverride(cfg.OOOFile); err != nil {
 		return nil, err
 	} else if override != nil {
 		cfg.OOO = *override
 	}
-
-	cfg.MergesFile = filepath.Join(filepath.Dir(path), "merges.toml")
 
 	// Ensure screener list directories and files exist so appending (I/O/F/P/$)
 	// works on a fresh install without manual mkdir or touching files.
