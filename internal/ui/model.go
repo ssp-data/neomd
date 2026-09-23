@@ -28,6 +28,7 @@ import (
 	"github.com/sspaeti/neomd/internal/editor"
 	"github.com/sspaeti/neomd/internal/imap"
 	"github.com/sspaeti/neomd/internal/listmonk"
+	"github.com/sspaeti/neomd/internal/merge"
 	"github.com/sspaeti/neomd/internal/notify"
 	"github.com/sspaeti/neomd/internal/render"
 	"github.com/sspaeti/neomd/internal/schedule"
@@ -624,6 +625,12 @@ type Model struct {
 	// outgoing To/Cc headers. Nil-safe: all Store methods accept a nil receiver.
 	contacts *contacts.Store
 
+	// merges holds user-defined merged threads (title → Message-IDs + optional
+	// sender rule), persisted at cfg.MergesFile. Nil-safe.
+	merges *merge.Store
+	// pendingUnmerge is a merge title awaiting y/n before :unmerge dissolves it.
+	pendingUnmerge string
+
 	// Undo stack: each entry is a batch of moves that can be reversed with u.
 	// Screener operations (I/O/F/P/$) are not undoable — they also modify .txt files.
 	undoStack [][]undoMove
@@ -656,6 +663,7 @@ type Model struct {
 	cmdMode    bool
 	cmdText    string
 	cmdTabI    int      // cycle index for tab-completion
+	cmdTabBase string   // text typed before tab-cycling started (for title completion)
 	cmdHistory []string // up to 5 most-recent distinct commands (newest first)
 	cmdHistI   int      // -1 = not browsing history; 0..n = history index
 
@@ -740,6 +748,10 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 	// Autocomplete matches contact names ("max muster" → Max Muster <max@…>),
 	// not just screener-list addresses.
 	compose.contacts = cs
+	ms, err := merge.Load(cfg.MergesFile)
+	if err != nil {
+		notice = "merges.toml: " + err.Error()
+	}
 	return Model{
 		cfg:         cfg,
 		accounts:    cfg.ActiveAccounts(),
@@ -759,6 +771,7 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 		spyPixelKeys:   spyKeys,
 		spyScannedKeys: scannedKeys,
 		contacts:       cs,
+		merges:         ms,
 		startupNotice:  notice,
 		sortField:      "date",
 		sortReverse:    true, // newest first
@@ -1284,10 +1297,49 @@ func (m Model) targetEmails() []imap.Email {
 		}
 		return out
 	}
+	if it, ok := selectedItem(m.inbox); ok && it.merge != nil {
+		return append([]imap.Email(nil), it.merge.members...)
+	}
 	if e := selectedEmail(m.inbox); e != nil {
 		return []imap.Email{*e}
 	}
 	return nil
+}
+
+// applySenderRules adds every email whose sender matches a merge's sender
+// rule to that merge (by Message-ID) and persists the store when anything
+// changed. Returns the number of emails added.
+func (m *Model) applySenderRules(emails []imap.Email) int {
+	if m.merges == nil {
+		return 0
+	}
+	added := 0
+	for _, e := range emails {
+		if e.MessageID == "" {
+			continue
+		}
+		if _, already := m.merges.TitleOf(e.MessageID); already {
+			continue
+		}
+		// Hand-removed from a rule-bearing merge (:unmerge inside the merge
+		// view) — the rule must not silently pull it back in.
+		if m.merges.IsExcluded(e.MessageID) {
+			continue
+		}
+		if title, ok := m.merges.MatchSender(e.From); ok {
+			added += m.merges.Add(title, e.MessageID)
+		}
+	}
+	if added > 0 {
+		store := m.merges
+		safeGo(func() { _ = store.Save() })
+	}
+	return added
+}
+
+// inMergeView reports whether the list currently shows an opened merge.
+func (m Model) inMergeView() bool {
+	return strings.HasPrefix(m.offTabFolder, "Merged: ")
 }
 
 func normalizedSender(from string) string {
@@ -1451,6 +1503,38 @@ func (m Model) batchMoveCmd(emails []imap.Email, dst string) tea.Cmd {
 		}
 		return batchDoneMsg{undo: undos}
 	}
+}
+
+// reselectEmail moves the list cursor back onto prev (matched by folder+UID)
+// after the items were rebuilt. Rows shift whenever mail arrives or leaves, and
+// keeping the bare index would silently put the cursor on a different email —
+// the next x/A/M would then act on mail the user never chose. When prev is
+// gone (it was just deleted/moved) the index is left where it is, so the
+// cursor lands on the next row as before.
+func (m *Model) reselectEmail(prev *imap.Email) {
+	if prev == nil {
+		return
+	}
+	for i, it := range m.inbox.Items() {
+		if e, ok := it.(emailItem); ok && e.email.UID == prev.UID && e.email.Folder == prev.Folder {
+			m.inbox.Select(i)
+			return
+		}
+	}
+}
+
+// undoableMoves drops moves whose destination UID is unknown (the server sent
+// no UIDPLUS COPYUID). Undoing those would mean guessing a UID in the
+// destination folder and possibly moving an unrelated message.
+func undoableMoves(moves []undoMove) (keep []undoMove, skipped int) {
+	for _, u := range moves {
+		if u.uid == 0 {
+			skipped++
+			continue
+		}
+		keep = append(keep, u)
+	}
+	return keep, skipped
 }
 
 // undoMovesCmd reverses a batch of moves by moving each email back to its
@@ -2151,8 +2235,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case emailsLoadedMsg:
 		m.loading = false
+		prevCursor := selectedEmail(m.inbox) // keep the cursor on the same email after reload
 		m.emails = msg.emails
 		m.harvestContacts(msg.emails)
+		m.applySenderRules(msg.emails)
 		m.markedUIDs = make(map[uint32]bool) // clear marks on folder reload
 		m.filterActive = false
 		m.filterText = ""
@@ -2161,6 +2247,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.startupNotice = ""
 		}
 		sortCmd := m.sortEmails() // applies sort and sets list items
+		m.reselectEmail(prevCursor)
 
 		// mailto: open compose with pre-filled fields on first inbox load.
 		if m.mailto != nil {
@@ -2550,6 +2637,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case conversationResultMsg:
 		return m.handleConversationResult(msg)
 
+	case mergeResultMsg:
+		return m.handleMergeResult(msg)
+
 	case senderResultMsg:
 		return m.handleSenderResult(msg)
 
@@ -2937,9 +3027,13 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cmdMode = false
 			m.cmdText = ""
 			m.cmdHistI = -1
+			m.cmdTabI = 0
+			m.cmdTabBase = ""
 		case "enter":
 			m.cmdMode = false
 			m.cmdHistI = -1
+			m.cmdTabI = 0
+			m.cmdTabBase = ""
 			input := strings.TrimSpace(m.cmdText)
 			m.cmdText = ""
 			if input != "" {
@@ -2951,7 +3045,11 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				path := config.HistoryPath()
 				safeGo(func() { saveCmdHistory(path, hist) })
 			}
-			if cmd := matchCmd(input); cmd != nil {
+			word, args := splitCmdInput(input)
+			if cmd := matchCmd(word); cmd != nil {
+				if cmd.runArgs != nil {
+					return cmd.runArgs(&m, args)
+				}
 				result, c := cmd.run(&m)
 				return result, c
 			}
@@ -2967,6 +3065,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				m.cmdText = m.cmdHistory[m.cmdHistI]
 				m.cmdTabI = 0
+				m.cmdTabBase = ""
 			}
 		case "down":
 			if m.cmdHistI > 0 {
@@ -2977,25 +3076,51 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cmdText = ""
 			}
 			m.cmdTabI = 0
+			m.cmdTabBase = ""
 		case "backspace", "ctrl+h":
 			runes := []rune(m.cmdText)
 			if len(runes) > 0 {
 				m.cmdText = string(runes[:len(runes)-1])
 			}
 			m.cmdTabI = 0
+			m.cmdTabBase = ""
 			m.cmdHistI = -1
 		case "right": // accept ghost completion (first match)
+			if strings.Contains(strings.TrimSpace(m.cmdText), " ") {
+				break // an argument was typed (":merge Bounces") — nothing to complete
+			}
 			if first := matchCmd(m.cmdText); first != nil {
 				m.cmdText = first.name
 				m.cmdTabI = 0
+				m.cmdTabBase = ""
 			}
 		case "tab", "ctrl+n": // cycle forward through completions
+			if m.cmdTabI == 0 {
+				m.cmdTabBase = m.cmdText
+			}
+			if titles := m.titleCompletions(m.cmdTabBase); len(titles) > 0 {
+				m.cmdText = titles[m.cmdTabI%len(titles)]
+				m.cmdTabI++
+				break
+			}
 			matches := matchCmds(m.cmdText)
 			if len(matches) > 0 {
 				m.cmdText = matches[m.cmdTabI%len(matches)].name
 				m.cmdTabI++
 			}
 		case "ctrl+p": // cycle backward through completions
+			if m.cmdTabI == 0 {
+				m.cmdTabBase = m.cmdText
+			}
+			if titles := m.titleCompletions(m.cmdTabBase); len(titles) > 0 {
+				m.cmdTabI = (m.cmdTabI - 2 + len(titles)) % len(titles)
+				m.cmdText = titles[m.cmdTabI]
+				m.cmdTabI++
+				break
+			}
+			if strings.Contains(strings.TrimSpace(m.cmdTabBase), " ") {
+				break // typed title with no completion — keep what the user wrote
+			}
 			matches := matchCmds(m.cmdText)
 			if len(matches) > 0 {
 				m.cmdTabI = (m.cmdTabI - 2 + len(matches)) % len(matches)
@@ -3003,9 +3128,13 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cmdTabI++
 			}
 		default:
-			if len(key) == 1 {
+			// One rune, not one byte: merge titles may contain umlauts and
+			// other non-ASCII characters. Special keys ("enter", "ctrl+p", …)
+			// are always multi-rune and stay out of this branch.
+			if len([]rune(key)) == 1 {
 				m.cmdText += key
 				m.cmdTabI = 0 // reset cycle on new input
+				m.cmdTabBase = ""
 				m.cmdHistI = -1
 			}
 		}
@@ -3061,6 +3190,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pendingResetUIDs = nil
 		m.pendingDeleteAll = nil
 		m.pendingDomainOp = nil
+		m.pendingUnmerge = ""
 	}
 	m.status = ""
 	m.isError = false
@@ -3069,7 +3199,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 
-	case "esc":
+	case "esc", "h": // h = "back" like in the reader; falls through to the list (page up) when nothing is open
 		if m.filterText != "" || m.showUnreadOnly {
 			m.filterActive = false
 			m.filterText = ""
@@ -3158,8 +3288,17 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		last := m.undoStack[len(m.undoStack)-1]
 		m.undoStack = m.undoStack[:len(m.undoStack)-1]
+		keep, skipped := undoableMoves(last)
+		if len(keep) == 0 {
+			m.status = fmt.Sprintf("Cannot undo: the server gave no destination UID for %d move(s) — find them in the target folder and move them back with M.", skipped)
+			m.isError = true
+			return m, nil
+		}
+		if skipped > 0 {
+			m.status = fmt.Sprintf("Undoing %d move(s); %d skipped (no destination UID from server).", len(keep), skipped)
+		}
 		m.loading = true
-		return m, tea.Batch(m.spinner.Tick, m.undoMovesCmd(last))
+		return m, tea.Batch(m.spinner.Tick, m.undoMovesCmd(keep))
 
 	// ── Screener actions — operate on marked emails or cursor email ──
 	case "I", "O", "F", "P", "$":
@@ -3201,6 +3340,8 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cmdMode = true
 		m.cmdText = ""
 		m.cmdHistI = -1
+		m.cmdTabI = 0
+		m.cmdTabBase = ""
 		return m, nil
 
 	case "S":
@@ -3231,6 +3372,18 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "y":
+		if m.pendingUnmerge != "" {
+			title := m.pendingUnmerge
+			m.pendingUnmerge = ""
+			m.merges.Dissolve(title)
+			if err := m.merges.Save(); err != nil {
+				m.status = "merges.toml: " + err.Error()
+				m.isError = true
+				return m, nil
+			}
+			m.status = fmt.Sprintf("Dissolved merge %q.", title)
+			return m, m.applyFilter()
+		}
 		if m.pendingDomainOp != nil {
 			op := m.pendingDomainOp
 			m.pendingDomainOp = nil
@@ -3259,6 +3412,11 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.execAutoScreenCmd(moves))
 
 	case "n":
+		if m.pendingUnmerge != "" {
+			m.pendingUnmerge = ""
+			m.status = "Cancelled."
+			return m, nil
+		}
 		if m.pendingDomainOp != nil {
 			m.pendingDomainOp = nil
 			m.status = "Cancelled."
@@ -3403,6 +3561,10 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.activeFolder()))
 
 	case "enter", "l":
+		if it, ok := selectedItem(m.inbox); ok && it.merge != nil {
+			m.loading = true
+			return m, tea.Batch(m.spinner.Tick, m.fetchMergeCmd(it.merge.title, m.merges.IDs(it.merge.title), it.merge.members))
+		}
 		e := selectedEmail(m.inbox)
 		if e == nil {
 			return m, nil
@@ -3458,6 +3620,10 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.fetchBodyCmd(e))
 
 	case "T":
+		if it, ok := selectedItem(m.inbox); ok && it.merge != nil {
+			m.loading = true
+			return m, tea.Batch(m.spinner.Tick, m.fetchMergeCmd(it.merge.title, m.merges.IDs(it.merge.title), it.merge.members))
+		}
 		e := selectedEmail(m.inbox)
 		if e == nil {
 			return m, nil
@@ -3474,14 +3640,26 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.fetchSenderCmd(e))
 
 	case "m": // mark/unmark current email for batch, advance cursor
-		e := selectedEmail(m.inbox)
-		if e == nil {
+		it, ok := selectedItem(m.inbox)
+		if !ok {
 			break
 		}
-		if m.markedUIDs[e.UID] {
-			delete(m.markedUIDs, e.UID)
+		if it.merge != nil {
+			all := true
+			for _, mem := range it.merge.members {
+				all = all && m.markedUIDs[mem.UID]
+			}
+			for _, mem := range it.merge.members {
+				if all {
+					delete(m.markedUIDs, mem.UID)
+				} else {
+					m.markedUIDs[mem.UID] = true
+				}
+			}
+		} else if m.markedUIDs[it.email.UID] {
+			delete(m.markedUIDs, it.email.UID)
 		} else {
-			m.markedUIDs[e.UID] = true
+			m.markedUIDs[it.email.UID] = true
 		}
 		next := m.inbox.Index() + 1
 		if next < len(m.inbox.Items()) {
@@ -3611,6 +3789,9 @@ func copyMap(m map[string]bool) map[string]bool {
 }
 
 func (m Model) shouldPrefixFolderInSubject() bool {
+	if m.inMergeView() {
+		return true
+	}
 	switch m.offTabFolder {
 	case "Search", "Everything", "Thread", "Sender":
 		return true
@@ -3676,7 +3857,15 @@ func (m *Model) applyFilter() tea.Cmd {
 	}
 
 	noThread := len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent
-	return setEmails(&m.inbox, filtered, m.markedUIDs, m.spyPixelKeys, m.shouldPrefixFolderInSubject(), m.sortField, m.sortReverse, noThread)
+	var titleOf func(string) (string, bool)
+	// Collapse merged rows in folder views and in the Search/Everything
+	// off-tabs only. The T conversation, the V sender view and an opened
+	// merge exist to show individual messages — collapsing there would hide
+	// the very rows the user opened the view for.
+	if m.merges != nil && (m.offTabFolder == "" || m.offTabFolder == "Search" || m.offTabFolder == "Everything") {
+		titleOf = m.merges.TitleOf
+	}
+	return setEmails(&m.inbox, filtered, m.markedUIDs, m.spyPixelKeys, m.shouldPrefixFolderInSubject(), m.sortField, m.sortReverse, noThread, titleOf)
 }
 
 // handleChord dispatches two-key sequences (g<x>, M<x>, space<x>).
@@ -5469,7 +5658,7 @@ func (m Model) launchForwardCmd() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	subject := e.Subject
-	prelude := editor.ForwardPrelude(subject, m.presendFrom(), e.From, e.Date.Format("Mon, 02 Jan 2006 15:04:05 -0700"), e.To, m.openBody)
+	prelude := editor.ForwardPrelude(subject, m.presendFrom(), e.From, e.Date.Format("Mon, 02 Jan 2006 15:04:05 -0700"), e.To, m.quotedBody())
 
 	f, err := os.CreateTemp(neomdTempDir(), "neomd-*.md")
 	if err != nil {
@@ -5527,11 +5716,7 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 		m.presendFromI = idx
 	}
 
-	// Use Reply-To if present, else From
-	to := e.ReplyTo
-	if to == "" {
-		to = e.From
-	}
+	to, cc := m.replyRecipients(e, replyAll)
 
 	subject := e.Subject
 	low := strings.ToLower(subject)
@@ -5543,31 +5728,6 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 		subject = "Re: " + subject
 	}
 
-	cc := ""
-	if replyAll {
-		// Collect original To + CC, exclude all own addresses.
-		// Build exclusion set from both account User (IMAP login) and From (send-as)
-		// to handle setups where they differ (e.g., user123@provider vs simon@domain).
-		ownAddrs := make(map[string]bool)
-		// Add all account User addresses (IMAP login)
-		for _, acc := range m.accounts {
-			ownAddrs[strings.ToLower(extractEmailAddr(acc.User))] = true
-		}
-		// Add all From addresses (accounts + sender aliases)
-		for _, from := range m.presendFroms() {
-			ownAddrs[strings.ToLower(extractEmailAddr(from))] = true
-		}
-		var parts []string
-		for _, addr := range splitAddrs(e.To + "," + e.CC) {
-			if a := strings.TrimSpace(addr); a != "" {
-				addrLower := strings.ToLower(extractEmailAddr(a))
-				if !ownAddrs[addrLower] {
-					parts = append(parts, a)
-				}
-			}
-		}
-		cc = strings.Join(parts, ", ")
-	}
 	if extraCC != "" {
 		if cc != "" {
 			cc += ", " + extraCC
@@ -5576,7 +5736,7 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 		}
 	}
 
-	prelude := editor.ReplyPrelude(to, cc, subject, m.presendFrom(), e.From, m.openBody)
+	prelude := editor.ReplyPrelude(to, cc, subject, m.presendFrom(), e.From, m.quotedBody())
 
 	m.pendingIsReply = true
 	m.requeue = requeueRef{}
@@ -5625,6 +5785,57 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 		}
 		return editorDoneMsg{to: pto, cc: pcc, bcc: "", from: pfrom, subject: psubject, body: string(raw)}
 	})
+}
+
+// replyRecipients computes the To and Cc for a reply (r) or reply-all (ctrl+r).
+//
+// Normal folders: To = Reply-To (else From); reply-all Cc = original To + Cc
+// minus every own address.
+//
+// Sent folder: the mail is one *I* sent, so From/Reply-To are me. Replying
+// must go back to the people I wrote to: To = original To; reply-all
+// Cc = original Cc minus own addresses. Without this, r in Sent would
+// address the reply to myself.
+func (m Model) replyRecipients(e *imap.Email, replyAll bool) (to, cc string) {
+	inSent := len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent
+
+	if inSent {
+		to = e.To
+	} else {
+		// Use Reply-To if present, else From
+		to = e.ReplyTo
+		if to == "" {
+			to = e.From
+		}
+	}
+
+	if !replyAll {
+		return to, ""
+	}
+
+	// Exclude all own addresses. Build the set from both account User (IMAP
+	// login) and From (send-as) to handle setups where they differ
+	// (e.g., user123@provider vs simon@domain).
+	ownAddrs := make(map[string]bool)
+	for _, acc := range m.accounts {
+		ownAddrs[strings.ToLower(extractEmailAddr(acc.User))] = true
+	}
+	for _, from := range m.presendFroms() {
+		ownAddrs[strings.ToLower(extractEmailAddr(from))] = true
+	}
+	src := e.To + "," + e.CC
+	if inSent {
+		src = e.CC // original To already went into `to`
+	}
+	var parts []string
+	for _, addr := range splitAddrs(src) {
+		if a := strings.TrimSpace(addr); a != "" {
+			if !ownAddrs[strings.ToLower(extractEmailAddr(a))] {
+				parts = append(parts, a)
+			}
+		}
+	}
+	return to, strings.Join(parts, ", ")
 }
 
 // matchFromIndex returns the presendFroms() index whose email address matches

@@ -88,6 +88,9 @@ func prepareEmailBodies(markdownBody string) (plainText, htmlBody string, err er
 	// Plain text part: Format callouts as emoji text without blockquotes (> [!note] → 📘 Note)
 	// Blockquote markers are removed because terminal renderers strip them during display anyway.
 	plainText = render.FormatCalloutsForPlainText(markdownBody)
+	// Images become "[Image: name]" — the plain part must not leak local
+	// paths or cid: references (drafts keep the raw markdown; see BuildDraftMessage).
+	plainText = render.ImagePlaceholdersForPlainText(plainText)
 
 	// HTML part: Full goldmark rendering with styled callout boxes
 	htmlBody, err = render.ToHTML(markdownBody)
@@ -352,7 +355,7 @@ type inlineImage struct {
 	data     []byte // pre-fetched bytes (set for remote URL images)
 	mimeType string // MIME type for remote images
 	filename string // display name for remote images
-	cid      string // without angle brackets, e.g. "img0@neomd"
+	cid      string // without angle brackets, e.g. "img0.<hex>@example.com"
 }
 
 // buildMessage constructs a MIME message.
@@ -374,6 +377,18 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 	if !ok {
 		return nil, fmt.Errorf("invalid From address %q: cannot parse address for Message-ID (ensure address format is valid)", from)
 	}
+	// Headers must be 7-bit (RFC 5322). Display names arrive already decoded
+	// (IMAP envelope, contacts, user input) and may carry non-ASCII text.
+	from, to, cc, bcc = encodeAddressNames(from), encodeAddressNames(to), encodeAddressNames(cc), encodeAddressNames(bcc)
+
+	// Content-IDs carry a per-message random tag: a fixed "img0@neomd" would
+	// collide with the same id inside quoted earlier neomd mails, and the new
+	// part would hijack every quoted image (RFC 2392 wants globally unique ids).
+	cidTag, err := randomMsgID()
+	if err != nil {
+		return nil, err
+	}
+	newCID := func(n int) string { return fmt.Sprintf("img%d.%s@%s", n, cidTag, domain) }
 
 	// First pass: local image paths (<img src="/abs/path">), assign CIDs.
 	var inlines []inlineImage
@@ -390,7 +405,7 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 		if decoded, err := url.PathUnescape(srcAttr); err == nil {
 			localPath = decoded
 		}
-		cid := fmt.Sprintf("img%d@neomd", len(inlines))
+		cid := newCID(len(inlines))
 		inlines = append(inlines, inlineImage{path: localPath, cid: cid})
 		return strings.Replace(match, `"`+srcAttr+`"`, `"cid:`+cid+`"`, 1)
 	})
@@ -417,7 +432,7 @@ func buildMessageWithBCC(from, to, cc, bcc, subject, plainText, htmlBody string,
 		if filename == "" {
 			filename = "image"
 		}
-		cid := fmt.Sprintf("img%d@neomd", len(inlines))
+		cid := newCID(len(inlines))
 		inlines = append(inlines, inlineImage{data: data, mimeType: mimeType, filename: filename, cid: cid})
 		return strings.Replace(match, `"`+rawURL+`"`, `"cid:`+cid+`"`, 1)
 	})
@@ -693,6 +708,45 @@ func writeAltParts(b *bytes.Buffer, boundary, plainText, htmlBody string) {
 
 // sanitizeHeaderValue removes CR/LF so no value can terminate its header line
 // and inject additional headers (RFC 5322 header smuggling).
+// encodeAddressNames makes a comma-separated address field ("Name <addr>,
+// addr2") safe for a 7-bit header: non-ASCII display names are RFC 2047
+// encoded (Q- or B-encoding chosen by net/mail), addresses are untouched.
+// An all-ASCII field — including one that already carries encoded-words —
+// is returned byte-for-byte, so existing output never changes. A field that
+// net/mail cannot parse is returned unchanged rather than mangled.
+func encodeAddressNames(field string) string {
+	if isASCII(field) {
+		return field
+	}
+	list, err := mail.ParseAddressList(field)
+	if err != nil {
+		return field
+	}
+	parts := make([]string, len(list))
+	for i, a := range list {
+		if isASCII(a.Name) {
+			// Keep the original spelling for ASCII names (String() would add quotes).
+			if a.Name == "" {
+				parts[i] = a.Address
+			} else {
+				parts[i] = a.Name + " <" + a.Address + ">"
+			}
+			continue
+		}
+		parts[i] = a.String()
+	}
+	return strings.Join(parts, ", ")
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
 func sanitizeHeaderValue(v string) string {
 	if !strings.ContainsAny(v, "\r\n") {
 		return v

@@ -91,7 +91,15 @@ func normalizeSubject(subject string) string {
 // threadedEmail pairs an email with its tree-drawing prefix for the inbox list.
 type threadedEmail struct {
 	email        imap.Email
-	threadPrefix string // "│" = continuation, "╰" = root, "" = not threaded
+	threadPrefix string    // "│" = continuation, "╰" = root, "" = not threaded
+	merge        *mergeRow // non-nil = this row stands for a user-merged group
+}
+
+// mergeRow is a collapsed, user-titled group of emails (HEY-style "merge
+// threads"). email on the owning threadedEmail is the newest member.
+type mergeRow struct {
+	title   string
+	members []imap.Email // present in the current list, newest first
 }
 
 // flatEmails returns emails sorted without any threading/grouping.
@@ -253,4 +261,99 @@ func threadEmails(emails []imap.Email, sortField string, sortReverse bool) []thr
 	}
 
 	return result
+}
+
+// collapseMerges replaces every row whose Message-ID belongs to a user merge
+// (titleOf → title, true) with one collapsed row per merge. Rows are grouped
+// into blocks first — an automatic thread (a run of "│"… rows ending in "╰")
+// is one block, every other row is its own block — and a block joins a merge
+// when ANY of its emails is a member, so replies to a merged mail are
+// absorbed. The collapsed row sorts by its newest member under the caller's
+// sort field/direction, exactly like threadEmails sorts a thread by its
+// newest message. A nil titleOf returns rows unchanged.
+func collapseMerges(rows []threadedEmail, titleOf func(string) (string, bool), sortField string, sortReverse bool) []threadedEmail {
+	if titleOf == nil || len(rows) == 0 {
+		return rows
+	}
+
+	// 1. Split rows into blocks.
+	var blocks [][]threadedEmail
+	for i := 0; i < len(rows); {
+		if rows[i].threadPrefix == "" {
+			blocks = append(blocks, rows[i:i+1])
+			i++
+			continue
+		}
+		j := i
+		for j < len(rows) && rows[j].threadPrefix != "" {
+			j++
+			if rows[j-1].threadPrefix == "╰" {
+				break
+			}
+		}
+		blocks = append(blocks, rows[i:j])
+		i = j
+	}
+
+	// 2. Assign blocks to merges (first matching member wins).
+	type entry struct {
+		rep  imap.Email // sort representative
+		rows []threadedEmail
+	}
+	var entries []entry
+	byTitle := map[string]*mergeRow{}
+	var order []string // titles in first-seen order
+	merged := false
+	for _, b := range blocks {
+		title := ""
+		for _, r := range b {
+			if t, ok := titleOf(r.email.MessageID); ok {
+				title = t
+				break
+			}
+		}
+		if title == "" {
+			entries = append(entries, entry{rep: b[0].email, rows: b})
+			continue
+		}
+		merged = true
+		mr := byTitle[title]
+		if mr == nil {
+			mr = &mergeRow{title: title}
+			byTitle[title] = mr
+			order = append(order, title)
+		}
+		for _, r := range b {
+			mr.members = append(mr.members, r.email)
+		}
+	}
+	if !merged {
+		return rows
+	}
+
+	// 3. One entry per merge, members newest first, representative = newest.
+	for _, title := range order {
+		mr := byTitle[title]
+		sort.SliceStable(mr.members, func(i, j int) bool {
+			return mr.members[i].Date.After(mr.members[j].Date)
+		})
+		rep := mr.members[0]
+		entries = append(entries, entry{rep: rep, rows: []threadedEmail{{email: rep, merge: mr}}})
+	}
+
+	// 4. Stable sort so untouched blocks keep their order and merged rows
+	//    land where their newest member would.
+	sort.SliceStable(entries, func(i, j int) bool {
+		cmp := compareEmails(entries[i].rep, entries[j].rep, sortField)
+		if sortReverse {
+			return cmp > 0
+		}
+		return cmp < 0
+	})
+
+	out := make([]threadedEmail, 0, len(rows))
+	for _, e := range entries {
+		out = append(out, e.rows...)
+	}
+	return out
 }

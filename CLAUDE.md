@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Dev Commands
 
-- `make build` — compile to `./neomd` (also regenerates `docs/keybindings.md` from `internal/ui/keys.go`)
+- `make build` — compile to `./neomd` (also regenerates `docs/content/docs/keybindings.md` from `internal/ui/keys.go`)
 - `make run ARGS="..."` — build and run
 - `make install` — install to `~/.local/bin/neomd` (default target)
 - `make test` — `go test ./...` (unit tests, no network)
@@ -33,7 +33,7 @@ Requires Go 1.22+. Binary version is injected via `-ldflags -X main.version=$(gi
 - `compose.go` — multi-step compose form (To/CC/BCC/Subject)
 - `search.go`, `cmdline.go`, `thread.go`, `keys.go`, `styles.go`
 
-**Keybindings are declared once** in `internal/ui/keys.go` and drive both the in-app help overlay and the generated `docs/keybindings.md`. When adding a binding, edit that table — do not hand-edit the markdown docs.
+**Keybindings are declared once** in `internal/ui/keys.go` and drive both the in-app help overlay and the generated `docs/content/docs/keybindings.md`. When adding a binding, edit that table — do not hand-edit the markdown docs.
 
 **Compose flow:** user's `$EDITOR` (nvim) opens a temp `neomd-*.md` file with a prelude of `# [neomd: to: ...]` / `# [neomd: subject: ...]` headers built by `internal/editor/editor.go`. On editor exit, parsing extracts headers and `[attach] /path` inline lines (plain-text marker, NOT HTML comments — treesitter hides those). Then `statePresend` shows a review screen before sending.
 

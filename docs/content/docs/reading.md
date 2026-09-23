@@ -155,6 +155,55 @@ Threads display with a Twitter-style vertical connector line:
 Or as image:
 ![neomd](/images/reader-threaded.png)
 
+## Merge Threads
+
+Automatic threading only groups real replies. Some mail never threads yet arrives in floods — mailer-daemon bounces, CI notifications, "your invoice is ready" — and each one takes an inbox row. Like [HEY's merge threads](https://help.hey.com/article/780-merge-threads), neomd lets you merge any emails you choose into one titled group.
+
+**Merge:** mark emails with `m` (or just sit on one), then
+
+```
+:merge Bounces
+```
+
+The members collapse into a single row wherever they live:
+
+```
+  4 N  ≡ 09:12    Mailer-Daemon         Bounces (12)                   (3.1K)
+```
+
+- `≡` marks a merged row; the subject shows the title and how many members sit in this folder
+- `N` shows if any member is unread, `·` if you replied to any of them
+- The row sorts by its newest member, like a normal thread
+- Replies to a merged email are absorbed automatically — the whole reply thread joins the row
+
+**Open:** press Enter, `l`, or `T` on the row to see every member across Inbox, Sent, Archive, Waiting, Someday, Scheduled, and Work in a temporary `Merged: <title>` tab (with `[Folder]` prefixes). Enter reads one email as usual; `esc` returns. Opening a merge searches the 100 most recently added members; very large groups show a partial view.
+
+**Act on all members at once:** archive (`A`), delete (`x`), move (`M…`), toggle read (`n`), and the screener keys applied to a merged row apply to every member in the current folder. `m` marks or unmarks all of them. Undo (`U`) works as for any bulk move.
+
+**Auto-merge future mail from a sender:**
+
+```
+:merge-sender Bounces
+```
+
+Same as `:merge`, plus the cursor email's sender address is stored as a rule. Every folder load then adds new mail from that sender to the group.
+
+**Unmerge:**
+
+- `:unmerge` on a `≡` row asks `y/n` and dissolves the whole merge (rule included).
+- `:unmerge` inside an opened merge removes only the cursor email.
+
+**Where it lives:** `merges.toml` next to your `config.toml` (demo configs get their own). Members are stored by Message-ID, never by UID, so a merge survives moving its emails between folders. The file is plain TOML and safe to keep in dotfiles:
+
+```toml
+[[merges]]
+title = "Bounces"
+sender = "mailer-daemon@"       # optional, case-insensitive substring of the From address
+message_ids = ["<a@x>", "<b@y>"]
+```
+
+`T` on a normal (non-merged) email still opens the conversation view described below.
+
 ## Sender View
 
 Press `V` on any email in the inbox list to see **every email from that sender, across every folder** — not just the current one. neomd extracts the sender's address and runs an IMAP `from:` search across Inbox, Sent, Archive, ToScreen, Feed, PaperTrail, ScreenedOut, Waiting, Scheduled, Someday, Spam, Drafts, Trash, and Work (if configured).
@@ -173,6 +222,7 @@ This is handy for pulling up a person's full history at a glance — e.g. checki
 | `ctrl+r` | reply-all (sender + all CC recipients) |
 | `f` | forward email |
 | `T` | show full conversation thread across folders |
+| `enter` / `l` / `T` on a `≡` row | open a merged group — every member across folders |
 | `V` | show all emails from this sender, across all folders |
 | `E` | continue draft (only in Drafts folder) — re-opens as editable compose |
 

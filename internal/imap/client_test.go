@@ -3,6 +3,8 @@ package imap
 import (
 	"context"
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -705,4 +707,85 @@ func TestResetMailboxSelection(t *testing.T) {
 	if c.selectedMailbox != "" {
 		t.Errorf("ResetMailboxSelection() did not clear selectedMailbox: got %q, want empty string", c.selectedMailbox)
 	}
+}
+
+// Outlook and other Windows senders encode display names and subjects as
+// RFC 2047 encoded-words in Windows-1252, which Go's default mime.WordDecoder
+// cannot decode (it only knows UTF-8, ISO-8859-1 and US-ASCII). The IMAP
+// client must hand go-imap a charset-aware decoder or the raw
+// "=?Windows-1252?Q?...?=" text leaks into the inbox, reader and reply screens.
+func TestEnvelopeWordDecoder_DecodesWindows1252(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"=?Windows-1252?Q?Ren=E9_M=FCller?=", "René Müller"},
+		{"=?Windows-1252?Q?Ren=E9_M=FCller?= <rene@example.com>", "René Müller <rene@example.com>"},
+		{"=?ISO-8859-15?Q?Preis_=A4?=", "Preis €"},
+		{"=?UTF-8?Q?Zo=C3=AB_Example?=", "Zoë Example"},
+		{"Plain Name <plain@example.com>", "Plain Name <plain@example.com>"},
+	}
+	for _, c := range cases {
+		got, err := envelopeWordDecoder.DecodeHeader(c.in)
+		if err != nil {
+			t.Errorf("DecodeHeader(%q) error: %v", c.in, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("DecodeHeader(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestClientOptions_SetWordDecoder(t *testing.T) {
+	opts := clientOptions(nil)
+	if opts.WordDecoder == nil {
+		t.Fatal("clientOptions must set WordDecoder so go-imap decodes non-UTF-8 envelope charsets")
+	}
+	if opts.WordDecoder != envelopeWordDecoder {
+		t.Error("clientOptions should wire the shared charset-aware envelopeWordDecoder")
+	}
+}
+
+// Signatures constrain a large logo with width/height (e.g. a 192px PNG shown
+// at 70px). Markdown has no image size, so quoting a mail used to re-render
+// the logo at full size in every reply. The converter now carries the size as
+// the image title ("WxH"), which render.ToHTML turns back into attributes.
+func TestHTMLToMarkdown_PreservesImageSizeAsTitle(t *testing.T) {
+	html := `<p><img src="https://example.org/logo.png" alt="Example GmbH" width="70" height="70" style="display:block"></p>` +
+		`<p><img src="https://example.org/wide.png" alt="Wide" style="width:120px; height:40px;"></p>` +
+		`<p><img src="https://example.org/h.png" alt="H" height="30"></p>` +
+		`<p><img src="https://example.org/plain.png" alt="Plain"></p>`
+	got, _ := htmlToMarkdown(html)
+	for _, want := range []string{
+		`![Example GmbH](https://example.org/logo.png "70x70")`,
+		`![Wide](https://example.org/wide.png "120x40")`,
+		`![H](https://example.org/h.png "x30")`,
+		`![Plain](https://example.org/plain.png)`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+// Every server-side move/expunge is appended to the audit log so a "mail
+// vanished" report can be traced to the exact MOVE (folder, UID, destination,
+// time) instead of guessed at.
+func TestAuditLog_AppendsLines(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "moves.log")
+	SetAuditLogPath(p)
+	defer SetAuditLogPath("")
+	audit("MOVE %s uid=%d -> %s destUID=%d", "INBOX", 42, "Trash", 7)
+	audit("EXPUNGE %s uids=%v", "Trash", []uint32{7})
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], "MOVE INBOX uid=42 -> Trash destUID=7") || !strings.Contains(lines[1], "EXPUNGE Trash uids=[7]") {
+		t.Errorf("unexpected audit lines: %q", lines)
+	}
+	if !strings.HasPrefix(lines[0], "20") { // RFC 3339 timestamp first
+		t.Errorf("line lacks timestamp: %q", lines[0])
+	}
+	SetAuditLogPath("")
+	audit("ignored") // no path → no-op, must not panic
 }

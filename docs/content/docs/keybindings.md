@@ -22,6 +22,7 @@ To update both the help overlay and this document at once, edit that file and ru
 | `G` | jump to bottom |
 | `enter / l` | open email |
 | `h / q / esc` | back to inbox (from reader) |
+| `h / esc  (inbox)` | back one level — close a temporary view (Search / Thread / Sender / Merged) or clear the / filter and z unread-only |
 | `?` | toggle help overlay (type to filter) |
 
 
@@ -87,7 +88,7 @@ To update both the help overlay and this document at once, edit that file and ru
 
 | Key | Action |
 |-----|--------|
-| `m` | mark / unmark email + advance cursor |
+| `m` | mark / unmark email (or every member of a ≡ merged row) + advance cursor |
 | `ctrl+u` | clear all marks |
 | `U` | undo last move or delete (reverses x, A, M* — not screener actions) |
 | `X  (Trash only)` | permanently delete marked or cursor email(s) — no undo |
@@ -133,11 +134,12 @@ To update both the help overlay and this document at once, edit that file and ru
 | `N` | jump to next unread email |
 | `ctrl+n` | mark all in current folder as read |
 | `R` | reload / refresh folder |
-| `r` | reply  (from inbox or reader) |
-| `ctrl+r` | reply-all — reply to sender + all CC recipients  (from inbox or reader) |
+| `r` | reply  (from inbox or reader; in Sent: reply to the original To) |
+| `ctrl+r` | reply-all — reply to sender + all CC recipients  (from inbox or reader; in Sent: original To + Cc) |
 | `ctrl+e` | react with emoji  (from inbox or reader) |
 | `f` | forward email  (from reader or inbox) |
 | `T` | show full conversation thread across folders  (from inbox or reader) |
+| `enter / l / T  (on ≡ merged row)` | open a merged group — every member across folders, newest first |
 | `V` | show all emails from this sender, across all folders  (from inbox) |
 | `c` | compose new email |
 | `ctrl+b  (compose/pre-send)` | toggle Cc+Bcc fields (both hidden by default) |
@@ -173,6 +175,9 @@ To update both the help overlay and this document at once, edit that file and ru
 | `:reload  / :r` | reload current folder |
 | `:check  / :ch` | show screener classification for selected email |
 | `:everything  / :ev` | show latest 50 emails across all folders |
+| `:merge <title>  / :mg` | merge marked/cursor emails into a titled group (HEY-style); collapses to one ≡ row |
+| `:merge-sender <title>  / :mgs` | like :merge, plus future mail from the cursor email's sender joins automatically |
+| `:unmerge  / :umg` | on a ≡ row: dissolve the merge (y/n) · inside an opened merge: remove the cursor email |
 | `:search  / :se` | IMAP search all emails on server (From + Subject + To) |
 | `:delete-all  / :da` | permanently delete ALL emails in current folder (y/n) |
 | `:empty-trash  / :et` | permanently delete ALL emails in Trash (y/n) |

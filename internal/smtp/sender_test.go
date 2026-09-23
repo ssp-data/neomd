@@ -13,6 +13,7 @@ import (
 	"net/mail"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -236,16 +237,16 @@ func TestBuildMessage_WithInlineImage(t *testing.T) {
 	if cid == "" {
 		t.Error("image part missing Content-ID header")
 	}
-	if !strings.Contains(cid, "img0@neomd") {
-		t.Errorf("unexpected Content-ID: %s", cid)
+	if !regexp.MustCompile(`^<img0\.[0-9a-f]{8,}@`).MatchString(cid) {
+		t.Errorf("unexpected Content-ID: %s (want unique img0.<hex>@domain)", cid)
 	}
 
 	// Verify the HTML was rewritten from local path to cid:
 	if strings.Contains(string(raw), fmt.Sprintf(`src="%s"`, imgPath)) {
 		t.Error("HTML still contains local path instead of cid: reference")
 	}
-	if !strings.Contains(string(raw), "cid:img0@neomd") {
-		t.Error("HTML does not contain expected cid:img0@neomd reference")
+	if !strings.Contains(string(raw), "cid:"+strings.Trim(cid, "<>")) {
+		t.Error("HTML does not reference the image part's Content-ID")
 	}
 }
 
@@ -284,11 +285,12 @@ func TestBuildMessage_InlineImagePathWithSpaces(t *testing.T) {
 		t.Fatalf("buildMessage: %v", err)
 	}
 
-	if !strings.Contains(string(raw), "cid:img0@neomd") {
-		t.Errorf("expected cid reference in HTML, got:\n%s", raw)
+	m := cidRe.FindSubmatch(raw)
+	if m == nil {
+		t.Fatalf("expected inline image part with unique Content-ID, got:\n%s", raw)
 	}
-	if !strings.Contains(string(raw), "Content-ID: <img0@neomd>") {
-		t.Errorf("expected inline image part with Content-ID, got:\n%s", raw)
+	if !strings.Contains(string(raw), "cid:"+string(m[1])) {
+		t.Errorf("expected cid reference in HTML, got:\n%s", raw)
 	}
 }
 
@@ -1108,4 +1110,231 @@ func extractPlainTextPart(t *testing.T, raw []byte) string {
 		}
 	}
 	return ""
+}
+
+// Display names that reach the builder already decoded (IMAP envelope names,
+// contacts, user input) may contain non-ASCII text. RFC 5322 headers must be
+// 7-bit, so the builder Q-encodes such names (RFC 2047) while leaving
+// addresses, ASCII names and already-encoded words untouched.
+func TestEncodeAddressNames(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"ascii passthrough is byte-identical", "Bob Smith <bob@example.com>, carol@example.org", "Bob Smith <bob@example.com>, carol@example.org"},
+		{"already encoded word passes through", "=?Windows-1252?Q?Ren=E9?= <rene@example.com>", "=?Windows-1252?Q?Ren=E9?= <rene@example.com>"},
+		{"empty", "", ""},
+		{"non-ascii name is q-encoded", "René Müller <rene@example.com>", "=?utf-8?q?Ren=C3=A9_M=C3=BCller?= <rene@example.com>"},
+		{"mixed list keeps bare address", "René Müller <rene@example.com>, plain@example.org", "=?utf-8?q?Ren=C3=A9_M=C3=BCller?= <rene@example.com>, plain@example.org"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := encodeAddressNames(c.in); got != c.want {
+				t.Errorf("encodeAddressNames(%q)\n got %q\nwant %q", c.in, got, c.want)
+			}
+		})
+	}
+	// A quoted name with a comma must survive as ONE recipient and decode back.
+	got := encodeAddressNames(`"Müller, René" <rene@example.com>`)
+	list, err := mail.ParseAddressList(got)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("quoted-comma name: ParseAddressList(%q) = %v, %v; want 1 address", got, list, err)
+	}
+	if list[0].Name != "Müller, René" || list[0].Address != "rene@example.com" {
+		t.Errorf("quoted-comma name round-trip = %+v", list[0])
+	}
+}
+
+func TestBuildMessage_HeadersAre7BitWithNonASCIINames(t *testing.T) {
+	raw, err := BuildMessage(
+		"Zoë Example <zoe@example.org>",
+		"René Müller <rene@example.com>, plain@example.net",
+		"Åsa Lindqvist <asa@example.net>",
+		"Grüße",
+		"hello",
+		nil, "",
+	)
+	if err != nil {
+		t.Fatalf("BuildMessage: %v", err)
+	}
+	end := bytes.Index(raw, []byte("\r\n\r\n"))
+	if end < 0 {
+		t.Fatal("no header/body separator")
+	}
+	for i, b := range raw[:end] {
+		if b >= 0x80 {
+			t.Fatalf("non-ASCII byte 0x%02x at header offset %d:\n%s", b, i, raw[:end])
+		}
+	}
+	msg, _, _ := parseMIME(t, raw)
+	check := func(hdr, wantName, wantAddr string) {
+		t.Helper()
+		list, err := mail.ParseAddressList(msg.Header.Get(hdr))
+		if err != nil {
+			t.Fatalf("%s: %v (raw %q)", hdr, err, msg.Header.Get(hdr))
+		}
+		if list[0].Name != wantName || list[0].Address != wantAddr {
+			t.Errorf("%s = %+v, want %q <%s>", hdr, list[0], wantName, wantAddr)
+		}
+	}
+	check("From", "Zoë Example", "zoe@example.org")
+	check("Cc", "Åsa Lindqvist", "asa@example.net")
+	to, err := mail.ParseAddressList(msg.Header.Get("To"))
+	if err != nil || len(to) != 2 {
+		t.Fatalf("To: %v %v", to, err)
+	}
+	if to[0].Name != "René Müller" || to[1].Address != "plain@example.net" {
+		t.Errorf("To = %+v", to)
+	}
+}
+
+// Content-IDs must be unique per message. Every neomd message used to name
+// its first inline image "img0@neomd"; a reply that quotes an earlier neomd
+// mail carries that mail's <img src="cid:img0@neomd"> in the quoted history,
+// so the new message's image part hijacked every quoted image.
+var cidRe = regexp.MustCompile(`Content-ID: <(img0\.[0-9a-f]{8,}@[^>]+)>`)
+
+// qpFlat undoes quoted-printable soft line breaks and =3D so header-like
+// substrings (src="cid:…") can be searched in a raw message.
+func qpFlat(raw []byte) string {
+	return strings.ReplaceAll(strings.ReplaceAll(string(raw), "=\r\n", ""), "=3D", "=")
+}
+
+func TestBuildMessage_InlineCIDsAreUniquePerMessage(t *testing.T) {
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "pixel.png")
+	create1x1PNG(t, imgPath)
+	htmlBody, err := render.ToHTML(fmt.Sprintf("![img](%s)", imgPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := func() string {
+		raw, err := buildMessage("Alice <alice@example.com>", "Bob <bob@example.com>", "", "s", "p", htmlBody, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := cidRe.FindSubmatch(raw)
+		if m == nil {
+			t.Fatalf("no per-message unique Content-ID (want img0.<hex>@domain), got:\n%s", raw)
+		}
+		cid := string(m[1])
+		if !strings.Contains(qpFlat(raw), `src="cid:`+cid+`"`) {
+			t.Errorf("HTML does not reference the image part's Content-ID %q", cid)
+		}
+		if strings.Contains(string(raw), "img0@neomd") {
+			t.Errorf("legacy non-unique Content-ID img0@neomd still present")
+		}
+		return cid
+	}
+	if a, b := build(), build(); a == b {
+		t.Errorf("two messages produced the same Content-ID %q", a)
+	}
+}
+
+func TestBuildMessage_QuotedForeignCIDIsNotHijacked(t *testing.T) {
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "new.png")
+	create1x1PNG(t, imgPath)
+	// New local image in the body plus a quoted earlier mail whose image was
+	// "img0@neomd" (the legacy scheme) — the quoted ref must stay untouched
+	// and must not resolve to the new part.
+	htmlBody, err := render.ToHTML(fmt.Sprintf("![new](%s)\n\n> old mail\n> ![old](cid:img0@neomd)", imgPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := buildMessage("Alice <alice@example.com>", "Bob <bob@example.com>", "", "s", "p", htmlBody, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(qpFlat(raw), `src="cid:img0@neomd"`) {
+		t.Errorf("quoted foreign cid reference was rewritten:\n%s", raw)
+	}
+	if strings.Contains(string(raw), "Content-ID: <img0@neomd>") {
+		t.Errorf("new image part must not be named img0@neomd (would hijack the quoted image)")
+	}
+	if strings.Count(string(raw), "Content-ID:") != 1 {
+		t.Errorf("expected exactly one image part, got:\n%s", raw)
+	}
+}
+
+// plainPartOf returns the decoded text/plain alternative of a built message.
+func plainPartOf(t *testing.T, raw []byte) string {
+	t.Helper()
+	var walk func(hdr string, body io.Reader) string
+	walk = func(ct string, body io.Reader) string {
+		mt, params, _ := mime.ParseMediaType(ct)
+		if mt == "text/plain" {
+			b, _ := io.ReadAll(body)
+			return qpFlat(b)
+		}
+		if !strings.HasPrefix(mt, "multipart/") {
+			return ""
+		}
+		mr := multipart.NewReader(body, params["boundary"])
+		for {
+			p, err := mr.NextPart()
+			if err != nil {
+				return ""
+			}
+			if got := walk(p.Header.Get("Content-Type"), p); got != "" {
+				return got
+			}
+		}
+	}
+	msg, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := walk(msg.Header.Get("Content-Type"), msg.Body)
+	if got == "" {
+		t.Fatalf("no text/plain part found:\n%s", raw)
+	}
+	return got
+}
+
+func TestBuildMessage_PlainPartHasNoImagePaths(t *testing.T) {
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "diagram.png")
+	create1x1PNG(t, imgPath)
+	raw, err := BuildMessage("Alice <alice@example.com>", "Bob <bob@example.com>", "", "s",
+		"look:\n\n![](<"+imgPath+">)\n\n> quoted\n> ![old.png](cid:legacy@example)\n", nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := plainPartOf(t, raw)
+	if strings.Contains(plain, dir) || strings.Contains(plain, "cid:") || strings.Contains(plain, "![") {
+		t.Errorf("plain part leaks image paths/markdown:\n%s", plain)
+	}
+	for _, want := range []string{"[Image: diagram.png]", "[Image: old.png]"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("plain part missing %q:\n%s", want, plain)
+		}
+	}
+	// Drafts are resumed in the editor and must keep the real path.
+	draft, err := BuildDraftMessage("Alice <alice@example.com>", "bob@example.com", "", "", "s", "![](<"+imgPath+">)", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(qpFlat(draft), imgPath) {
+		t.Errorf("draft lost the local image path:\n%s", draft)
+	}
+}
+
+// A quoted signature logo carries its size as the markdown title; after the
+// local/remote image is embedded as cid: the <img> must keep width/height so
+// it does not blow up to the file's natural dimensions in the reply.
+func TestBuildMessage_SizedImageKeepsWidthHeightAfterEmbedding(t *testing.T) {
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "logo.png")
+	create1x1PNG(t, imgPath)
+	raw, err := BuildMessage("Alice <alice@example.com>", "Bob <bob@example.com>", "", "s",
+		"> ![Example GmbH](<"+imgPath+`> "70x70")`, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	flat := qpFlat(raw)
+	m := regexp.MustCompile(`<img src="cid:[^"]+" alt="Example GmbH" width="70" height="70">`).FindString(flat)
+	if m == "" {
+		t.Errorf("embedded image lost its size attributes:\n%s", flat)
+	}
+	if strings.Contains(flat, `title="70x70"`) {
+		t.Error("size marker leaked as title attribute")
+	}
 }

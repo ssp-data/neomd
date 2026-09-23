@@ -72,14 +72,25 @@ func SanitizeForBrowser(html string) string {
 	if strings.Contains(html, browserCSP) {
 		return html
 	}
-	// Insert after <head> if present, otherwise prepend.
-	lower := strings.ToLower(html)
-	if idx := strings.Index(lower, "<head>"); idx >= 0 {
-		insert := idx + len("<head>")
-		return html[:insert] + "\n" + browserCSP + "\n" + html[insert:]
+	// The body was transcoded to UTF-8 when the message was parsed, but the
+	// original charset declaration (Outlook: Windows-1252) is still in the
+	// document and makes the browser misdecode every non-ASCII character.
+	// Drop any existing declaration and put ours first in <head>.
+	html = metaCharsetRe.ReplaceAllString(html, "")
+	inject := utf8Meta + "\n" + browserCSP
+	if loc := headOpenRe.FindStringIndex(html); loc != nil {
+		return html[:loc[1]] + "\n" + inject + "\n" + html[loc[1]:]
 	}
-	return browserCSP + "\n" + html
+	return inject + "\n" + html
 }
+
+const utf8Meta = `<meta charset="utf-8">`
+
+// metaCharsetRe matches <meta charset=…> and <meta http-equiv="Content-Type" …>.
+var metaCharsetRe = regexp.MustCompile(`(?i)<meta\s[^>]*?(?:\bcharset\s*=|http-equiv\s*=\s*["']?content-type)[^>]*>`)
+
+// headOpenRe matches the opening <head> tag, with or without attributes.
+var headOpenRe = regexp.MustCompile(`(?i)<head(?:\s[^>]*)?>`)
 
 // ToHTML converts a Markdown string to a complete HTML email document.
 func ToHTML(markdown string) (string, error) {
@@ -87,7 +98,27 @@ func ToHTML(markdown string) (string, error) {
 	if err := md.Convert([]byte(markdown), &fragment); err != nil {
 		return "", fmt.Errorf("markdown to html: %w", err)
 	}
-	return fmt.Sprintf(htmlTemplate, fragment.String()), nil
+	return fmt.Sprintf(htmlTemplate, applyImageSizeTitles(fragment.String())), nil
+}
+
+// imgSizeTitleRe matches goldmark's <img … title="WxH"> where the title is the
+// size marker written by the HTML→markdown converter (see internal/imap).
+var imgSizeTitleRe = regexp.MustCompile(`(<img\b[^>]*?)\s+title="(\d*)x(\d*)"([^>]*>)`)
+
+// applyImageSizeTitles converts a "WxH" image title into width/height
+// attributes (either may be empty) and drops the marker. Real titles are kept.
+func applyImageSizeTitles(html string) string {
+	return imgSizeTitleRe.ReplaceAllStringFunc(html, func(tag string) string {
+		m := imgSizeTitleRe.FindStringSubmatch(tag)
+		attrs := ""
+		if m[2] != "" {
+			attrs += ` width="` + m[2] + `"`
+		}
+		if m[3] != "" {
+			attrs += ` height="` + m[3] + `"`
+		}
+		return m[1] + attrs + m[4]
+	})
 }
 
 // calloutIconMap maps callout types to their emoji icons (same as in the fork's ast.go).
@@ -124,6 +155,39 @@ var calloutIconMap = map[string]string{
 // calloutRegex matches callout syntax: > [!type] optional title
 // Captures: (optional space after >)(type)(optional: + or -)(optional title)
 var calloutRegex = regexp.MustCompile(`(?m)^(>\s*)\[!(\w+)\]([+-])?\s*(.*)?$`)
+
+// mdImageRe matches markdown images: ![alt](dest) and ![alt](<dest with spaces>).
+var mdImageRe = regexp.MustCompile(`!\[([^\]]*)\]\(<?([^)>]*)>?\)`)
+
+// ImagePlaceholdersForPlainText replaces markdown images with "[Image: name]"
+// for the text/plain alternative. The HTML part embeds the pictures; the plain
+// part must never carry local file paths (they expose the sender's home
+// directory and mean nothing to the recipient) or raw cid: references. The
+// name is the alt text, else the last path/URL segment without query string.
+func ImagePlaceholdersForPlainText(md string) string {
+	return mdImageRe.ReplaceAllStringFunc(md, func(m string) string {
+		sub := mdImageRe.FindStringSubmatch(m)
+		name := strings.TrimSpace(sub[1])
+		if name == "" {
+			dest := sub[2]
+			if i := strings.Index(dest, ` "`); i >= 0 { // strip a markdown title
+				dest = dest[:i]
+			}
+			if q := strings.IndexByte(dest, '?'); q >= 0 {
+				dest = dest[:q]
+			}
+			dest = strings.TrimRight(dest, "/")
+			if i := strings.LastIndexAny(dest, "/\\"); i >= 0 {
+				dest = dest[i+1:]
+			}
+			name = strings.TrimSpace(dest)
+		}
+		if name == "" {
+			name = "image"
+		}
+		return "[Image: " + name + "]"
+	})
+}
 
 // FormatCalloutsForPlainText converts callout markdown syntax to emoji-prefixed text.
 // Converts `> [!note] Title` to `📘 Note` (or custom title if provided).

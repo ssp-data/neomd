@@ -52,6 +52,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "neomd: config error: %v\n", err)
 		os.Exit(1)
 	}
+	goIMAP.SetAuditLogPath(config.AuditLogPath()) // every MOVE/EXPUNGE → ~/.cache/neomd/moves.log
 
 	accounts := cfg.ActiveAccounts()
 	if len(accounts) == 0 {

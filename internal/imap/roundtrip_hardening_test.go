@@ -499,12 +499,19 @@ func TestHardening_RoundTrip_InlineImagePlusAttachment(t *testing.T) {
 	if !bytes.Contains(raw, []byte("multipart/related")) {
 		t.Error("inline image must live inside a multipart/related container")
 	}
-	if !strings.Contains(pm.html, "cid:img0@neomd") {
+	// Content-IDs are unique per message (img0.<hex>@<sender domain>) so a
+	// reply can never hijack the images quoted from an earlier neomd mail.
+	var cid string
+	for id := range pm.inline {
+		cid = id
+	}
+	if len(pm.inline) != 1 || !strings.HasPrefix(cid, "img0.") || !strings.HasSuffix(cid, "@ssp.sh") {
+		t.Fatalf("recipient view: want exactly one inline part with a unique img0.<hex>@ssp.sh id, got %v", pm.inline)
+	}
+	if !strings.Contains(pm.html, "cid:"+cid) {
 		t.Error("HTML part lost the cid: reference to the inline image")
 	}
-	if got, ok := pm.inline["img0@neomd"]; !ok {
-		t.Error("recipient view: inline image part missing")
-	} else if !bytes.Equal(got, imgContent) {
+	if !bytes.Equal(pm.inline[cid], imgContent) {
 		t.Error("recipient view: inline image bytes corrupted")
 	}
 	if got, ok := pm.attached["Angebot Q3.pdf"]; !ok {
@@ -677,4 +684,53 @@ func TestHardening_HeaderInjection(t *testing.T) {
 			t.Fatalf("attachment lost: %v", keysOf(pm.attached))
 		}
 	})
+}
+
+// Draft round trip with an inline image reference and a file attachment:
+// saving (`d` on pre-send → BuildDraftMessage) and reopening (`E` → parseBody)
+// must hand back the body byte-for-byte — the ![](path) stays at its spot and
+// keeps the local path so the send pipeline can embed it later — and the
+// attachment must come back with its name and bytes so continueDraft can
+// re-list it as a # [attach] line.
+func TestHardening_DraftRoundTrip_InlineImageAndAttachment(t *testing.T) {
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "sub dir", "diagram v2.png")
+	if err := os.MkdirAll(filepath.Dir(imgPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(imgPath, []byte("\x89PNG fake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pdfPath := filepath.Join(dir, "Offer Q4.pdf")
+	pdfContent := []byte("%PDF-1.4 offer")
+	if err := os.WriteFile(pdfPath, pdfContent, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body := "Hallo Zoë,\n\nfirst paragraph\n\n![](<" + imgPath + ">)\n\nsecond paragraph after the image\n\n--\nZoë"
+
+	raw, err := smtp.BuildDraftMessage("Zoë Example <zoe@example.org>", "rene@example.com", "", "", "Entwurf", body, []string{pdfPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, rawHTML, _, atts, _, _ := parseBody(raw)
+	if got != body {
+		t.Errorf("draft body mutated on reopen\ngot:\n%q\nwant:\n%q", got, body)
+	}
+	if rawHTML != "" {
+		t.Errorf("draft must be plain text only, got HTML part:\n%s", rawHTML)
+	}
+	if len(atts) != 1 || atts[0].Filename != "Offer Q4.pdf" || !bytes.Equal(atts[0].Data, pdfContent) {
+		t.Fatalf("attachment not restored: %+v", atts)
+	}
+
+	// Second cycle: re-save the reopened body with the restored attachment.
+	raw2, err := smtp.BuildDraftMessage("Zoë Example <zoe@example.org>", "rene@example.com", "", "", "Entwurf", got, []string{pdfPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got2, _, _, atts2, _, _ := parseBody(raw2)
+	if got2 != body || len(atts2) != 1 {
+		t.Errorf("second cycle drifted: body equal=%v attachments=%d", got2 == body, len(atts2))
+	}
 }

@@ -123,6 +123,11 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **Reply From auto-selection** — replying picks the From address matching the email's
   To/CC; in the Sent folder the user's own address is in `From` instead
   (`matchFromForReply`, `internal/ui/model.go`).
+- **Replying from the Sent folder goes to the original recipients** — `r` on a mail I
+  sent addresses the reply to its original `To` (not to me, the sender); `ctrl+r` adds the
+  original `Cc` minus own addresses. Outside Sent the classic Reply-To/From → To and
+  To+Cc → Cc logic is unchanged (`replyRecipients`, `internal/ui/model.go`). Test:
+  `TestReplyFromSentFolderTargetsOriginalRecipients`.
 - **Reply-all excludes all own addresses** — both IMAP login addresses (`account.User`)
   and send-as addresses (accounts + `[[senders]]` aliases) are stripped from CC. Test:
   `TestReplyAllExcludesAllOwnAddresses`.
@@ -136,6 +141,31 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   `V` was chosen over `E`/`F` — both already bound (`E` = continue draft in the reader,
   `F` = mark as Feed). Tests: `TestSenderAddr`, `TestHandleSenderResultSetsOffTabAndEmails`,
   `TestHandleSenderResultNoMatches`.
+- **Merged threads (HEY-style)** — `:merge <title>` / `:merge-sender <title>` store
+  Message-IDs (never UIDs) in `<config dir>/merges.toml` (`internal/merge`); the list
+  collapses members — plus any automatic thread containing a member — into one `≡`
+  row placed by its newest member (`collapseMerges`, `internal/ui/thread.go`), rendered
+  as `<title> (n)` with `N`/`·` aggregated over members. Collapsing is gated in
+  `applyFilter` (`internal/ui/model.go`) to folder views and the `Search`/`Everything`
+  off-tabs — the `T` conversation, the `V` sender view and an opened merge must always
+  list individual messages. Enter/`l`/`T` on that row opens the members across folders
+  (`SearchByMessageIDs`: Message-ID OR In-Reply-To, capped at the `mergeSearchMaxIDs`
+  = 100 most recently stored ids) in a `Merged: <title>` off-tab; `T` on a normal row is
+  unchanged. `esc` or `h` closes any off-tab view (or clears `/` and `z`) — `h` mirrors
+  the reader's "back" and still pages up when nothing is open (test
+  `TestInboxHKeyClosesOffTabView`). Bulk keys and `m` expand
+  to the members via `targetEmails()`. Sender rules are applied on every folder load
+  and persisted; `:unmerge` of a single member of a rule-bearing merge records its
+  Message-ID in that merge's `Excluded` list (`merge.Store.Remove`/`IsExcluded`), so the
+  rule can never silently undo the removal — an explicit `:merge` clears the exclusion.
+  Absorbed replies are display-only until `:merge` is run on the row.
+  Tests: `TestCollapseMerges_*`, `TestRenderCollapsedMergeRow`, `TestSetEmails_CollapsesMembers`,
+  `TestTargetEmails_ExpandsCollapsedRow`, `TestMarkKey_TogglesAllMembers`,
+  `TestApplySenderRules_PersistsMatches`, `TestApplyFilter_NoCollapseInThreadView`,
+  `TestCmdLine_AcceptsUnicodeRune`, `TestHandleMergeResult_*`, `TestMergeCmd_*`,
+  `TestMergeSenderCmd_*`, `TestUnmergeCmd_*`, `TestTitleCompletions`, `TestMessageIDCriteria`,
+  `internal/merge` `TestAddSaveLoad_RoundTrip`, `TestRemove_ExcludesFromSenderRule`,
+  `TestRemove_NoRuleDoesNotExclude`.
 
 ## Compose → Pre-send → Send Pipeline
 
@@ -257,6 +287,44 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   must all follow the selected identity (accounts first, then `[[senders]]` aliases).
   Tests: `TestPresendSMTPAccount`, `TestReactionAutoSelectsCorrectFromAndSMTP`,
   `TestSentDraftsIMAPClient_*`.
+- **Address headers are always 7-bit** — `buildMessageWithBCC` runs From/To/Cc/Bcc through
+  `encodeAddressNames` (`internal/smtp/sender.go`): non-ASCII display names get RFC 2047
+  encoding via `net/mail`, addresses are untouched, and an all-ASCII field (including one
+  that already carries encoded-words) is returned byte-for-byte. SMTP RCPT TO is derived
+  from the caller's original strings, never from the built headers. Tests:
+  `TestEncodeAddressNames`, `TestBuildMessage_HeadersAre7BitWithNonASCIINames`.
+- **Inline-image Content-IDs are unique per message** — `buildMessageWithBCC` names parts
+  `img<n>.<random hex>@<sender domain>` (`newCID`). A fixed id (the old `img0@neomd`)
+  collides with the same id inside quoted earlier neomd mails and the new part hijacks
+  every quoted picture. Foreign `cid:` references in the HTML are never rewritten.
+  Tests: `TestBuildMessage_InlineCIDsAreUniquePerMessage`,
+  `TestBuildMessage_QuotedForeignCIDIsNotHijacked`, `TestHardening_RoundTrip_InlineImagePlusAttachment`.
+- **Reply/forward re-embed the quoted mail's inline images** — `Model.quotedBody()` →
+  `materializeInlineImages` (`internal/ui/inline_images.go`) writes every referenced
+  `cid:` part of the open email to `~/.cache/neomd/inline/<folder>-<uid>/` and rewrites
+  `(cid:…)` / `"cid:…"` to that path, so the sender's local-image pass embeds it under a
+  fresh Content-ID. Unreferenced parts are not written; unknown cids stay as-is; file
+  names are sanitised (no traversal). Tests: `TestMaterializeInlineImages_*`.
+- **The text/plain alternative never carries image paths or cid: markdown** —
+  `prepareEmailBodies` runs `render.ImagePlaceholdersForPlainText` (`![alt](dest)` →
+  `[Image: alt-or-filename]`) on the send path only; drafts keep the raw markdown so
+  they can be resumed. Tests: `TestImagePlaceholdersForPlainText`,
+  `TestBuildMessage_PlainPartHasNoImagePaths`.
+- **Draft round trip is byte-exact, attachments and image references included** —
+  `BuildDraftMessage` stores the raw markdown as text/plain (+ file parts); `parseBody`'s
+  `X-Neomd-Draft` branch returns it verbatim except for undoing the wire CRLF (a
+  multipart draft used to come back with `\r\n`, showing `^M` in the editor and drifting
+  on every re-save). Test: `TestHardening_DraftRoundTrip_InlineImageAndAttachment`
+  (image markdown at its spot, attachment name + bytes, two cycles).
+- **Image sizes survive HTML → markdown → HTML** — `htmlToMarkdown` (`sizedImageRule`,
+  `internal/imap/client.go`) writes an `<img>`'s explicit width/height (attribute or
+  inline `px` style) as the markdown title `![alt](src "WxH")`; `render.ToHTML`
+  (`applyImageSizeTitles`) turns that marker back into `width`/`height` attributes and
+  drops it, keeping real titles. Without this a signature logo constrained to 70px
+  came back at its natural size in every reply that quoted it. The marker is plain
+  CommonMark (editor, drafts, plain-text placeholder all cope). Tests:
+  `TestHTMLToMarkdown_PreservesImageSizeAsTitle`, `TestToHTML_ImageSizeTitleBecomesWidthHeight`,
+  `TestBuildMessage_SizedImageKeepsWidthHeightAfterEmbedding`.
 
 ## Screener (HEY-style)
 
@@ -329,6 +397,12 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **Timer-based mark-as-read** — opening an email marks `\Seen` only after
   `mark_as_read_after_secs` (default 7 s); quick peeks stay unread; reply/forward marks
   immediately.
+- **Browser view declares UTF-8** — `SanitizeForBrowser` strips every `<meta charset>` /
+  `http-equiv=Content-Type` tag from received HTML (the body is already transcoded to
+  UTF-8 by go-message) and injects `<meta charset="utf-8">` + the CSP first in `<head>`;
+  Outlook's `charset=Windows-1252` meta otherwise renders "Späti" as "SpÃ¤ti". Own
+  goldmark output (already UTF-8 + CSP) passes through unchanged. Test:
+  `TestSanitizeForBrowser_ForcesUTF8Charset`.
 
 ## IMAP & Runtime Resilience
 
@@ -344,6 +418,28 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **`imap_disabled = true` accounts produce nil clients by design** — every helper that
   resolves an IMAP client must skip nil entries (send, Sent-copy, `\Answered`, `:debug`,
   headless). Tests: `internal/ui/imap_client_helpers_test.go`.
+- **Every server-side MOVE/EXPUNGE is audited** — `MoveMessage` and `ExpungeAll`
+  (`internal/imap/client.go`) append `<RFC3339> MOVE <src> uid=<n> -> <dst> destUID=<m>` /
+  `MOVE-FAILED …` / `EXPUNGE <folder> uids=[…]` to `config.AuditLogPath()`
+  (`~/.cache/neomd/moves.log`), enabled in `cmd/neomd/main.go` right after `config.Load`
+  for TUI, daemon and CLI alike. A "mail vanished" report is traced there first.
+  Test: `TestAuditLog_AppendsLines`.
+- **Undo never guesses a UID** — `MoveMessage` returns `destUID = 0` when the server
+  sends no UIDPLUS COPYUID (it used to fall back to the source UID); `U` runs
+  `undoableMoves` and skips such entries with a status message instead of moving whatever
+  carries that UID in the destination folder. Test: `TestUndoableMovesSkipsUnknownDestUID`.
+- **The cursor follows the email across reloads** — `emailsLoadedMsg` remembers the
+  selected folder+UID and `reselectEmail` puts the cursor back on it after the list is
+  rebuilt; only when that email is gone does the index stay (cursor lands on the next
+  row, as after a delete). Keeping the bare index let the highlighted row change silently
+  whenever rows shifted, so the next `x`/`A`/`M` hit mail the user never chose.
+  Test: `TestReloadKeepsCursorOnSameEmail`.
+- **Envelope names/subjects decode every charset** — every go-imap connection is built by
+  `clientOptions()` with `WordDecoder: envelopeWordDecoder` (charset-aware via
+  go-message's `charset.Reader`). Without it go-imap's default decoder only knows UTF-8 /
+  ISO-8859-1 and Outlook's `=?Windows-1252?Q?...?=` names leak raw into the inbox, reader
+  and reply screens. Tests: `TestEnvelopeWordDecoder_DecodesWindows1252`,
+  `TestClientOptions_SetWordDecoder`.
 
 ## Notifications & Theming
 
@@ -370,7 +466,7 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 ## Keybindings & Docs
 
 - **`internal/ui/keys.go` is the single source of truth** — drives the `?` overlay and the
-  generated `docs/keybindings.md` (`make docs`, runs in `make build`). Never hand-edit the
+  generated `docs/content/docs/keybindings.md` (`make docs`, runs in `make build`). Never hand-edit the
   markdown tables.
 - **Avoid modifier keys for new bindings** — user's tmux prefix is `C-t`; `ctrl+a`/`ctrl+e`
   collide with textinput line-start/end. Prefer plain letters, especially on pre-send.

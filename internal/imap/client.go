@@ -5,11 +5,14 @@ package imap
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,10 +20,11 @@ import (
 	"time"
 
 	htmlmd "github.com/JohannesKaufmann/html-to-markdown"
+	"github.com/PuerkitoBio/goquery"
 	imap "github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message"
-	_ "github.com/emersion/go-message/charset" // register charset decoders for ISO-8859-1, Windows-1252, etc.
+	"github.com/emersion/go-message/charset" // charset decoders for ISO-8859-1, Windows-1252, etc. (bodies via go-message, envelopes via envelopeWordDecoder)
 	"github.com/emersion/go-message/mail"
 	"github.com/sspaeti/neomd/internal/mailtls"
 	"github.com/sspaeti/neomd/internal/oauth2"
@@ -103,6 +107,52 @@ func InferSecurity(port string, userSTARTTLS bool) (useTLS, useSTARTTLS bool) {
 	}
 }
 
+// auditPath is the file every server-side MOVE/EXPUNGE is appended to
+// (set via SetAuditLogPath, normally ~/.cache/neomd/moves.log). It exists so a
+// "mail vanished" report can be traced to the exact operation instead of
+// reconstructed from UIDs. Empty = disabled.
+var (
+	auditMu   sync.Mutex
+	auditPath string
+)
+
+// SetAuditLogPath enables (non-empty) or disables ("") the move audit log.
+func SetAuditLogPath(p string) {
+	auditMu.Lock()
+	defer auditMu.Unlock()
+	auditPath = p
+}
+
+// audit appends one timestamped line to the audit log; failures are ignored
+// (the log must never block or fail a mail operation).
+func audit(format string, args ...any) {
+	auditMu.Lock()
+	p := auditPath
+	auditMu.Unlock()
+	if p == "" {
+		return
+	}
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s %s\n", time.Now().Format(time.RFC3339), fmt.Sprintf(format, args...))
+}
+
+// envelopeWordDecoder decodes RFC 2047 encoded-words in ENVELOPE fields
+// (From/To/Cc display names, Subject). go-imap falls back to Go's default
+// mime.WordDecoder, which only knows UTF-8, ISO-8859-1 and US-ASCII — an
+// Outlook sender's "=?Windows-1252?Q?...?=" name would then leak raw into the
+// inbox, reader and reply screens. go-message's charset.Reader covers
+// Windows-125x, ISO-8859-x, KOI8, Shift_JIS, GBK, etc.
+var envelopeWordDecoder = &mime.WordDecoder{CharsetReader: charset.Reader}
+
+// clientOptions builds the go-imap options every connection uses.
+func clientOptions(tlsCfg *tls.Config) *imapclient.Options {
+	return &imapclient.Options{TLSConfig: tlsCfg, WordDecoder: envelopeWordDecoder}
+}
+
 func (c *Client) addr() string {
 	return c.cfg.Host + ":" + c.cfg.Port
 }
@@ -117,7 +167,7 @@ func (c *Client) connect(_ context.Context) error {
 	if err != nil {
 		return err
 	}
-	opts := &imapclient.Options{TLSConfig: tlsCfg}
+	opts := clientOptions(tlsCfg)
 	var (
 		conn *imapclient.Client
 	)
@@ -131,7 +181,7 @@ func (c *Client) connect(_ context.Context) error {
 	}
 	if err != nil && mailtls.ShouldRetryInsecureLocalhost(c.cfg.Host, c.cfg.TLSCertFile, err) {
 		c.logger.Warn("retrying IMAP TLS connection with localhost self-signed certificate fallback", "host", c.cfg.Host, "port", c.cfg.Port)
-		opts = &imapclient.Options{TLSConfig: mailtls.InsecureLocalhostConfig(c.cfg.Host)}
+		opts = clientOptions(mailtls.InsecureLocalhostConfig(c.cfg.Host))
 		switch {
 		case c.cfg.TLS:
 			conn, err = imapclient.DialTLS(addr, opts)
@@ -531,15 +581,18 @@ func hasAttachment(bs imap.BodyStructure) bool {
 // Supports prefixes: "from:x", "subject:x", "to:x". Plain text searches all three.
 // Searches ALL messages on the server, not just loaded ones.
 func (c *Client) SearchMessages(ctx context.Context, folder, query string) ([]Email, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if query == "" {
 		return nil, nil
 	}
+	return c.searchFolder(ctx, folder, buildSearchCriteria(query))
+}
 
-	criteria := buildSearchCriteria(query)
-
+// searchFolder runs UID SEARCH with criteria in folder and fetches the
+// newest 100 matching headers.
+func (c *Client) searchFolder(ctx context.Context, folder string, criteria *imap.SearchCriteria) ([]Email, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var uids []uint32
 	err := c.withConnRetry(ctx, func(conn *imapclient.Client) error {
 		uids = nil // reset on retry
@@ -592,6 +645,57 @@ func (c *Client) SearchAllFolders(ctx context.Context, folders []string, query s
 		all = append(all, emails...)
 	}
 	return all, nil
+}
+
+// SearchByMessageIDs returns, across folders, every message whose
+// Message-ID is one of ids OR whose In-Reply-To points at one of ids —
+// the members of a user-merged thread plus direct replies to them.
+// Folders that fail to SELECT are skipped, like SearchAllFolders.
+func (c *Client) SearchByMessageIDs(ctx context.Context, folders []string, ids []string) ([]Email, error) {
+	criteria := messageIDCriteria(ids)
+	if criteria == nil {
+		return nil, nil
+	}
+	var all []Email
+	for _, folder := range folders {
+		emails, err := c.searchFolder(ctx, folder, criteria)
+		if err != nil {
+			continue
+		}
+		all = append(all, emails...)
+	}
+	return all, nil
+}
+
+// messageIDCriteria builds OR(HEADER Message-ID id, HEADER In-Reply-To id, …)
+// for every id. Angle brackets are stripped: HEADER is a substring match and
+// servers differ on whether they index the brackets.
+func messageIDCriteria(ids []string) *imap.SearchCriteria {
+	var parts []imap.SearchCriteria
+	for _, id := range ids {
+		id = strings.Trim(strings.TrimSpace(id), "<>")
+		if id == "" {
+			continue
+		}
+		parts = append(parts,
+			imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: id}}},
+			imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "In-Reply-To", Value: id}}},
+		)
+	}
+	return orCriteria(parts)
+}
+
+// orCriteria folds cs into a right-nested OR tree (go-imap only has binary OR).
+func orCriteria(cs []imap.SearchCriteria) *imap.SearchCriteria {
+	switch len(cs) {
+	case 0:
+		return nil
+	case 1:
+		c := cs[0]
+		return &c
+	}
+	rest := orCriteria(cs[1:])
+	return &imap.SearchCriteria{Or: [][2]imap.SearchCriteria{{cs[0], *rest}}}
 }
 
 // FetchConversation searches across folders for emails related to the given
@@ -975,13 +1079,15 @@ func (c *Client) FetchRaw(ctx context.Context, folder string, uid uint32) ([]byt
 
 // MoveMessage moves uid from src to dst using the IMAP MOVE command (RFC 6851).
 // Returns the UID assigned at the destination (may differ from src UID on some
-// servers). Falls back to the original uid if the server does not report UIDPLUS
+// servers). Returns 0 as destUID if the server does not report UIDPLUS (undo then skips the move)
 // COPYUID data. Callers that need the dest UID for undo should capture it.
 func (c *Client) MoveMessage(ctx context.Context, src string, uid uint32, dst string) (destUID uint32, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	destUID = uid // default: assume same UID
+	// destUID stays 0 unless the server reports the new UID (UIDPLUS COPYUID).
+	// Guessing "same UID" would let undo move an unrelated message that happens
+	// to carry that UID in the destination folder.
 	err = c.withConn(ctx, func(conn *imapclient.Client) error {
 		if err := c.selectMailbox(src); err != nil {
 			return err
@@ -1018,8 +1124,12 @@ func (c *Client) MoveMessage(ctx context.Context, src string, uid uint32, dst st
 			}
 		}
 		c.selectedMailbox = ""
+		audit("MOVE %s uid=%d -> %s destUID=%d", src, uid, dst, destUID)
 		return nil
 	})
+	if err != nil {
+		audit("MOVE-FAILED %s uid=%d -> %s err=%v", src, uid, dst, err)
+	}
 	return destUID, err
 }
 
@@ -1084,6 +1194,7 @@ func (c *Client) ExpungeAll(ctx context.Context, folder string, uids []uint32) e
 			return fmt.Errorf("UID EXPUNGE: %w", err)
 		}
 		c.selectedMailbox = ""
+		audit("EXPUNGE %s uids=%v", folder, uids)
 		return nil
 	})
 }
@@ -1355,6 +1466,11 @@ func parseBody(raw []byte) (markdown, rawHTML, webURL string, attachments []Atta
 		// Normalization adds trailing spaces for hard line breaks, which would
 		// mutate the draft content on each save/reopen cycle.
 		if isDraft {
+			// Only the wire line endings are undone: BuildDraftMessage writes
+			// CRLF, and a reopened draft mixed into the LF prelude would show
+			// ^M on every body line in the editor and drift on each re-save.
+			plainText = strings.ReplaceAll(plainText, "\r\n", "\n")
+			plainText = strings.ReplaceAll(plainText, "\r", "\n")
 			return plainText, "", webURL, attachments, references, SpyPixelInfo{}
 		}
 		return normalizePlainText(plainText), "", webURL, attachments, references, SpyPixelInfo{}
@@ -1436,11 +1552,57 @@ func htmlToMarkdown(h string) (string, SpyPixelInfo) {
 	})
 
 	converter := htmlmd.NewConverter("", true, nil)
+	converter.AddRules(sizedImageRule)
 	result, err := converter.ConvertString(h)
 	if err != nil {
 		return stripHTMLFallback(h), spy
 	}
 	return cleanMarkdown(strings.TrimSpace(result)), spy
+}
+
+// sizedImageRule mirrors html-to-markdown's default <img> rule but carries an
+// explicit width/height (attribute or inline style, px) as the image title in
+// the form "WxH" — e.g. ![Logo](https://x/logo.png "70x70"). Markdown has no
+// image size, so without this a signature logo constrained to 70px comes back
+// at its natural size in every reply that quotes it. render.ToHTML turns the
+// marker back into width/height attributes; the marker is plain CommonMark, so
+// drafts and the editor round-trip it unchanged.
+var sizedImageRule = htmlmd.Rule{
+	Filter: []string{"img"},
+	Replacement: func(content string, selec *goquery.Selection, opt *htmlmd.Options) *string {
+		src := strings.TrimSpace(selec.AttrOr("src", ""))
+		if src == "" {
+			return htmlmd.String("")
+		}
+		src = opt.GetAbsoluteURL(selec, src, "")
+		alt := strings.ReplaceAll(selec.AttrOr("alt", ""), "\n", " ")
+		w := imageDimension(selec, "width")
+		h := imageDimension(selec, "height")
+		text := "![" + alt + "](" + src
+		if w != "" || h != "" {
+			text += ` "` + w + "x" + h + `"`
+		}
+		text += ")"
+		return &text
+	},
+}
+
+var stylePxRe = map[string]*regexp.Regexp{
+	"width":  regexp.MustCompile(`(?i)(?:^|;)\s*width\s*:\s*(\d+)px`),
+	"height": regexp.MustCompile(`(?i)(?:^|;)\s*height\s*:\s*(\d+)px`),
+}
+var digitsRe = regexp.MustCompile(`^\d+$`)
+
+// imageDimension returns the pixel value of an <img>'s width/height from the
+// attribute ("70", "70px") or the inline style ("width:70px"), else "".
+func imageDimension(selec *goquery.Selection, dim string) string {
+	if v := strings.TrimSuffix(strings.TrimSpace(selec.AttrOr(dim, "")), "px"); digitsRe.MatchString(v) {
+		return v
+	}
+	if m := stylePxRe[dim].FindStringSubmatch(selec.AttrOr("style", "")); m != nil {
+		return m[1]
+	}
+	return ""
 }
 
 // SpyPixelInfo holds the results of tracking pixel detection.

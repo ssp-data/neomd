@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sspaeti/neomd/internal/config"
 	"github.com/sspaeti/neomd/internal/imap"
+	"github.com/sspaeti/neomd/internal/merge"
 )
 
 func TestMaskEmail(t *testing.T) {
@@ -1165,5 +1168,267 @@ func TestEditorDoneReplyTrackingSurvivesReEdit(t *testing.T) {
 	}
 	if got.pendingSend.inReplyTo != "<orig@example.com>" {
 		t.Fatalf("re-edit lost In-Reply-To: %q", got.pendingSend.inReplyTo)
+	}
+}
+
+// TestReplyFromSentFolderTargetsOriginalRecipients pins the Sent-folder reply
+// behaviour: replying to a mail *I* sent must go back to the people I wrote
+// to (To → To, Cc → Cc on reply-all), never to myself.
+func TestReplyFromSentFolderTargetsOriginalRecipients(t *testing.T) {
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{User: "simon@ssp.sh", From: "Simon Späti <simon@ssp.sh>"},
+		},
+		Folders: config.FoldersConfig{Sent: "Sent"},
+	}
+	sent := &imap.Email{
+		Folder:  "Sent",
+		From:    "Simon Späti <simon@ssp.sh>",
+		ReplyTo: "Simon Späti <simon@ssp.sh>",
+		To:      "Roman Pronskiy <roman@modernrelay.com>",
+		CC:      "Andrew Altshuler <andrew@modernrelay.com>, Ragnor Comerford <ragnor@modernrelay.com>",
+	}
+	received := &imap.Email{
+		Folder: "INBOX",
+		From:   "Roman Pronskiy <roman@modernrelay.com>",
+		To:     "Simon Späti <simon@ssp.sh>",
+		CC:     "Andrew Altshuler <andrew@modernrelay.com>",
+	}
+
+	tests := []struct {
+		name     string
+		folder   string
+		email    *imap.Email
+		replyAll bool
+		wantTo   string
+		wantCC   string
+	}{
+		{"r in Sent → original To only", "Sent", sent, false,
+			"Roman Pronskiy <roman@modernrelay.com>", ""},
+		{"ctrl+r in Sent → original To + original Cc", "Sent", sent, true,
+			"Roman Pronskiy <roman@modernrelay.com>",
+			"Andrew Altshuler <andrew@modernrelay.com>, Ragnor Comerford <ragnor@modernrelay.com>"},
+		{"r in Inbox unchanged → sender", "Inbox", received, false,
+			"Roman Pronskiy <roman@modernrelay.com>", ""},
+		{"ctrl+r in Inbox unchanged → sender + others minus me", "Inbox", received, true,
+			"Roman Pronskiy <roman@modernrelay.com>", "Andrew Altshuler <andrew@modernrelay.com>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				cfg:           cfg,
+				accounts:      cfg.ActiveAccounts(),
+				folders:       []string{tt.folder},
+				activeFolderI: 0,
+			}
+			gotTo, gotCC := m.replyRecipients(tt.email, tt.replyAll)
+			if gotTo != tt.wantTo {
+				t.Errorf("To = %q, want %q", gotTo, tt.wantTo)
+			}
+			if gotCC != tt.wantCC {
+				t.Errorf("Cc = %q, want %q", gotCC, tt.wantCC)
+			}
+			if strings.Contains(strings.ToLower(gotTo+gotCC), "simon@ssp.sh") {
+				t.Errorf("own address leaked into reply: To=%q Cc=%q", gotTo, gotCC)
+			}
+		})
+	}
+}
+
+func mergedInboxModel(t *testing.T) Model {
+	t.Helper()
+	s, err := merge.Load(filepath.Join(t.TempDir(), "merges.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Add("Bounces", "<b1>", "<b2>")
+	cfg := &config.Config{}
+	m := Model{cfg: cfg, merges: s, markedUIDs: map[uint32]bool{}, spyPixelKeys: map[string]bool{}, sortField: "date", sortReverse: true}
+	m.inbox = newInboxList(100, 10, "", "")
+	m.emails = []imap.Email{
+		{UID: 1, MessageID: "<b1>", Subject: "Undelivered", From: "mailer-daemon@x", Date: time.Now().Add(-2 * time.Hour), Seen: true},
+		{UID: 2, MessageID: "<b2>", Subject: "Undelivered", From: "mailer-daemon@x", Date: time.Now().Add(-1 * time.Hour), Seen: true},
+		{UID: 3, MessageID: "<k>", Subject: "Keep", From: "k@x", Date: time.Now(), Seen: true},
+	}
+	m.applyFilter()
+	return m
+}
+
+func TestTargetEmails_ExpandsCollapsedRow(t *testing.T) {
+	m := mergedInboxModel(t)
+	m.inbox.Select(1) // second row = Bounces (Keep is newest)
+	it, ok := selectedItem(m.inbox)
+	if !ok || it.merge == nil {
+		t.Fatalf("row 1 should be the collapsed merge, got %+v", it)
+	}
+	targets := m.targetEmails()
+	if len(targets) != 2 {
+		t.Fatalf("targetEmails on collapsed row = %d, want 2 members", len(targets))
+	}
+	m.inbox.Select(0)
+	if got := m.targetEmails(); len(got) != 1 || got[0].UID != 3 {
+		t.Errorf("plain row should still resolve to itself, got %+v", got)
+	}
+}
+
+func TestMarkKey_TogglesAllMembers(t *testing.T) {
+	m := mergedInboxModel(t)
+	m.inbox.Select(1)
+	res, _ := m.updateInbox(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	mm := res.(Model)
+	if !mm.markedUIDs[1] || !mm.markedUIDs[2] || mm.markedUIDs[3] {
+		t.Errorf("m on collapsed row should mark uids 1,2 only; got %v", mm.markedUIDs)
+	}
+	mm.inbox.Select(1)
+	res, _ = mm.updateInbox(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	mm = res.(Model)
+	if len(mm.markedUIDs) != 0 {
+		t.Errorf("second m should unmark all members, got %v", mm.markedUIDs)
+	}
+}
+
+func TestApplySenderRules_PersistsMatches(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "merges.toml")
+	s, _ := merge.Load(path)
+	s.SetSender("Bounces", "mailer-daemon@")
+	m := Model{merges: s}
+	emails := []imap.Email{
+		{UID: 1, MessageID: "<new1>", From: "Mailer Daemon <MAILER-DAEMON@mx.x>"},
+		{UID: 2, MessageID: "", From: "mailer-daemon@mx.x"}, // no Message-ID → skipped
+		{UID: 3, MessageID: "<other>", From: "alice@x"},
+	}
+	if n := m.applySenderRules(emails); n != 1 {
+		t.Errorf("applySenderRules = %d, want 1", n)
+	}
+	if title, ok := s.TitleOf("<new1>"); !ok || title != "Bounces" {
+		t.Errorf("<new1> should now belong to Bounces, got %q %v", title, ok)
+	}
+	if n := m.applySenderRules(emails); n != 0 {
+		t.Errorf("second pass should add nothing, got %d", n)
+	}
+	// :unmerge inside the merge view removes the email; the rule must not
+	// silently re-add it on the next folder load.
+	if !s.Remove("<new1>") {
+		t.Fatal("Remove(<new1>) = false")
+	}
+	if n := m.applySenderRules(emails); n != 0 {
+		t.Errorf("excluded id was re-added by the sender rule (%d added)", n)
+	}
+	if _, ok := s.TitleOf("<new1>"); ok {
+		t.Error("<new1> should stay out of Bounces after :unmerge")
+	}
+}
+
+func TestApplyFilter_NoCollapseInThreadView(t *testing.T) {
+	m := mergedInboxModel(t)
+	m.offTabFolder = "Thread"
+	m.applyFilter()
+	if n := len(m.inbox.Items()); n != 3 {
+		t.Errorf("T conversation view must show every message, got %d items, want 3", n)
+	}
+	m.offTabFolder = ""
+	m.applyFilter()
+	if n := len(m.inbox.Items()); n != 2 {
+		t.Errorf("folder view should collapse the merge, got %d items, want 2", n)
+	}
+}
+
+func TestCmdLine_AcceptsUnicodeRune(t *testing.T) {
+	m := Model{cfg: &config.Config{}, cmdMode: true}
+	res, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ü")})
+	mm := res.(Model)
+	if mm.cmdText != "ü" {
+		t.Errorf("cmdText = %q, want %q", mm.cmdText, "ü")
+	}
+}
+
+func TestHandleMergeResult_OpensOffTab(t *testing.T) {
+	m := mergedInboxModel(t)
+	res, _ := m.handleMergeResult(mergeResultMsg{title: "Bounces", emails: m.emails[:2]})
+	mm := res.(*Model)
+	if mm.offTabFolder != "Merged: Bounces" || !mm.inMergeView() {
+		t.Errorf("offTabFolder = %q", mm.offTabFolder)
+	}
+	if n := len(mm.inbox.Items()); n != 2 {
+		t.Errorf("merge view should list members uncollapsed, got %d items", n)
+	}
+	if !mm.shouldPrefixFolderInSubject() {
+		t.Error("merge view should prefix subjects with the folder")
+	}
+}
+
+func TestHandleMergeResult_ErrorFallsBackToStatus(t *testing.T) {
+	m := mergedInboxModel(t)
+	res, _ := m.handleMergeResult(mergeResultMsg{title: "Bounces", err: errors.New("boom")})
+	mm := res.(*Model)
+	if !mm.isError || mm.offTabFolder != "" {
+		t.Errorf("error should set status and stay in folder; isError=%v offTab=%q", mm.isError, mm.offTabFolder)
+	}
+}
+
+func TestInboxHKeyClosesOffTabView(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Folders.Inbox = "INBOX"
+	m := Model{cfg: cfg, folders: []string{"Inbox"}, inbox: newInboxList(80, 20, "", "")}
+	m.offTabFolder = "Merged: Bounces"
+
+	res, cmd := m.updateInbox(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	mm := res.(Model)
+	if mm.offTabFolder != "" {
+		t.Errorf("h should close the off-tab view, offTabFolder = %q", mm.offTabFolder)
+	}
+	if cmd == nil {
+		t.Error("h should schedule the folder reload like esc does")
+	}
+
+	// With nothing open, h falls through to the list (no view change).
+	plain := Model{cfg: cfg, folders: []string{"Inbox"}, inbox: newInboxList(80, 20, "", "")}
+	res, _ = plain.updateInbox(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if res.(Model).offTabFolder != "" {
+		t.Error("h on a plain folder view must not set an off-tab")
+	}
+}
+
+// After any folder reload (the one that follows a delete/move, or a
+// background-screen pass) the list used to keep the cursor *index*, so when
+// rows shifted the highlighted row silently became a different email — the
+// next x/A/M would then act on mail the user never chose. The cursor must
+// follow the same email (folder+UID) across reloads.
+func TestReloadKeepsCursorOnSameEmail(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Folders.Inbox = "INBOX"
+	mk := func(uid uint32, h int) imap.Email {
+		return imap.Email{UID: uid, Folder: "INBOX", Subject: fmt.Sprintf("m%d", uid), From: "a@x", Date: time.Now().Add(-time.Duration(h) * time.Hour), Seen: true}
+	}
+	m := Model{cfg: cfg, folders: []string{"Inbox"}, inbox: newInboxList(100, 20, "", ""), markedUIDs: map[uint32]bool{}, spyPixelKeys: map[string]bool{}, sortField: "date", sortReverse: true}
+	m.emails = []imap.Email{mk(3, 1), mk(2, 2), mk(1, 3)}
+	m.applyFilter()
+	m.inbox.Select(1) // uid 2
+	if e := selectedEmail(m.inbox); e == nil || e.UID != 2 {
+		t.Fatalf("setup: cursor not on uid 2: %+v", e)
+	}
+
+	// A newer mail arrived: rows shift down by one.
+	res, _ := m.Update(emailsLoadedMsg{emails: []imap.Email{mk(4, 0), mk(3, 1), mk(2, 2), mk(1, 3)}, folder: "OTHER"})
+	mm := res.(Model)
+	if e := selectedEmail(mm.inbox); e == nil || e.UID != 2 {
+		t.Errorf("after reload with a new mail on top, cursor should still be on uid 2, got %+v (index %d)", e, mm.inbox.Index())
+	}
+
+	// The cursor email was deleted: fall back to the same index (the next row).
+	res, _ = mm.Update(emailsLoadedMsg{emails: []imap.Email{mk(4, 0), mk(3, 1), mk(1, 3)}, folder: "OTHER"})
+	mm = res.(Model)
+	if mm.inbox.Index() != 2 {
+		t.Errorf("after the cursor email vanished, index should stay 2, got %d", mm.inbox.Index())
+	}
+}
+
+// Undo must never guess: a move whose destination UID is unknown (server sent
+// no COPYUID) is skipped rather than moving whatever carries that UID in the
+// destination folder.
+func TestUndoableMovesSkipsUnknownDestUID(t *testing.T) {
+	keep, skipped := undoableMoves([]undoMove{{uid: 0, fromFolder: "INBOX", toFolder: "Trash"}, {uid: 77, fromFolder: "INBOX", toFolder: "Trash"}})
+	if len(keep) != 1 || keep[0].uid != 77 || skipped != 1 {
+		t.Errorf("undoableMoves = %+v, skipped %d; want only uid 77 kept, 1 skipped", keep, skipped)
 	}
 }

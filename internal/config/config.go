@@ -382,6 +382,9 @@ type Config struct {
 	// headless server, and the daemon re-reads it every pass (hot reload,
 	// no restart needed). Set during Load(), not a TOML field.
 	OOOFile string `toml:"-"`
+	// MergesFile is <config dir>/merges.toml — user-defined merged threads
+	// (see internal/merge). Set during Load(), not a TOML field.
+	MergesFile string `toml:"-"`
 }
 
 // OOOConfig holds out-of-office auto-reply settings ([ooo] in config.toml).
@@ -465,6 +468,31 @@ func HistoryPath() string {
 		return filepath.Join(p, "cmd_history")
 	}
 	return filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_cmd_history", os.Getuid()))
+}
+
+// AuditLogPath returns ~/.cache/neomd/moves.log — every server-side MOVE and
+// EXPUNGE neomd performs (TUI, daemon, CLI) is appended there.
+func AuditLogPath() string {
+	if dir, err := os.UserCacheDir(); err == nil {
+		p := filepath.Join(dir, cacheDirName)
+		_ = os.MkdirAll(p, 0o700)
+		return filepath.Join(p, "moves.log")
+	}
+	return filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_moves.log", os.Getuid()))
+}
+
+// InlineImageDir returns ~/.cache/neomd/inline/, creating it if needed. Reply
+// and forward write the quoted mail's inline (cid:) images here so the send
+// pipeline can re-embed them like any local image.
+func InlineImageDir() string {
+	if dir, err := os.UserCacheDir(); err == nil {
+		p := filepath.Join(dir, cacheDirName, "inline")
+		_ = os.MkdirAll(p, 0o700)
+		return p
+	}
+	p := filepath.Join(os.TempDir(), fmt.Sprintf("neomd_%d_inline", os.Getuid()))
+	_ = os.MkdirAll(p, 0o700)
+	return p
 }
 
 // DraftsBackupDir returns ~/.cache/neomd/drafts/, creating it if needed.
@@ -609,6 +637,7 @@ func Load(path string) (*Config, error) {
 	// ooo.toml next to config.toml replaces the whole [ooo] block when it
 	// exists (single syncable file; the daemon also re-reads it every pass).
 	cfg.OOOFile = filepath.Join(filepath.Dir(path), "ooo.toml")
+	cfg.MergesFile = filepath.Join(filepath.Dir(path), "merges.toml")
 	if override, err := LoadOOOOverride(cfg.OOOFile); err != nil {
 		return nil, err
 	} else if override != nil {
