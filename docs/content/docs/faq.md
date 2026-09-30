@@ -65,14 +65,14 @@ The html-signature is the placeholder for adding the HTML signature, but yes, it
 
 ## The Drafts and Spam folders seem to show wrong emails
 
-Drafts and Spam are **off-tab folders** (not in the regular tab rotation) and behave slightly differently:
+Drafts is in the regular tab rotation by default. Spam is always an **off-tab folder**. If a custom `folders.tab_order` omits Drafts, `gd` opens it off-tab too.
 
 - **Access**: `gd` for Drafts, `gS` for Spam (or `:go-spam`)
-- **Indication**: When viewing them, the folder name appears highlighted in the tab bar with a `│` separator
-- **Reload**: Pressing `R` reloads the Drafts/Spam folder 
-- **Leave**: Press `tab` or navigate to another folder (`gi`, `ga`, etc.) to return to regular tabs
+- **Indication**: A visible Drafts tab behaves like the other regular tabs. Off-tab Drafts and Spam appear highlighted with a `│` separator.
+- **Reload**: Pressing `R` reloads the current Drafts/Spam folder
+- **Leave an off-tab folder**: Press `tab` or navigate to another folder (`gi`, `ga`, etc.)
 
-**Old bug (fixed 2026-04-10)**: In older versions, pressing `R` while viewing Drafts could show Inbox content. If you experience this, rebuild neomd to get the fix.
+**Old bug (fixed 2026-08-28)**: In older versions, the visible Drafts tab could show Inbox content, while `gd` opened a second Drafts view with the correct content. If you experience this, rebuild neomd to get the fix.
 
 ## Why do Bengali / Arabic / Thai / emoji subjects show as `·` in the inbox?
 
