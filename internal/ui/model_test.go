@@ -1300,6 +1300,9 @@ func TestApplySenderRules_PersistsMatches(t *testing.T) {
 	if n := m.applySenderRules(emails); n != 1 {
 		t.Errorf("applySenderRules = %d, want 1", n)
 	}
+	// applySenderRules persists via safeGo(store.Save) — wait for the
+	// write before TempDir cleanup runs.
+	waitForFile(t, path)
 	if title, ok := s.TitleOf("<new1>"); !ok || title != "Bounces" {
 		t.Errorf("<new1> should now belong to Bounces, got %q %v", title, ok)
 	}

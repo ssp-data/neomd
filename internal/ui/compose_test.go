@@ -86,7 +86,8 @@ func TestComposeSuggestions_MultiRecipientInsert(t *testing.T) {
 // Sending must persist user-typed "Name <addr>" recipients into the contacts
 // store so autocomplete knows them next time (no contacts file needed).
 func TestHarvestTypedRecipients(t *testing.T) {
-	s := contacts.Load(filepath.Join(t.TempDir(), "contacts"))
+	cachePath := filepath.Join(t.TempDir(), "contacts")
+	s := contacts.Load(cachePath)
 	m := Model{contacts: s}
 	m.harvestTypedRecipients(
 		"Max Muster <max@muster.example>, bare@x.io",
@@ -109,4 +110,8 @@ func TestHarvestTypedRecipients(t *testing.T) {
 	// Nil store: must be a no-op, not a panic.
 	nilModel := Model{}
 	nilModel.harvestTypedRecipients("A <a@b.io>")
+
+	// harvestTypedRecipients persists via safeGo(SaveIfDirty) — wait for
+	// the write before TempDir cleanup runs.
+	waitForFile(t, cachePath)
 }
