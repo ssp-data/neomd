@@ -1,5 +1,18 @@
 # Changelog
 
+# 2026-11-24
+
+- **The Drafts tab showed the Inbox** — "Drafts" is in `defaultTabOrder`, so it
+  renders as a regular tab, but `activeFolder()`'s label→mailbox switch had no
+  `"Drafts"` case: every unmatched label fell through to `default` and fetched
+  the Inbox mailbox, so the tab displayed Inbox mail no matter what the webmail
+  showed in the real Drafts folder. Only the tab was affected — `gd` (off-tab
+  Drafts view) maps through a separate switch and was always correct. Added the
+  missing case (`internal/ui/model.go`, `activeFolder`). Side effect: `S` /
+  `:screen` now correctly refuse on the Drafts tab (`onPlainInboxTab`), where
+  they previously misidentified it as the Inbox. Test:
+  `TestActiveFolderDraftsTab`.
+
 # 2026-11-03
 
 - **Fix: replying to mail received at an alias / catch-all address Cc'd myself and sent from the wrong account** — ctrl+r on a mail To `inquiries@…` (an address that reaches me but is not a configured From) kept `inquiries@…` in Cc and used whatever From was selected last. Two fixes. (1) New `alternative_emails = ["inquiries@example.com", "*@example.com"]` — root-level (reply from `default_from`) or inside an `[[accounts]]` block (reply from that account): addresses that count as *me* without being a send-as identity (distinct from `[[senders]]` aliases, which I send *from*). Reply-all strips them (`isOwnAddr`), and they mark my own mails as mine in threads. (2) When no account, sender or alternative email received the mail (mailing lists, unknown forwarders), From now falls back to `default_from` (`replyFromIndex`) instead of the previous compose's From. Also: To outranks Cc when picking From (addressed at Work, copied at Personal → reply from Work), and mail between my own addresses that is not in Sent replies like received mail (back to the sending address, from the receiving one) instead of being treated as "my own mail". Every reply shape — received, own-in-Sent, own-in-Inbox-thread, archived own, account→account, me-to-me, alias, mailing list, Reply-To, newsletter-via, sender alias — is pinned in one table so a new case is added there, not fixed in isolation. Where: `internal/config/config.go` (`AlternativeEmails`, `MatchesAlternative`), `internal/ui/model.go` (`isOwnAddr`, `isOwnMessage`, `matchFromIndex`, `replyFromIndex`), docs `configuration/_index.md`. Tests: `TestReplyMatrix`, `TestReplyToAlternativeEmailUsesAccountAndExcludesIt`, `TestLoad_AlternativeEmails`.
