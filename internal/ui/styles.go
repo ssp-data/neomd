@@ -111,6 +111,11 @@ var (
 	styleOffTab             lipgloss.Style
 	styleSuggestion         lipgloss.Style
 	styleSuggestionSelected lipgloss.Style
+	// styleTagChip renders ▐kw▐ tag chips: reverse video of the active theme
+	// (Background = theme Text, Foreground = theme Bg). [tags] fg/bg in
+	// config.toml override it after ApplyTheme in New — the built-in
+	// palettes are never touched.
+	styleTagChip lipgloss.Style
 )
 
 func init() {
@@ -295,6 +300,10 @@ func rebuildStyles() {
 	styleSuggestionSelected = lipgloss.NewStyle().
 		Foreground(colorPrimary).
 		Bold(true)
+
+	styleTagChip = lipgloss.NewStyle().
+		Foreground(colorBg).
+		Background(colorText)
 }
 
 // tabZone records the X range for a clickable folder tab.

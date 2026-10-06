@@ -686,3 +686,137 @@ func TestUIConfig_InstantSwitchDefaultsTrue(t *testing.T) {
 		t.Error("explicit false must disable")
 	}
 }
+
+func TestLoad_SetsTagsDirNextToConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "neomd", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	minimal := "[[accounts]]\nname = \"t\"\nimap_host = \"imap.example.com:993\"\nsmtp_host = \"smtp.example.com:465\"\nuser = \"u@example.com\"\npassword = \"pw\"\nfrom = \"u@example.com\"\n"
+	if err := os.WriteFile(path, []byte(minimal), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := filepath.Join(dir, "neomd", "tags")
+	if cfg.TagsDir != want {
+		t.Errorf("TagsDir = %q, want %q", cfg.TagsDir, want)
+	}
+	// A config without [tags] keeps tagging disabled (opt-in) with the default key.
+	if cfg.Tags.Enabled {
+		t.Error("absent [tags] section must leave tagging disabled (opt-in)")
+	}
+	if cfg.Tags.TagsKey() != "k" {
+		t.Errorf("TagsKey = %q, want k", cfg.Tags.TagsKey())
+	}
+}
+
+func TestTagsConfig_EnabledOptIn(t *testing.T) {
+	if (TagsConfig{}).Enabled {
+		t.Error("zero-value TagsConfig must be disabled — tagging is opt-in")
+	}
+	tc := TagsConfig{Enabled: true, Key: "t"}
+	if !tc.Enabled {
+		t.Error("explicit enabled=true must enable")
+	}
+	if tc.TagsKey() != "t" {
+		t.Errorf("TagsKey = %q, want t", tc.TagsKey())
+	}
+	if (TagsConfig{}).TagsKey() != "k" {
+		t.Error("zero-value TagsConfig must default to key k")
+	}
+}
+
+func TestLoad_ParsesPerTagRules(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	conf := `[[accounts]]
+name = "t"
+imap_host = "imap.example.com:993"
+smtp_host = "smtp.example.com:465"
+user = "u@example.com"
+password = "pw"
+from = "u@example.com"
+
+[tags]
+enabled = true
+key = "t"
+
+[tags.important]
+enabled = true
+display = " Important"
+fg = "#FFFF00"
+bg = "#8B0000"
+
+[tags.secret]
+enabled = false
+
+[tags.plain]
+display = "Just Text"
+`
+	if err := os.WriteFile(path, []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Tags.Enabled || cfg.Tags.TagsKey() != "t" {
+		t.Errorf("[tags] scalars misparsed: %+v", cfg.Tags)
+	}
+	r, ok := cfg.Tags.Rule("important")
+	if !ok {
+		t.Fatal("[tags.important] not extracted")
+	}
+	if !r.Shown() || r.Display != " Important" || r.FG != "#FFFF00" || r.BG != "#8B0000" {
+		t.Errorf("important rule = %+v", r)
+	}
+	// Case-insensitive lookup (IMAP keywords compare case-insensitively).
+	if r, ok := cfg.Tags.Rule("IMPORTANT"); !ok || !r.Shown() {
+		t.Errorf("Rule(IMPORTANT) = %+v,%v", r, ok)
+	}
+	r, ok = cfg.Tags.Rule("secret")
+	if !ok || r.Shown() {
+		t.Errorf("secret rule = %+v,%v — enabled=false must hide", r, ok)
+	}
+	// A rule without the enabled key defaults to shown.
+	if r, ok = cfg.Tags.Rule("plain"); !ok || !r.Shown() || r.Display != "Just Text" {
+		t.Errorf("plain rule = %+v,%v", r, ok)
+	}
+}
+
+func TestTagsConfig_NerdPill(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	conf := `[[accounts]]
+name = "t"
+imap_host = "imap.example.com:993"
+smtp_host = "smtp.example.com:465"
+user = "u@example.com"
+password = "pw"
+from = "u@example.com"
+
+[tags]
+enabled = true
+nerd_pill = true
+`
+	if err := os.WriteFile(path, []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Tags.NerdPill {
+		t.Error("nerd_pill = true must parse")
+	}
+	if (TagsConfig{}).NerdPill {
+		t.Error("nerd_pill must default to false (padded-text fallback)")
+	}
+}

@@ -482,6 +482,84 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   and never mutates the store. Tests: `TestMergeFileGoogleCSVRealExport`,
   `TestContactsPickerFilterAndSelect`.
 
+## IMAP Keyword Tags
+
+- **Tags are IMAP keywords; the registry is only the backup** — the message's own
+  keywords (parsed into `Email.Keywords` — SORTED, server flag order is map-random —
+  from the FLAGS every `FetchHeaders` already returns, zero extra round trips) are
+  the source of truth; `<config dir>/tags/<address>/` (`internal/tags` — one folder
+  per account, keyed by its bare lowercased From address, which is a valid folder
+  name on every supported platform; one line-based Message-ID list per keyword
+  inside, screener-list style) is the write-through fallback for providers that may
+  purge unknown keywords, scoped per account so a restore only ever touches the
+  selected account. Keywords are written lowercase and
+  compared with `EqualFold` everywhere (servers may normalize the case); the store
+  is account-scoped (`All(key)` etc.), the key derived via `activeAccountKey()`
+  (From → User → Name fallback) and captured per-op (`tagOp.registryKey`) so a done
+  message landing after an account switch still writes the right registry; chips
+  follow the active account (`setTagAccount` in New and on ctrl+a).
+  **`[tags] enabled = false` is the global kill-switch** (the feature is opt-in):
+  disabled, `newTagsModel` returns before wiring the chip pipeline (a nil
+  `tagKeywordSource` is the no-chips state — same as an unreadable registry) and
+  `openTags` refuses the picker; per-tag `[tags.<keyword>] enabled = false` is the
+  fine-grained hide for single keywords while the feature is ON and can never
+  override the global off.
+  Tests: `TestMem_AddRemoveKeyword_RoundTrip`, `TestMem_KeywordCaseInsensitive`,
+  `TestMem_MovePreservesKeyword`, `TestTagsStore_RoundTripPerAccountFiles`,
+  `TestTagsStore_AccountsAreIsolated`, `TestTagsStore_EmailAddressKeyVerbatim`,
+  `TestTagChips_DisabledConfigIsGlobalKillSwitch`.
+- **Reserved keywords are blocked and never displayed** — input starting with `$` or
+  `\` is rejected in the picker with "not allowed to use this keyword, it is reserved
+  for other systems" (`tags.NormalizeKeyword`), and chips render only for
+  registry-known keywords (`tagChipKeywords`), so foreign flags like `$HasAttachment`
+  or Thunderbird's `$label1-5` never chip. Tests: `TestTagsPicker_ReservedKeywordRejected`,
+  `TestTagChips_OnlyRegistryKeywordsRender`.
+- **The picker previews display tags** — a tag with a `display` value renders
+  a live chip preview right of its keyword in the `<space>k` dialog, through
+  the identical pill/fallback path and config colours as the inbox row.
+  Test: `TestTagsPicker_ShowsDisplayPreviewRightOfKeyword`.
+- **A tag toggle is optimistic, never a reload** — `<space>k` (configurable via
+  `[tags] key`) flips `Email.Keywords` at once in `m.emails`, the folder cache snapshot
+  and the picker's captured targets (`applyTag`/`setKeywordLocal`), then runs the
+  STOREs via `withConn` (mutating ⇒ never retried); `tagsModel.pending` overlays every fetch
+  result until `tagsDoneMsg` so a refresh cannot snap chips back, and an error reverts
+  exactly the ops that never reached the server with the error in the status line —
+  the exact `n`/`pendingSeen` contract. `imap_disabled` accounts skip the server write
+  and say "tag saved locally". Tests: `TestTagsPicker_ToggleOptimisticFlip`,
+  `TestTagsPicker_RefreshLandingMidFlightKeepsChip`, `TestTagsCmd_ErrorReverts`,
+  `TestTagsPicker_LocalOnlyAccount`.
+- **Chips never overflow a row** — chips render BEFORE the subject as the
+  display text with one space of coloured padding on each side
+  (` work `), multiple chips separated by one UNcoloured space plus one more
+  before the subject so they read as separate labels (` work   invoice ` — the middle space is the uncoloured
+  one; `styleTagChip`/`tagRuleSource`, theme
+  reverse video by default; `TestTagChips_SeparatedByUncoloredSpace`).
+  Per-tag `[tags.<keyword>]` config sections override `display` (nerd-font
+  symbols welcome — display-only, the stored keyword never changes), `fg`/`bg`
+  (hex or ANSI number; anything else falls back to the `[tags]` defaults with a
+  startup-notice warning — lipgloss would silently drop the colour) and
+  `enabled = false` to hide that keyword's chips (display-only; the tag stays on
+  the server and in the picker). Chip width is subtracted from the subject
+  budget, degrading to first chip + `…` subject, then to no chips; non-ASCII
+  runes in a display name are budgeted as 2 cells (font-dependent icon widths
+  can only leave slack, never overflow); the 8-cell subject floor applies to
+  chip-less rows only. Chip text bypasses `displaySafe` deliberately. Collapsed
+  merge rows show no chips. `[tags] nerd_pill = true` switches chips to
+  nerd-font pills (half-disc end caps U+E0B6/U+E0B4 in the chip's background
+  colour; `tagPillMode`, default off — needs a nerd font). Padding rule: the
+  pill adds NONE — spaces inside a `display` are honored verbatim (they ARE
+  the padding, typed on purpose; invisible stowaways like U+FE0F are always
+  stripped), while the fallback always normalizes to exactly one standard pad
+  per side (`TestTagChips_PillPaddingRule`).
+  Tests: `TestTagChips_WidthAccounting`,
+  `TestTagChips_OnlyRegistryKeywordsRender`, `TestTagRules_DisplayTextAndHidden`,
+  `TestTagChips_NerdPillMode`, `TestResolveTagColor`, `TestRowFitsTerminalWidth`.
+- **`<space>k` capability probe leaves no trace** — `:keyword-test` / `:kt`
+  (`KeywordProbe` in `internal/imap/keywords.go`, dialog in `internal/ui/keywordtest.go`)
+  writes exactly one `NeomdTest` keyword to one message, reports PERMANENTFLAGS/`\*`,
+  STORE, SEARCH and cleanup per step, and removes the keyword again (keep mode via
+  `:kt keep` opts out for persistence checks). Tests: `TestKeywordProbe_*`.
+
 ## Reading & Security
 
 - **Large mail fetches text first; `Attachment.Data` may be nil** — for a
