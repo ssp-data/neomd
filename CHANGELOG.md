@@ -1,5 +1,16 @@
 # Changelog
 
+# 2026-11-24
+
+- **New built-in theme: `catppuccin-latte`** — a second light palette alongside
+  `kanagawa-light`, using the official Catppuccin Latte colors
+  (https://github.com/catppuccin/catppuccin): blue `#1E66F5` primary, lavender
+  `#8839EF` unread, peach `#DF8E1D` dates, red `#D20F39` errors/read-authors,
+  green `#40A02B` success, on the `#EFF1F5` base. The reader picks glamour's
+  `light` style for it, so markdown emails render for a light background too
+  (`glamourStyleFor`, `internal/ui/styles.go`). Tests: `TestApplyTheme_KnownNames`,
+  `TestGlamourStyleFor`.
+
 # 2026-11-03
 
 - **Fix: replying to mail received at an alias / catch-all address Cc'd myself and sent from the wrong account** — ctrl+r on a mail To `inquiries@…` (an address that reaches me but is not a configured From) kept `inquiries@…` in Cc and used whatever From was selected last. Two fixes. (1) New `alternative_emails = ["inquiries@example.com", "*@example.com"]` — root-level (reply from `default_from`) or inside an `[[accounts]]` block (reply from that account): addresses that count as *me* without being a send-as identity (distinct from `[[senders]]` aliases, which I send *from*). Reply-all strips them (`isOwnAddr`), and they mark my own mails as mine in threads. (2) When no account, sender or alternative email received the mail (mailing lists, unknown forwarders), From now falls back to `default_from` (`replyFromIndex`) instead of the previous compose's From. Also: To outranks Cc when picking From (addressed at Work, copied at Personal → reply from Work), and mail between my own addresses that is not in Sent replies like received mail (back to the sending address, from the receiving one) instead of being treated as "my own mail". Every reply shape — received, own-in-Sent, own-in-Inbox-thread, archived own, account→account, me-to-me, alias, mailing list, Reply-To, newsletter-via, sender alias — is pinned in one table so a new case is added there, not fixed in isolation. Where: `internal/config/config.go` (`AlternativeEmails`, `MatchesAlternative`), `internal/ui/model.go` (`isOwnAddr`, `isOwnMessage`, `matchFromIndex`, `replyFromIndex`), docs `configuration/_index.md`. Tests: `TestReplyMatrix`, `TestReplyToAlternativeEmailUsesAccountAndExcludesIt`, `TestLoad_AlternativeEmails`.
