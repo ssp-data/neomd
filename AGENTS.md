@@ -506,6 +506,15 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   `_CalendarFirstChild`), `TestIntegration_LazyBodyOnRealServer`, `TestLazyAttachment_*`
   (incl. `_StaleDownloadForOtherEmailIgnored`, `_ContinueDraftDownloadsFirst`),
   `TestWriteAttachmentsTemp_RefusesServerSideAttachment`.
+- **Reader caps displayed blockquote depth at 3** — glamour's blockquote cost is
+  superlinear in nesting depth (a 33-deep Gmail reply chain took 2.3 s to render, 0.4 s
+  capped). `loadEmailIntoReader` (`internal/ui/reader.go`) passes the body through
+  `capQuoteDepth(body, maxReaderQuoteDepth)` before `render.ToANSI`: lines quoted deeper
+  are rewritten to three `>` markers, a blank quoted line separates adjacent capped lines
+  of different original depth, fenced code is untouched, and a body nested ≤ 3 round-trips
+  unchanged. This is display only — never apply it to `Model.openBody`, which feeds
+  reply/forward/react quoting, the `e` editor view, `O` browser view and drafts. Tests:
+  `TestCapQuoteDepth_*`, `TestReader_DeepQuoteChainRendersFast`.
 - **Spy pixels blocked** — two layers: curated denylist with attribution
   (`internal/imap/tracker_list.go`) + generic 1×1 heuristic; glamour never fetches remote
   resources; results cached in `~/.cache/neomd/spy_pixels` (`+key` spy / `-key` clean).

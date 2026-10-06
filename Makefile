@@ -7,7 +7,7 @@ LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 #   make sync-headless TI_HOST=ti.sspaeti.duckdns.org
 TI_HOST ?= ti
 
-.PHONY: build run install daemon clean test test-integration send-test vet fmt fmt-check tidy release docs help check-go demo demo-reset demo-hp demo-hp-reset benchmark ooo
+.PHONY: build run install daemon clean test test-integration send-test vet fmt fmt-check tidy release docs help check-go demo-hp demo-hp-reset benchmark ooo
 
 
 .DEFAULT_GOAL := install
@@ -45,14 +45,6 @@ install: docs build
 ## daemon: run in headless daemon mode
 daemon: build
 	./$(BINARY) --headless
-
-## demo: run neomd with demo account (~/.config/neomd-demo/config.toml)
-demo: build
-	./$(BINARY) -config $(HOME)/.config/neomd-demo/config.toml
-
-## demo-reset: reset demo account to first-run state (welcome screen + empty screener lists)
-demo-reset:
-	./scripts/reset-demo.sh $(HOME)/.config/neomd-demo
 
 ## demo-hp: run neomd with Hostpoint demo account (fast)
 demo-hp: build
