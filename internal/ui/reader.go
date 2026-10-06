@@ -83,12 +83,83 @@ func numberLinks(body string, links []emailLink) string {
 	})
 }
 
+// maxReaderQuoteDepth is the deepest blockquote nesting the reader displays.
+// Glamour's blockquote cost grows superlinearly with nesting: a 50 KB reply
+// chain quoted 33 levels deep ("> > > > …", Gmail style) took 2.3 s to render
+// and 0.2 s capped at 3. Beyond three bars the levels are unreadable in a
+// terminal anyway. Display only — the markdown body kept for reply/forward/
+// editor/browser is never capped.
+const maxReaderQuoteDepth = 3
+
+// capQuoteDepth rewrites every markdown line quoted deeper than max to exactly
+// max levels. Adjacent lines whose original depths differ but both exceed max
+// get a blank quoted line between them so they stay separate paragraphs
+// instead of merging under the now-identical prefix. Fenced code blocks (```
+// or ~~~ at the top level) are left untouched.
+func capQuoteDepth(md string, max int) string {
+	if max < 1 {
+		return md
+	}
+	lines := strings.Split(md, "\n")
+	out := make([]string, 0, len(lines)+8)
+	cappedPrefix := strings.TrimRight(strings.Repeat("> ", max), " ")
+	inFence := false
+	prevDeep := 0 // original depth of the previous line when it exceeded max, else 0
+	for _, line := range lines {
+		trimmed := strings.TrimLeft(line, " ")
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inFence = !inFence
+			out = append(out, line)
+			prevDeep = 0
+			continue
+		}
+		if inFence {
+			out = append(out, line)
+			continue
+		}
+		depth, rest := splitQuotePrefix(line)
+		if depth <= max {
+			out = append(out, line)
+			prevDeep = 0
+			continue
+		}
+		if prevDeep != 0 && prevDeep != depth {
+			out = append(out, cappedPrefix)
+		}
+		prevDeep = depth
+		if rest == "" {
+			out = append(out, cappedPrefix)
+		} else {
+			out = append(out, cappedPrefix+" "+rest)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// splitQuotePrefix returns how many '>' markers open the line and the text
+// after them (leading spaces around the markers removed).
+func splitQuotePrefix(line string) (int, string) {
+	depth := 0
+	rest := line
+	for {
+		t := strings.TrimLeft(rest, " ")
+		if !strings.HasPrefix(t, ">") {
+			if depth == 0 {
+				return 0, line
+			}
+			return depth, t
+		}
+		depth++
+		rest = t[1:]
+	}
+}
+
 // loadEmailIntoReader renders the email and sets the viewport content.
 func loadEmailIntoReader(vp *viewport.Model, email *imap.Email, body string, attachments []imap.Attachment, spyPixels imap.SpyPixelInfo, links []emailLink, theme string, width int) error {
 	header := renderEmailHeader(email, attachments, spyPixels, width)
 
 	// Inject link numbers inline before glamour rendering
-	numbered := numberLinks(body, links)
+	numbered := numberLinks(capQuoteDepth(body, maxReaderQuoteDepth), links)
 
 	rendered, err := render.ToANSI(numbered, theme, width)
 	if err != nil {
