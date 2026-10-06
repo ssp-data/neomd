@@ -811,7 +811,7 @@ func defaults() *Config {
 			Spam:        "Spam",
 		},
 		UI: UIConfig{
-			Theme:               "kanagawa", // built-in: kanagawa | kanagawa-paper | kanagawa-light | rose-pine | gruvbox | osaka-jade
+			Theme:               "kanagawa", // built-in: kanagawa | kanagawa-paper | kanagawa-light | catppuccin-latte | rose-pine | gruvbox | osaka-jade
 			InboxCount:          200,
 			BgSyncInterval:      5,
 			MarkAsReadAfterSecs: 7,

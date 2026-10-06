@@ -89,7 +89,7 @@ spam         = "spam" #check capitalization of your pre-existing Spam folder, so
 # Gmail uses different folder names — see docs/content/gmail.md for the correct mapping.
 
 [ui]
-theme                = "kanagawa"   # kanagawa | kanagawa-paper | kanagawa-light | rose-pine | gruvbox | osaka-jade
+theme                = "kanagawa"   # kanagawa | kanagawa-paper | kanagawa-light | catppuccin-latte | rose-pine | gruvbox | osaka-jade
 inbox_count          = 200      # how many newest emails neomd loads per folder/reload
 auto_screen_on_load  = true     # screen inbox automatically on every load (default true)
 bg_sync_interval     = 5        # background sync interval in minutes; 0 = disabled (default 5)
@@ -450,13 +450,14 @@ For a business account where you want a logo, table layout, and CSS that goldmar
 
 ## Theming
 
-Pick from six built-in palettes via `[ui].theme`:
+Pick from seven built-in palettes via `[ui].theme`:
 
 | Name | Mode | Source |
 |---|---|---|
 | `kanagawa` (default) | dark | https://github.com/rebelot/kanagawa.nvim |
 | `kanagawa-paper` | dark | https://github.com/thesimonho/kanagawa-paper.nvim |
 | `kanagawa-light` | **light** | Lotus palette from kanagawa.nvim, paperwhite (#F2EFE9) background |
+| `catppuccin-latte` | **light** | https://github.com/catppuccin/catppuccin — Latte |
 | `rose-pine` | dark | https://github.com/rose-pine/rose-pine-theme |
 | `gruvbox` | dark | https://github.com/morhetz/gruvbox |
 | `osaka-jade` | dark | https://github.com/Justikun/omarchy-osaka-jade-theme |

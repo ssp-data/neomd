@@ -1,5 +1,16 @@
 # Changelog
 
+# 2026-10-06
+
+- **New built-in theme: `catppuccin-latte`** — a second light palette alongside
+  `kanagawa-light`, using the official Catppuccin Latte colors
+  (https://github.com/catppuccin/catppuccin): blue `#1E66F5` primary, lavender
+  `#8839EF` unread, peach `#DF8E1D` dates, red `#D20F39` errors/read-authors,
+  green `#40A02B` success, on the `#EFF1F5` base. The reader picks glamour's
+  `light` style for it, so markdown emails render for a light background too
+  (`glamourStyleFor`, `internal/ui/styles.go`). Tests: `TestApplyTheme_KnownNames`,
+  `TestGlamourStyleFor`.
+
 # 2026-10-05
 
 - **The folder window is the newest mail by arrival date, not the highest UIDs (#34)** — `FetchHeaders` picked its `inbox_count` window as the highest `n` UIDs. IMAP MOVE/COPY give a message a fresh, highest UID in the destination mailbox (RFC 9051 per-mailbox UIDs), so every mail bulk-moved *into* a folder — `I` approve on ToScreen, `:reset-toscreen`, `U` undo — landed above all real recent mail, filled the window, and pushed the recent mail below the cutoff where no display sort (`,m`) could bring it back. Only folders with more than `inbox_count` messages were affected, which is why a HEY-style Inbox of a dozen rows never showed it while a 12'000-mail legacy Inbox after its first screening did (reproduced on Hostpoint/Dovecot, so not an Infomaniak quirk; the demo's `moves.log` shows `ToScreen uid=273 → INBOX destUID=1397`). `FetchHeaders`, `FetchLatest` (`:everything`) and the per-folder search cap (`searchFolderCap`, was a literal 100) now narrow the window with one cheap `UID FETCH (UID INTERNALDATE)` and keep the `n` most recently received (`newestUIDsByInternalDate`, `internal/imap/client.go`); INTERNALDATE survives MOVE/COPY on every server tested, and the SORT extension is not used because Infomaniak does not offer it. Folders at or below `inbox_count`, and `inbox_count = 0`, take the old single-round-trip path unchanged, so a daily Inbox sees no new traffic. Verified on the live Hostpoint demo: a 10-row window returned April mail before, October mail after. Tests: `TestMem_FetchHeaders_WindowIsNewestByInternalDateNotUID`, `TestMem_FetchHeaders_FolderWithinLimitUnchanged`, `TestMem_FetchLatest_WindowIsNewestByInternalDateNotUID`, `TestMem_SearchFolder_CapIsNewestByInternalDateNotUID`.

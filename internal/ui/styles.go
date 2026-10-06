@@ -43,6 +43,16 @@ var themes = map[string]config.Theme{
 		AuthorUnread: "#CC6D00", SubjectUnread: "#4E8CA2",
 		Error: "#C84053", Success: "#6F894E",
 	},
+	"catppuccin-latte": {
+		// https://github.com/catppuccin/catppuccin — Latte (light)
+		Bg: "#EFF1F5", Border: "#9CA0B0", Subtle: "#CCD0DA", Selected: "#DCE0E8",
+		Text: "#4C4F69", Muted: "#6C6F85",
+		Primary: "#1E66F5", Unread: "#8839EF",
+		Number: "#1E66F5", Date: "#DF8E1D",
+		AuthorRead: "#D20F39", SubjectRead: "#179299", SizeCol: "#6C6F85",
+		AuthorUnread: "#FE640B", SubjectUnread: "#04A5E5",
+		Error: "#D20F39", Success: "#40A02B",
+	},
 	"rose-pine": {
 		// https://github.com/rose-pine/rose-pine-theme — main variant
 		Bg: "#191724", Border: "#26233A", Subtle: "#1F1D2E", Selected: "#403D52",
@@ -128,7 +138,7 @@ func init() {
 // `dark`. The legacy "auto" was rarely useful in practice and would now
 // be ambiguous, so we collapse it to `dark` for predictability.
 func glamourStyleFor(themeName string) string {
-	if themeName == "kanagawa-light" || themeName == "light" {
+	if themeName == "kanagawa-light" || themeName == "catppuccin-latte" || themeName == "light" {
 		return "light"
 	}
 	return "dark"
