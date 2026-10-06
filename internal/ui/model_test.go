@@ -457,6 +457,25 @@ func TestActiveFolderUsesOffTabFolder(t *testing.T) {
 	}
 }
 
+// TestActiveFolderDraftsTab — the Drafts tab (in defaultTabOrder) must fetch
+// the Drafts mailbox; the label switch in activeFolder() had no Drafts case,
+// so the tab fell through to default and showed the Inbox instead.
+func TestActiveFolderDraftsTab(t *testing.T) {
+	m := Model{
+		cfg: &config.Config{
+			Folders: config.FoldersConfig{
+				Inbox:  "INBOX",
+				Drafts: "Drafts",
+			},
+		},
+		folders:       []string{"Inbox", "Drafts"},
+		activeFolderI: 1,
+	}
+	if got := m.activeFolder(); got != "Drafts" {
+		t.Fatalf("activeFolder() on the Drafts tab = %q, want %q (must not fall back to the Inbox)", got, "Drafts")
+	}
+}
+
 func TestUpdateInboxEscClearsCommittedFilter(t *testing.T) {
 	m := Model{
 		filterText: "invoice",

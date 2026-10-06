@@ -1134,6 +1134,8 @@ func (m Model) activeFolder() string {
 		return m.cfg.Folders.Sent
 	case "Trash":
 		return m.cfg.Folders.Trash
+	case "Drafts":
+		return m.cfg.Folders.Drafts
 	case "Archive":
 		return m.cfg.Folders.Archive
 	case "Waiting":
