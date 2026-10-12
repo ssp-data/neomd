@@ -515,6 +515,15 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   unchanged. This is display only — never apply it to `Model.openBody`, which feeds
   reply/forward/react quoting, the `e` editor view, `O` browser view and drafts. Tests:
   `TestCapQuoteDepth_*`, `TestReader_DeepQuoteChainRendersFast`.
+- **Reader collapses `data:` URI destinations before glamour** — a base64-embedded
+  image is one 100 KB–1 MB "word" on a line and glamour's paragraph word-wrap is
+  quadratic in word length (a 464 KB logo never finished). `render.ToANSI` runs
+  `render.CollapseDataURIs` (`internal/render/markdown.go`): `](data:image/png;base64,<payload> "WxH")`
+  → `](data:image/png;base64,…)`, so the view keeps the usual `Image: alt → dest` look.
+  `https://`, `cid:` and prose mentioning `data:` are untouched. Display only — never
+  apply it to `Model.openBody` (reply/forward quoting, drafts, `e` editor, `O` browser
+  view, which renders the raw HTML and shows the pictures). Tests: `TestCollapseDataURIs`,
+  `TestToANSI_EmbeddedDataURIImageRendersFast`, `TestReader_EmbeddedDataURIImageRendersFast`.
 - **Spy pixels blocked** — two layers: curated denylist with attribution
   (`internal/imap/tracker_list.go`) + generic 1×1 heuristic; glamour never fetches remote
   resources; results cached in `~/.cache/neomd/spy_pixels` (`+key` spy / `-key` clean).
