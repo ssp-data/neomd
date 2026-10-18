@@ -103,6 +103,21 @@ Your Title, Your Company
 Connect: [LinkedIn](https://example.com/)
 
 *sent from [neomd](https://neomd.ssp.sh)*"""
+
+[tags]
+enabled   = true        # master switch: false = feature completely off (no picker, no chips)
+key       = "t"         # leader chord key that opens the picker (<space>t)
+nerd_pill = false       # chips as nerd-font pills (half-sphere caps); NEEDS a nerd font in the terminal
+mono      = false       # one theme colour (muted, no background) for every chip; ignores all fg/bg below
+fg        = ""          # default chip text colour ("#RRGGBB" or ANSI number; empty = theme reverse video)
+bg        = ""          # default chip background (or "transparent"/"none" for no background at all)
+
+# Optional per-tag overrides — display only, the stored IMAP keyword never changes:
+# [tags.important]
+# enabled = true          # false hides this tag's chips while the feature is on; never overrides the global switch
+# display = "\uF0A3 Important"  # chip text; nerd-font glyph as \uXXXX escape or pasted literally (pill mode honors typed spaces)
+# fg      = "#FFFF00"     # hex or ANSI number
+# bg      = "#8B0000"     # or "transparent"
 ```
 
 
@@ -533,7 +548,9 @@ The scopes required depends on the provider and is better confirmed by your emai
 
 - To enable OAuth2 authentication for Office365 accounts, follow the documentation [here](https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth)
 - For GMAIL, follow the documentation [here](https://developers.google.com/workspace/gmail/imap/xoauth2-protocol)
+## Email Tags and filters
 
+You can filter and tag emails with IMAP functionality, see the docs at [Email Tags (IMAP Keywords)](tags/)
 
 ## Dedicated Platforms
 

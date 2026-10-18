@@ -62,6 +62,12 @@ type Email struct {
 	InReplyTo     string    // first In-Reply-To message ID (for threading)
 	References    string    // References header (space-separated Message-IDs for threading)
 	SendAt        time.Time // parsed X-Neomd-Send-At — non-zero only for send-later queued messages
+	// Keywords are the message's IMAP keywords (flags without the backslash
+	// prefix — system flags \Seen etc. live in the bools above). Server-side
+	// tags ride here at zero extra protocol cost: FLAGS arrive in every
+	// FetchHeaders call already. Comparisons are case-insensitive (some
+	// servers normalize the case); neomd writes lowercase.
+	Keywords []string
 	// BodyStructure is the BODYSTRUCTURE already fetched with the headers; it
 	// lets FetchBodyOf skip attachments on large mail without another round trip.
 	BodyStructure imap.BodyStructure `json:"-"`
@@ -509,7 +515,11 @@ func (c *Client) fetchHeadersWindow(ctx context.Context, folder string, n int, e
 				if f == imap.FlagFlagged {
 					e.Flagged = true
 				}
+				if !strings.HasPrefix(string(f), "\\") {
+					e.Keywords = append(e.Keywords, string(f))
+				}
 			}
+			sort.Strings(e.Keywords) // server flag order is map-random; be deterministic
 			if m.Envelope != nil {
 				e.Subject = m.Envelope.Subject
 				e.Date = m.Envelope.Date
@@ -1032,7 +1042,11 @@ func (c *Client) FetchHeadersByUID(ctx context.Context, folder string, uids []ui
 				if f == imap.FlagFlagged {
 					e.Flagged = true
 				}
+				if !strings.HasPrefix(string(f), "\\") {
+					e.Keywords = append(e.Keywords, string(f))
+				}
 			}
+			sort.Strings(e.Keywords) // server flag order is map-random; be deterministic
 			if m.Envelope != nil {
 				e.Subject = m.Envelope.Subject
 				e.Date = m.Envelope.Date
