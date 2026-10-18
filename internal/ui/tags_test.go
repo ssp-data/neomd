@@ -45,7 +45,7 @@ func waitTagFile(t *testing.T, rel string) {
 func tagsTestModel(t *testing.T, n int) Model {
 	t.Helper()
 	m := instantModel(t, n)
-	m.cfg.Tags.Enabled = true // the feature is opt-in
+	m.cfg.Tags.Enabled = true // test models start from a zero config, not defaults()
 	tagsTestDir = t.TempDir() + "/tags"
 	store, err := tags.Load(tagsTestDir)
 	if err != nil {

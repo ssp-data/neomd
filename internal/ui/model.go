@@ -4829,8 +4829,8 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			m.status = "Scanning for spy pixels…"
 			return m, m.spyScanCmd()
 		}
-		// Tag picker: [tags] key (default "t"); opt-in feature — inert until
-		// [tags] enabled = true (openTags shows the hint).
+		// Tag picker: [tags] key (default "t"); on by default — inert while
+		// [tags] enabled = false (openTags shows the hint).
 		if m.cfg != nil && key == m.cfg.Tags.TagsKey() {
 			return m.openTags()
 		}

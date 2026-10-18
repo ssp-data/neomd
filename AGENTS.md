@@ -498,7 +498,7 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   (From → User → Name fallback) and captured per-op (`tagOp.registryKey`) so a done
   message landing after an account switch still writes the right registry; chips
   follow the active account (`setTagAccount` in New and on ctrl+a).
-  **`[tags] enabled = false` is the global kill-switch** (the feature is opt-in):
+  **`[tags] enabled = false` is the global kill-switch** (on by default since 2026-10-18; inert on a fresh install because no tag exists):
   disabled, `newTagsModel` returns before wiring the chip pipeline (a nil
   `tagKeywordSource` is the no-chips state — same as an unreadable registry) and
   `openTags` refuses the picker; per-tag `[tags.<keyword>] enabled = false` is the

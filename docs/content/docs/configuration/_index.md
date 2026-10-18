@@ -105,9 +105,9 @@ Connect: [LinkedIn](https://example.com/)
 *sent from [neomd](https://neomd.ssp.sh)*"""
 
 [tags]
-enabled   = false       # opt-in master switch: false = feature completely off (no picker, no chips)
+enabled   = true        # master switch: false = feature completely off (no picker, no chips)
 key       = "t"         # leader chord key that opens the picker (<space>t)
-nerd_pill = false       # render chips as nerd-font pills (half-sphere caps); needs a nerd font
+nerd_pill = true        # chips as nerd-font pills (half-sphere caps); set false without a nerd font
 mono      = false       # one theme colour (muted, no background) for every chip; ignores all fg/bg below
 fg        = ""          # default chip text colour ("#RRGGBB" or ANSI number; empty = theme reverse video)
 bg        = ""          # default chip background (or "transparent"/"none" for no background at all)
@@ -565,20 +565,19 @@ A tag is a label you put on a message, like `work`, `invoice` or `waiting`. Ther
 
 ### How they Look: Example
 
-**Standard view** — just turn the feature on; tags render as reverse-video chips before the subject:
+**Standard view** — plain reverse-video chips before the subject, no special font needed:
 
 ```toml
 [tags]
-enabled = true
+nerd_pill = false
 ```
 
 ![tags standard view](/images/tags-standard.png)
 
-**Nerd-font pills** — half-sphere end caps around each chip (needs a nerd font in the terminal):
+**Nerd-font pills** — the default: half-sphere end caps around each chip (needs a nerd font in the terminal; without one, set `nerd_pill = false`):
 
 ```toml
 [tags]
-enabled = true
 nerd_pill = true
 ```
 
@@ -642,11 +641,11 @@ bg = "none"
 
 ### How to activate/configure
 
-Opt-in (`[tags] enabled = true`) server-side tagging: `<space>t` on the cursor email or a marked set opens a picker that toggles IMAP keywords — the RFC 9051 tagging mechanism, so tags live on the message, survive reinstalls, and are seen by other clients that support keywords. Tags render as coloured chips **before** the subject (` work ` by default, or nerd-font pills with `nerd_pill = true`); per-tag `[tags.<keyword>]` sections override the display text (nerd-font symbols welcome), colours, and visibility.
+Server-side tagging, on by default (`[tags] enabled = false` turns it off): `<space>t` on the cursor email or a marked set opens a picker that toggles IMAP keywords — the RFC 9051 tagging mechanism, so tags live on the message, survive reinstalls, and are seen by other clients that support keywords. Tags render as coloured chips **before** the subject (` work ` by default, or nerd-font pills with `nerd_pill = true`); per-tag `[tags.<keyword>]` sections override the display text (nerd-font symbols welcome), colours, and visibility.
 
 For a compact glyph-only look, give each tag a nerd-font `display` symbol and set `mono = true`: every chip then renders in the active theme's muted colour with no background (per-tag `fg`/`bg` are ignored, `display` and `enabled` still apply), so tags read as quiet markers instead of a rainbow.
 
-`enabled = false` (the default) is the global kill-switch: neither the picker nor any chip renders. The per-tag `enabled = false` is the fine-grained form — it hides that one tag's chips while the feature is on — and can never override the global switch.
+`enabled = false` is the global kill-switch: neither the picker nor any chip renders. The per-tag `enabled = false` is the fine-grained form — it hides that one tag's chips while the feature is on — and can never override the global switch.
 
 Every toggle writes through to a local per-account registry at `~/.config/neomd/tags/<account-address>/<keyword>.txt` (one Message-ID per line) — the backup if a provider ever purges unknown keywords. Keywords are lowercased and compared case-insensitively; keywords starting with `$` or `\` belong to other systems and are never offered or rendered.
 

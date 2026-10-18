@@ -100,8 +100,8 @@ type tagsModel struct {
 // unrecognized colour values), "" when all is well. The built-in theme
 // palettes are never touched; the package-level chip pipeline is wired here.
 func newTagsModel(cfg *config.Config, themeFG, themeBG lipgloss.Color) (tagsModel, string) {
-	// [tags] enabled = false is the GLOBAL kill-switch (the feature is
-	// opt-in): the chip pipeline stays unwired — a nil tagKeywordSource is
+	// [tags] enabled = false is the GLOBAL kill-switch (on by default, inert
+	// until a tag exists): the chip pipeline stays unwired — a nil tagKeywordSource is
 	// the no-chips state, same as an unreadable registry — so no keyword
 	// ever renders, no matter what a [tags.<keyword>] section says. Per-tag
 	// enabled = false is the fine-grained form: hide single keywords while
@@ -147,7 +147,7 @@ func (m Model) activeAccountKey() string {
 // same target rule as every bulk action) and captures the targets by value.
 func (m Model) openTags() (tea.Model, tea.Cmd) {
 	if m.cfg != nil && !m.cfg.Tags.Enabled {
-		m.status = "Tags are disabled — opt in with [tags] enabled = true."
+		m.status = "Tags are disabled ([tags] enabled = false in config.toml)."
 		m.isError = false
 		return m, nil
 	}

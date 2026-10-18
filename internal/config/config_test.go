@@ -705,9 +705,12 @@ func TestLoad_SetsTagsDirNextToConfig(t *testing.T) {
 	if cfg.TagsDir != want {
 		t.Errorf("TagsDir = %q, want %q", cfg.TagsDir, want)
 	}
-	// A config without [tags] keeps tagging disabled (opt-in) with the default key.
-	if cfg.Tags.Enabled {
-		t.Error("absent [tags] section must leave tagging disabled (opt-in)")
+	// A config without [tags] has tagging on (default) in pill mode with the default key.
+	if !cfg.Tags.Enabled {
+		t.Error("absent [tags] section must leave tagging enabled (default on)")
+	}
+	if !cfg.Tags.NerdPill {
+		t.Error("absent [tags] section must default to nerd_pill = true")
 	}
 	if cfg.Tags.TagsKey() != "t" {
 		t.Errorf("TagsKey = %q, want t", cfg.Tags.TagsKey())
@@ -716,7 +719,7 @@ func TestLoad_SetsTagsDirNextToConfig(t *testing.T) {
 
 func TestTagsConfig_EnabledOptIn(t *testing.T) {
 	if (TagsConfig{}).Enabled {
-		t.Error("zero-value TagsConfig must be disabled — tagging is opt-in")
+		t.Error("zero-value TagsConfig (no defaults applied) must be disabled")
 	}
 	tc := TagsConfig{Enabled: true, Key: "t"}
 	if !tc.Enabled {

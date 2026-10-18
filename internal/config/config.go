@@ -314,8 +314,8 @@ func (u UIConfig) AutoScreen() bool {
 // Tags are stored as IMAP keywords on the message (server-side, visible to
 // other clients); <config dir>/tags/ is the local write-through registry.
 type TagsConfig struct {
-	// Enabled is the master switch — opt-in: the feature is OFF until the
-	// config says `enabled = true`. false (or an absent [tags] section)
+	// Enabled is the master switch — on by default (a fresh install has no
+	// tags, so nothing renders until the user creates one). `enabled = false`
 	// leaves the <Key> binding inert AND renders no chips at all (a global
 	// kill-switch that per-tag [tags.<keyword>] enabled values cannot
 	// override — those only hide single keywords while the feature is on).
@@ -325,7 +325,8 @@ type TagsConfig struct {
 	Key string `toml:"key"`
 	// NerdPill renders chips as nerd-font "pills" — half-sphere end caps
 	// (U+E0B6/U+E0B4) coloured like the chip — instead of the padded-text
-	// fallback. Needs a nerd font in the terminal; default false.
+	// fallback. Default true; needs a nerd font in the terminal — without
+	// one set nerd_pill = false (the only nerd-font dependency in neomd).
 	NerdPill bool `toml:"nerd_pill"`
 	// Mono renders every chip in a single theme colour — the muted foreground
 	// with no background — and ignores [tags] fg/bg and every per-tag colour
@@ -948,11 +949,12 @@ func defaults() *Config {
 			Signature:           "*sent from [neomd](https://neomd.ssp.sh)*",
 		},
 		Tags: TagsConfig{
-			// Opt-in feature: off until the user sets `enabled = true`.
-			// Written into the generated default config so the option is
-			// discoverable.
-			Enabled: false,
-			Key:     "t", // <space>t opens the tag picker once enabled
+			// On by default: inert until the user creates a tag. Written
+			// into the generated default config so the switch is
+			// discoverable. nerd_pill needs a nerd font (see NerdPill).
+			Enabled:  true,
+			NerdPill: true,
+			Key:      "t", // <space>t opens the tag picker
 		},
 		AI: AIConfig{
 			// Default: hand off to Claude Code in **interactive** mode (not
