@@ -40,14 +40,16 @@ import (
 type viewState int
 
 const (
-	stateInbox    viewState = iota
-	stateReading            // reading a single email
-	stateCompose            // composing a new email
-	statePresend            // pre-send review: add attachments, then send or edit again
-	stateHelp               // help overlay
-	stateWelcome            // first-run welcome popup
-	stateReaction           // emoji reaction picker
-	stateContacts           // contacts picker (space c)
+	stateInbox       viewState = iota
+	stateReading               // reading a single email
+	stateCompose               // composing a new email
+	statePresend               // pre-send review: add attachments, then send or edit again
+	stateHelp                  // help overlay
+	stateWelcome               // first-run welcome popup
+	stateReaction              // emoji reaction picker
+	stateContacts              // contacts picker (space c)
+	stateTags                  // IMAP keyword tag picker (space k)
+	stateKeywordTest           // IMAP keyword support probe dialog (:kt)
 )
 
 // async message types
@@ -724,6 +726,9 @@ type Model struct {
 	reactionSelected int         // selected emoji index (0-7)
 	pendingReaction  bool        // true if we need to fetch body before entering reaction mode
 
+	// IMAP keyword support probe (:keyword-test / :kt) — state in keywordtest.go
+	keywordTest keywordTestModel
+
 	// Status / error
 	status        string
 	isError       bool
@@ -781,6 +786,10 @@ type Model struct {
 	contactsFilter       string
 	contactsFilterActive bool
 	contactsCursor       int
+
+	// IMAP keyword tags (space k): picker state, optimistic-toggle overlay
+	// and registry — tagsModel lives in tags.go next to its methods.
+	tags tagsModel
 
 	// cmdMode / cmdText / cmdTabI implement vim-style ":" command line.
 	cmdMode    bool
@@ -875,7 +884,14 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 	if err != nil {
 		notice = "merges.toml: " + err.Error()
 	}
-	return Model{
+	// Tags (space k): registry load and chip styling live in tags.go —
+	// newTagsModel also wires the package-level chip pipeline and returns
+	// a startup notice when the registry or a colour value needs attention.
+	tm, tagNotice := newTagsModel(cfg, colorBg, colorText)
+	if tagNotice != "" {
+		notice = tagNotice
+	}
+	m := Model{
 		cfg:         cfg,
 		accounts:    cfg.ActiveAccounts(),
 		clients:     clients,
@@ -895,11 +911,14 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 		spyScannedKeys: scannedKeys,
 		contacts:       cs,
 		merges:         ms,
+		tags:           tm,
 		startupNotice:  notice,
 		sortField:      "date",
 		sortReverse:    true, // newest first
 		mailto:         mp,
 	}
+	setTagAccount(m.activeAccountKey()) // chips/picker registry follows the active account
+	return m
 }
 
 // tokenSourceFor returns the OAuth2 token source for the account with the
@@ -2808,7 +2827,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.folder == m.cfg.Folders.Inbox && msg.folder == m.activeFolder() {
 			m.skipAutoScreenOnce = false
 		}
-		msg.emails = m.withPendingSeen(msg.account, m.withoutPending(msg.account, msg.emails))
+		msg.emails = m.withPendingTags(msg.account, m.withPendingSeen(msg.account, m.withoutPending(msg.account, msg.emails)))
 		if m.folderCache == nil {
 			m.folderCache = make(map[string]folderSnapshot)
 		}
@@ -3292,6 +3311,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.applyFilter()
 
+	case tagsDoneMsg:
+		// Chips flipped at toggle time; release the pending overlay and
+		// write the registry through — or revert what never reached the
+		// server. Runs even when the picker was closed before completion:
+		// the toggle itself must always be finished.
+		return m.handleTagsDone(msg)
+
+	case keywordTestDoneMsg:
+		return m.handleKeywordTestDone(msg)
+
 	case markAsReadTimerMsg:
 		// Timer fired - mark email as read if user is still viewing it
 		if m.state == stateReading && m.markAsReadUID == msg.uid && m.markAsReadFolder == msg.folder {
@@ -3580,7 +3609,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.folderCache == nil {
 			m.folderCache = make(map[string]folderSnapshot)
 		}
-		msg.emails = m.withPendingSeen(msg.account, m.withoutPending(msg.account, msg.emails))
+		msg.emails = m.withPendingTags(msg.account, m.withPendingSeen(msg.account, m.withoutPending(msg.account, msg.emails)))
 		// Cache a copy: a cache-hit Tab sorts the snapshot in place, and the
 		// screener below classifies msg.emails. Rows the screener is about
 		// to MOVE are left out, so a Tab to Inbox never shows them.
@@ -3641,7 +3670,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Same overlays as a user-driven load: a prefetch that started
 				// before an in-flight MOVE or n toggle must not resurrect the row
 				// or the old flag.
-				emails := m.withPendingSeen(msg.account, m.withoutPending(msg.account, msg.emails))
+				emails := m.withPendingTags(msg.account, m.withPendingSeen(msg.account, m.withoutPending(msg.account, msg.emails)))
 				m.folderCache[cacheKey(msg.account, msg.folder)] = folderSnapshot{emails: emails, fetchedAt: time.Now()}
 			}
 		}
@@ -3874,6 +3903,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateReaction(msg)
 		case stateContacts:
 			return m.updateContacts(msg)
+		case stateTags:
+			return m.updateTags(msg)
+		case stateKeywordTest:
+			return m.updateKeywordTest(msg)
 		}
 	}
 
@@ -4101,7 +4134,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case " ": // leader key — wait for digit or shortcut
 		m.pendingKey = " "
-		m.status = "leader:  1-9 folder tab  / IMAP search  c contacts  S scan spy pixels  w welcome  (esc to cancel)"
+		m.status = "leader:  1-9 folder tab  / IMAP search  c contacts  S scan spy pixels  k tags  w welcome  (esc to cancel)"
 		return m, nil
 
 	case "M":
@@ -4437,7 +4470,8 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.activeFolderI = 0
 			m.leaveSyntheticView()
-			m.prefetched = false // warm the new account's tabs too
+			m.prefetched = false                // warm the new account's tabs too
+			setTagAccount(m.activeAccountKey()) // chips follow the account
 			return m, m.loadActiveFolder()
 		}
 
@@ -4794,6 +4828,11 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 		if key == "S" {
 			m.status = "Scanning for spy pixels…"
 			return m, m.spyScanCmd()
+		}
+		// Tag picker: [tags] key (default "k"); opt-in feature — inert until
+		// [tags] enabled = true (openTags shows the hint).
+		if m.cfg != nil && key == m.cfg.Tags.TagsKey() {
+			return m.openTags()
 		}
 		if len(key) == 1 && key >= "1" && key <= "9" {
 			idx := int(key[0] - '1') // 0-based
@@ -7117,6 +7156,10 @@ func (m Model) View() string {
 		return m.viewReaction()
 	case stateContacts:
 		return m.viewContacts()
+	case stateTags:
+		return m.viewTags()
+	case stateKeywordTest:
+		return m.viewKeywordTest()
 	}
 	return ""
 }

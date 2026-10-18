@@ -112,10 +112,6 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 
 	fixed := colNumWidth + colFlagWidth + colReplyWidth + colThreadWidth + colDateWidth + colAttachWidth + colSpyWidth + colSizeWidth + 2 // 2 spaces padding
 	fromMax := 20
-	subjectMax := width - fixed - fromMax - 2
-	if subjectMax < 8 {
-		subjectMax = 8
-	}
 
 	sender := e.email.From
 	if d.sentFolder != "" && e.email.Folder == d.sentFolder {
@@ -132,14 +128,20 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		subjectText = fmt.Sprintf("%s (%d)", e.merge.title, len(e.merge.members))
 	}
 	subjectText = sendLaterPrefix(e.email) + subjectText
+
+	// subjectMax := width - fixed - fromMax - 2 is the original calculation;
+	// with tags it goes through calculateSubjectMaxWithTags, which also picks
+	// the chip set and subject variant that fit (see its comment).
+	subjectMax, subjectText, chipKws := calculateSubjectMaxWithTags(width, fixed, fromMax, subjectText, e.email.Keywords, e.merge != nil)
 	subject := truncate(displaySafe(subjectText), subjectMax)
 
 	if isSelected {
-		row := num + flag + replyStr + threadStr + dateStr + attachStr + spyStr +
-			padRight(from, fromMax) + "  " +
-			padRight(subject, subjectMax) + "  " +
-			sizeStr
-		fmt.Fprint(w, styleSelected.Render(row))
+		// Chips keep their reverse-video style on the selected row (they must
+		// stay readable), so the row is composed in three segments.
+		head := num + flag + replyStr + threadStr + dateStr + attachStr + spyStr +
+			padRight(from, fromMax) + "  "
+		tail := padRight(subject, subjectMax) + "  " + sizeStr
+		fmt.Fprint(w, styleSelected.Render(head)+tagChipsStyled(chipKws)+styleSelected.Render(tail))
 		return
 	}
 
@@ -176,7 +178,7 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	subS := subStyle.Render(padRight(subject, subjectMax))
 	sizeS := lipgloss.NewStyle().Foreground(colorSizeCol).Render(sizeStr)
 
-	fmt.Fprint(w, numS+flagS+replyS+threadS+dateS+attachS+spyS+fromS+"  "+subS+"  "+sizeS)
+	fmt.Fprint(w, numS+flagS+replyS+threadS+dateS+attachS+spyS+fromS+"  "+tagChipsStyled(chipKws)+subS+"  "+sizeS)
 }
 
 // cleanFrom strips the <addr> part when a display name is present.
@@ -446,4 +448,38 @@ func selectedEmail(l list.Model) *imap.Email {
 func selectedItem(l list.Model) (emailItem, bool) {
 	item, ok := l.SelectedItem().(emailItem)
 	return item, ok
+}
+
+// calculateSubjectMaxWithTags returns the subject budget for one inbox row
+// plus the chip set and subject text variant that fit it. Without tags
+// (feature off, no chips on this row, or a collapsed merge row) it is a
+// drop-in for the original calculation: width - fixed - fromMax - 2 with the
+// 8-cell floor. With chips, their width is subtracted from that budget, and
+// when the remainder gets tight the variants degrade in order: all chips →
+// first chip only with a "…" subject → no chips (original behaviour). The
+// 8-cell floor applies to chip-less results only — with chips the budget is
+// exact, and re-flooding it would overflow the terminal width.
+func calculateSubjectMaxWithTags(width, fixed, fromMax int, subject string, keywords []string, isMerge bool) (int, string, []tagChip) {
+	avail := width - fixed - fromMax - 2
+	original := func() (int, string, []tagChip) {
+		max := avail
+		if max < 8 {
+			max = 8
+		}
+		return max, subject, nil
+	}
+
+	chips := tagChipKeywords(keywords) // nil while tagging is off / no known tags
+	if isMerge || len(chips) == 0 {
+		return original()
+	}
+	chipW := tagChipsWidth(chips)
+	if avail-chipW >= 8 {
+		return avail - chipW, subject, chips
+	}
+	first := chips[:1]
+	if fw := tagChipsWidth(first); avail-fw >= 1 {
+		return avail - fw, "…", first
+	}
+	return original()
 }

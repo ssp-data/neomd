@@ -103,6 +103,7 @@ To update both the help overlay and this document at once, edit that file and ru
 | `<space>/` | IMAP search ALL emails on server (From + Subject) |
 | `<space>c` | contacts picker — browse harvested + [contacts] file names; / filter, y copy address, Y copy "Name <addr>", enter compose to contact |
 | `<space>S` | scan current folder for spy pixels (skips already scanned) |
+| `<space>k` | tag picker — toggle IMAP keyword tags on marked/cursor email(s) (opt-in: [tags] enabled = true); a new tag, / filter, chips show before the subject |
 | `<space>h  (reader)` | show key mail headers (From, Reply-To, List-Id, List-Unsubscribe, Return-Path, spam verdicts, …) — press again for all headers, again to return to the email |
 | `<space>u  (reader)` | unsubscribe — List-Unsubscribe https link opens in $BROWSER, mailto: prefills a compose, else first body link mentioning "unsubscribe" |
 | `<space>d  (reader)` | download raw email source (.eml) to ~/Downloads |
@@ -177,6 +178,7 @@ To update both the help overlay and this document at once, edit that file and ru
 | `:mark-read  / :mr` | mark all emails in current folder as read |
 | `:reload  / :r` | reload current folder |
 | `:check  / :ch` | show screener classification for selected email |
+| `:keyword-test  / :kt` | IMAP keyword (tag) support probe on the selected email — save/retrieve/cleanup round trip; ":keyword-test keep" leaves the keyword on the message |
 | `:thread  / :t` | show full conversation for the selected email (across folders) |
 | `:scan-spy-pixels  / :ssp` | scan current folder for tracking pixels (background, skips already scanned) |
 | `:recover  / :rec` | reopen the most recent compose backup from ~/.cache/neomd/drafts/ |

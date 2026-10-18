@@ -103,6 +103,20 @@ Your Title, Your Company
 Connect: [LinkedIn](https://example.com/)
 
 *sent from [neomd](https://neomd.ssp.sh)*"""
+
+[tags]
+enabled   = false       # opt-in master switch: false = feature completely off (no picker, no chips)
+key       = "k"         # leader chord key that opens the picker
+nerd_pill = false       # render chips as nerd-font pills (half-sphere caps); needs a nerd font
+fg        = ""          # default chip text colour ("#RRGGBB" or ANSI number; empty = theme reverse video)
+bg        = ""          # default chip background (or "transparent"/"none" for no background at all)
+
+# Optional per-tag overrides — display only, the stored IMAP keyword never changes:
+# [tags.important]
+# enabled = true          # false hides this tag's chips while the feature is on; never overrides the global switch
+# display = " Important"  # chip text; nerd-font symbols welcome (pill mode honors typed spaces)
+# fg      = "#FFFF00"     # hex or ANSI number
+# bg      = "#8B0000"     # or "transparent"
 ```
 
 
@@ -534,6 +548,20 @@ The scopes required depends on the provider and is better confirmed by your emai
 - To enable OAuth2 authentication for Office365 accounts, follow the documentation [here](https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth)
 - For GMAIL, follow the documentation [here](https://developers.google.com/workspace/gmail/imap/xoauth2-protocol)
 
+
+## Email Tags (IMAP Keywords)
+
+Opt-in (`[tags] enabled = true`) server-side tagging: `<space>k` on the cursor email or a marked set opens a picker that toggles IMAP keywords — the RFC 9051 tagging mechanism, so tags live on the message, survive reinstalls, and are seen by other clients that support keywords. Tags render as coloured chips **before** the subject (` work ` by default, or nerd-font pills with `nerd_pill = true`); per-tag `[tags.<keyword>]` sections override the display text (nerd-font symbols welcome), colours, and visibility.
+
+`enabled = false` (the default) is the global kill-switch: neither the picker nor any chip renders. The per-tag `enabled = false` is the fine-grained form — it hides that one tag's chips while the feature is on — and can never override the global switch.
+
+Every toggle writes through to a local per-account registry at `~/.config/neomd/tags/<account-address>/<keyword>.txt` (one Message-ID per line) — the backup if a provider ever purges unknown keywords. Keywords are lowercased and compared case-insensitively; keywords starting with `$` or `\` belong to other systems and are never offered or rendered.
+
+Provider support varies — run `:kt` (`:keyword-test`) on an email to probe your server: it stores a test keyword, verifies it via FETCH and SEARCH, and removes it again, with a verdict per step.
+
+{{< callout type="info" >}}
+Verified with full support on Infomaniak (`PERMANENTFLAGS \*`, STORE + SEARCH, persistence across sessions; keywords are invisible but preserved in their webmail). Third-party keywords like `$HasAttachment` may already live on your messages — neomd never touches or displays them.
+{{< /callout >}}
 
 ## Dedicated Platforms
 

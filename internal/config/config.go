@@ -310,6 +310,119 @@ func (u UIConfig) AutoScreen() bool {
 	return *u.AutoScreenOnLoad
 }
 
+// TagsConfig holds the IMAP keyword tagging feature ([tags] in config.toml).
+// Tags are stored as IMAP keywords on the message (server-side, visible to
+// other clients); <config dir>/tags/ is the local write-through registry.
+type TagsConfig struct {
+	// Enabled is the master switch — opt-in: the feature is OFF until the
+	// config says `enabled = true`. false (or an absent [tags] section)
+	// leaves the <Key> binding inert AND renders no chips at all (a global
+	// kill-switch that per-tag [tags.<keyword>] enabled values cannot
+	// override — those only hide single keywords while the feature is on).
+	Enabled bool `toml:"enabled"`
+	// Key is the leader-chord key that opens the tag picker (default "k",
+	// i.e. <space>k). Matched in handleChord against the chord key.
+	Key string `toml:"key"`
+	// NerdPill renders chips as nerd-font "pills" — half-sphere end caps
+	// (U+E0B6/U+E0B4) coloured like the chip — instead of the padded-text
+	// fallback. Needs a nerd font in the terminal; default false.
+	NerdPill bool `toml:"nerd_pill"`
+	// FG/BG are the default chip colours — the fallback for every tag
+	// without its own [tags.<keyword>] section. Values: hex ("#1F1F28"), an
+	// ANSI number ("21"), or "transparent"/"none" for bg (emits no
+	// background, so a transparent terminal shows through; pill caps then
+	// draw in the fg colour). Empty = reverse video of the active theme
+	// (Background=theme Text, Foreground=theme Bg); anything else falls back
+	// with a startup warning. The built-in palettes are never touched.
+	FG string `toml:"fg"`
+	BG string `toml:"bg"`
+	// Rules holds the per-tag [tags.<keyword>] sections (display name,
+	// colours, visibility). They are sub-tables of [tags], invisible to the
+	// struct decode, so Load() fills this map with a second raw pass — not a
+	// TOML field of its own.
+	Rules map[string]TagRule `toml:"-"`
+}
+
+// TagRule is one per-tag override, written as [tags.<keyword>] in
+// config.toml. It only affects how that tag's chip DISPLAYS — the keyword
+// stored on the server is never renamed or removed by it.
+type TagRule struct {
+	// Enabled controls the chip's visibility: false hides every chip for
+	// this keyword (the tag itself stays on the server and in the picker,
+	// it just stops rendering); true (or omitted) shows it.
+	Enabled *bool `toml:"enabled"`
+	// Display is the chip text. May contain nerd-font symbols and spaces —
+	// it is display-only, the keyword saved on the server is unchanged.
+	// Empty = the keyword itself.
+	Display string `toml:"display"`
+	// FG/BG override the colours for this tag; empty fields fall back to the
+	// [tags] fg/bg defaults, then to the theme's reverse video. Same value
+	// formats as [tags] fg/bg (hex, ANSI number, bg "transparent").
+	FG string `toml:"fg"`
+	BG string `toml:"bg"`
+}
+
+// Shown reports whether the tag's chips render (default true — writing a
+// per-tag section customizes, only enabled = false hides).
+func (r TagRule) Shown() bool { return r.Enabled == nil || *r.Enabled }
+
+// Rule returns the per-tag section for keyword (case-insensitive, IMAP
+// keywords compare case-insensitively).
+func (t TagsConfig) Rule(keyword string) (TagRule, bool) {
+	if t.Rules == nil || keyword == "" {
+		return TagRule{}, false
+	}
+	for name, rule := range t.Rules {
+		if strings.EqualFold(name, keyword) {
+			return rule, true
+		}
+	}
+	return TagRule{}, false
+}
+
+// TagsKey returns the picker's leader-chord key (default "k").
+func (t TagsConfig) TagsKey() string {
+	if t.Key == "" {
+		return "k"
+	}
+	return t.Key
+}
+
+// parseTagRules extracts the [tags.<keyword>] sub-tables from config.toml.
+// The regular struct decode cannot see them (they would need one struct
+// field per tag), so this walks the raw TOML tree: every key under [tags]
+// whose value is a table becomes a TagRule, keyed lowercased. Scalar keys
+// (enabled, key, fg, bg of [tags] itself) are skipped by the is-table check.
+func parseTagRules(path string) map[string]TagRule {
+	raw := map[string]any{}
+	if _, err := toml.DecodeFile(path, &raw); err != nil {
+		return nil
+	}
+	tags, ok := raw["tags"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	var rules map[string]TagRule
+	for name, val := range tags {
+		tbl, ok := val.(map[string]any)
+		if !ok {
+			continue // [tags] own scalar settings
+		}
+		if rules == nil {
+			rules = make(map[string]TagRule)
+		}
+		r := TagRule{}
+		if b, ok := tbl["enabled"].(bool); ok {
+			r.Enabled = &b
+		}
+		r.Display, _ = tbl["display"].(string)
+		r.FG, _ = tbl["fg"].(string)
+		r.BG, _ = tbl["bg"].(string)
+		rules[strings.ToLower(name)] = r
+	}
+	return rules
+}
+
 // Resolved returns a copy with sensible fallbacks filled in for any field
 // the user enabled-but-left-blank. Safe to call when Enabled is false.
 func (n NotificationsConfig) Resolved() NotificationsConfig {
@@ -382,6 +495,9 @@ type Config struct {
 
 	Listmonk ListmonkConfig `toml:"listmonk"`
 
+	// Tags configures IMAP keyword tagging ([tags] in config.toml).
+	Tags TagsConfig `toml:"tags"`
+
 	// OOO configures out-of-office auto-replies, processed by the headless
 	// daemon (--headless) only. Replies go solely to screened-in senders,
 	// once per sender per OOO period.
@@ -396,6 +512,12 @@ type Config struct {
 	// MergesFile is <config dir>/merges.toml — user-defined merged threads
 	// (see internal/merge). Set during Load(), not a TOML field.
 	MergesFile string `toml:"-"`
+	// TagsDir is <config dir>/tags/ — the local registry of IMAP keyword
+	// tags (see internal/tags): one folder per account, one line-based file
+	// per keyword (the write-through backup of server-side tags; the split
+	// keeps a later restore a per-account operation). Set during Load(),
+	// not a TOML field.
+	TagsDir string `toml:"-"`
 }
 
 // OOOConfig holds out-of-office auto-reply settings ([ooo] in config.toml).
@@ -660,6 +782,8 @@ func Load(path string) (*Config, error) {
 	// exists (single syncable file; the daemon also re-reads it every pass).
 	cfg.OOOFile = filepath.Join(filepath.Dir(path), "ooo.toml")
 	cfg.MergesFile = filepath.Join(filepath.Dir(path), "merges.toml")
+	cfg.TagsDir = filepath.Join(filepath.Dir(path), "tags")
+	cfg.Tags.Rules = parseTagRules(path)
 	if override, err := LoadOOOOverride(cfg.OOOFile); err != nil {
 		return nil, err
 	} else if override != nil {
@@ -816,6 +940,13 @@ func defaults() *Config {
 			BgSyncInterval:      5,
 			MarkAsReadAfterSecs: 7,
 			Signature:           "*sent from [neomd](https://neomd.ssp.sh)*",
+		},
+		Tags: TagsConfig{
+			// Opt-in feature: off until the user sets `enabled = true`.
+			// Written into the generated default config so the option is
+			// discoverable.
+			Enabled: false,
+			Key:     "k", // <space>k opens the tag picker once enabled
 		},
 		AI: AIConfig{
 			// Default: hand off to Claude Code in **interactive** mode (not
