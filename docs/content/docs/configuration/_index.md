@@ -548,7 +548,9 @@ The scopes required depends on the provider and is better confirmed by your emai
 
 - To enable OAuth2 authentication for Office365 accounts, follow the documentation [here](https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth)
 - For GMAIL, follow the documentation [here](https://developers.google.com/workspace/gmail/imap/xoauth2-protocol)
+## Email Tags and filters
 
+You can filter and tag emails with IMAP functionality, see the docs at [Email Tags (IMAP Keywords)](tags/)
 
 ## Dedicated Platforms
 
@@ -557,5 +559,4 @@ The scopes required depends on the provider and is better confirmed by your emai
 - [Proton Mail Bridge](proton-bridge/)
 - [Android (Termux)](android/)
 - [Headless Daemon Mode](headless/)
-- [Email Tags (IMAP Keywords)](tags/)
 - [Email Standards](email-standards/)
