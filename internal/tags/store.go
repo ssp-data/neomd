@@ -245,6 +245,28 @@ func (s *Store) Remove(account, keyword string, ids ...string) bool {
 	return removed
 }
 
+// Delete forgets keyword for account: the entry is dropped and its file
+// removed (a missing file is fine). Other accounts and keywords are
+// untouched. The caller is responsible for removing the keyword from the
+// messages themselves — the registry is only the mirror.
+func (s *Store) Delete(account, keyword string) error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	acc := safeAccount(account)
+	if _, ok := s.entries[acc][keyword]; !ok {
+		return nil
+	}
+	delete(s.entries[acc], keyword)
+	err := os.Remove(filepath.Join(s.dir, acc, keyword+".txt"))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // KeywordsFor returns the registered keywords for one Message-ID within
 // account, sorted. The registry is the backup, not the source of truth —
 // callers merge this with the server-side keywords on the email itself.

@@ -1020,3 +1020,127 @@ func TestTagFilter_EmptyListStillOpensPicker(t *testing.T) {
 		t.Fatalf("after F: shown %v, want all 3", got)
 	}
 }
+
+// ── D: delete a tag ──────────────────────────────────────────────────────
+
+// D on a tag no email carries deletes it at once: gone from the registry
+// (file removed) and from the picker list. No server round trip.
+func TestTagsPicker_DeleteUnusedTag(t *testing.T) {
+	m := tagsTestModel(t, 1)
+	m.tags.store.Add("me@x", "help", "<gone@x>")
+	m.tags.store.Remove("me@x", "help", "<gone@x>") // registered, now empty
+	m.tags.store.Add("me@x", "work", "<keep@x>")
+	if err := m.tags.store.Save(); err != nil {
+		t.Fatal(err)
+	}
+	res, _ := m.handleChord(" ", "t")
+	mm := res.(Model) // cursor on help (sorted first)
+	res, cmd := mm.updateTags(key("D"))
+	mm = res.(Model)
+	if cmd != nil {
+		t.Error("deleting an unused tag must not fire a server command")
+	}
+	if mm.tags.confirmDelete != "" {
+		t.Error("unused tag must not ask for confirmation")
+	}
+	if got := mm.tags.store.All("me@x"); len(got) != 1 || got[0] != "work" {
+		t.Errorf("registry after D = %v, want [work]", got)
+	}
+	if strings.Contains(stripANSI(mm.viewTags()), "help") {
+		t.Error("deleted tag must leave the picker list")
+	}
+	if _, err := os.Stat(filepath.Join(tagsTestDir, "me@x", "help.txt")); !os.IsNotExist(err) {
+		t.Errorf("help.txt must be removed, stat err = %v", err)
+	}
+	if mm.state != stateTags {
+		t.Error("picker stays open after D")
+	}
+}
+
+// D on a tag that emails still carry asks y/n first; y fires the purge and
+// the done message strips the keyword from every loaded row, the folder
+// cache, the active filter and the registry. n cancels and changes nothing.
+func TestTagsPicker_DeleteUsedTagConfirmsThenPurges(t *testing.T) {
+	m := tagsTestModel(t, 2)
+	m.tags.store.Add("me@x", "help", "<m1@x>", "<m2@x>")
+	m.emails[0].Keywords = []string{"help", "work"}
+	m.emails[1].Keywords = []string{"help"}
+	m.folderCache = map[string]folderSnapshot{
+		cacheKey("P", "Archive"): {emails: []imap.Email{{UID: 9, Folder: "Archive", Keywords: []string{"help"}}}},
+	}
+	m.tags.active = map[string]bool{"help": true}
+	m.applyFilter()
+	res, _ := m.handleChord(" ", "t")
+	mm := res.(Model)
+
+	// n cancels.
+	res, cmd := mm.updateTags(key("D"))
+	mm = res.(Model)
+	if cmd != nil || mm.tags.confirmDelete != "help" {
+		t.Fatalf("D on a used tag must ask first: cmd=%v confirm=%q", cmd != nil, mm.tags.confirmDelete)
+	}
+	if !strings.Contains(stripANSI(mm.viewTags()), "y/n") {
+		t.Errorf("picker must show the y/n prompt:\n%s", stripANSI(mm.viewTags()))
+	}
+	res, _ = mm.updateTags(key("n"))
+	mm = res.(Model)
+	if mm.tags.confirmDelete != "" || len(mm.tags.store.All("me@x")) != 1 {
+		t.Fatal("n must cancel without touching the registry")
+	}
+
+	// y fires the purge command; the done message applies it locally.
+	res, _ = mm.updateTags(key("D"))
+	mm = res.(Model)
+	res, cmd = mm.updateTags(key("y"))
+	mm = res.(Model)
+	if cmd == nil {
+		t.Fatal("y must fire the purge command")
+	}
+	if mm.tags.confirmDelete != "" {
+		t.Error("prompt must close after y")
+	}
+	res, _ = mm.Update(tagDeleteDoneMsg{keyword: "help", account: "P", registryKey: "me@x", removed: 3})
+	mm = res.(Model)
+	for _, uid := range []uint32{1, 2} {
+		for _, kw := range keywordsOf(mm, uid) {
+			if kw == "help" {
+				t.Errorf("uid %d still carries help after delete", uid)
+			}
+		}
+	}
+	if got := keywordsOf(mm, 2); len(got) != 1 || got[0] != "work" {
+		t.Errorf("uid 2 keywords = %v, want [work] (other tags untouched)", got)
+	}
+	if kws := mm.folderCache[cacheKey("P", "Archive")].emails[0].Keywords; len(kws) != 0 {
+		t.Errorf("folder cache row still carries %v", kws)
+	}
+	if mm.tags.active["help"] {
+		t.Error("deleted tag must leave the active filter")
+	}
+	if len(mm.tags.store.All("me@x")) != 0 {
+		t.Errorf("registry still lists %v", mm.tags.store.All("me@x"))
+	}
+	if mm.isError || !strings.Contains(mm.status, "3") {
+		t.Errorf("status = %q, want success mentioning 3 emails", mm.status)
+	}
+}
+
+// A failed purge leaves everything as it was — the tag is still on the
+// server, so the registry and rows must keep it.
+func TestTagsPicker_DeleteUsedTagErrorKeepsTag(t *testing.T) {
+	m := tagsTestModel(t, 1)
+	m.tags.store.Add("me@x", "help", "<m1@x>")
+	m.emails[0].Keywords = []string{"help"}
+	m.applyFilter()
+	res, _ := m.Update(tagDeleteDoneMsg{keyword: "help", account: "P", registryKey: "me@x", err: errors.New("STORE failed")})
+	mm := res.(Model)
+	if got := keywordsOf(mm, 1); len(got) != 1 {
+		t.Errorf("row keywords = %v, want help kept", got)
+	}
+	if len(mm.tags.store.All("me@x")) != 1 {
+		t.Error("registry must keep the tag after a failed purge")
+	}
+	if !mm.isError {
+		t.Error("failed purge must show an error status")
+	}
+}

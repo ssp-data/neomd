@@ -253,3 +253,36 @@ func TestTagsStore_EmailAddressKeyVerbatim(t *testing.T) {
 		t.Errorf("address-keyed round trip = %v", got)
 	}
 }
+
+// Delete drops a keyword from the account's registry and removes its file;
+// other accounts and keywords stay. Deleting an unknown keyword is a no-op.
+func TestTagsStore_DeleteRemovesFile(t *testing.T) {
+	dir := filepath.Join(tmpDir(t), "tags")
+	s, _ := Load(dir)
+	s.Add("me@x", "help", "<a@x>")
+	s.Add("me@x", "work", "<b@x>")
+	s.Add("other@x", "help", "<c@x>")
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete("me@x", "help"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "me@x", "help.txt")); !os.IsNotExist(err) {
+		t.Errorf("help.txt must be removed, stat err = %v", err)
+	}
+	if got := s.All("me@x"); len(got) != 1 || got[0] != "work" {
+		t.Errorf("All(me@x) = %v, want [work]", got)
+	}
+	if got := s.All("other@x"); len(got) != 1 || got[0] != "help" {
+		t.Errorf("other account must keep its help tag, got %v", got)
+	}
+	if err := s.Delete("me@x", "nope"); err != nil {
+		t.Errorf("deleting an unknown keyword must be a no-op, got %v", err)
+	}
+	// Survives a reload.
+	s2, _ := Load(dir)
+	if got := s2.All("me@x"); len(got) != 1 || got[0] != "work" {
+		t.Errorf("after reload All(me@x) = %v, want [work]", got)
+	}
+}

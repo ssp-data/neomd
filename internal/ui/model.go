@@ -3318,6 +3318,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the toggle itself must always be finished.
 		return m.handleTagsDone(msg)
 
+	case tagDeleteDoneMsg:
+		// Server-wide purge (D in the picker) finished: forget the tag
+		// locally only now — see handleTagDeleteDone.
+		return m.handleTagDeleteDone(msg)
+
 	case keywordTestDoneMsg:
 		return m.handleKeywordTestDone(msg)
 

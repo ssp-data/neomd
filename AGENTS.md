@@ -514,6 +514,17 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   still apply, pill caps draw in the muted colour. The leader chord is `<space>t`
   (`[tags] key` default `"t"`, `TagsKey()` fallback) — `k` is list navigation. Test:
   `TestTagColors_MonoIgnoresConfiguredColours`.
+- **Deleting a tag is server-first, never optimistic** — `D` in the picker on a tag in
+  use (`tagInUse`: registry count, list, folder cache or targets) asks `y/n`, then
+  `deleteTagEverywhere` runs `PurgeKeyword` (`internal/imap/tags.go`: per configured
+  folder one `UID SEARCH KEYWORD` + one `STORE -FLAGS` on the UID set, `withConn`, never
+  retried; unsearchable folders are reported as skipped, a failed STORE aborts) and only
+  `handleTagDeleteDone` forgets the tag locally (registry `Delete`, rows, folder cache,
+  picker targets, active filter). On error nothing local changes — the tag is still on
+  the server. An unused tag is deleted registry-only, no round trip. Tests:
+  `TestTagsPicker_DeleteUnusedTag`, `TestTagsPicker_DeleteUsedTagConfirmsThenPurges`,
+  `TestTagsPicker_DeleteUsedTagErrorKeepsTag`, `TestMem_PurgeKeyword_RemovesFromAllFolders`,
+  `TestTagsStore_DeleteRemovesFile`.
 - **The tag filter is a view mode, not a search** — `tagsModel.active` (`f`/`F` in the
   picker) is checked in `applyFilter` next to `showUnreadOnly` and, like it, is NOT reset
   by folder switches, reloads, off-tabs or `ctrl+a`; only `F` or inbox `esc` clear it.

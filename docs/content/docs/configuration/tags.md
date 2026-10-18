@@ -13,6 +13,7 @@ A tag is a label you put on a message, like `work`, `invoice` or `waiting`. Ther
 - **`[tags.<name>]` sections only change how an existing tag looks.** A section such as `[tags.important]` sets the chip text (`display`), colours and visibility for a tag called `important`. It does not create that tag: until a message actually carries the keyword `important`, the section does nothing. The examples below use `important`, `test` and `help` only because those are the tag names in the screenshots; use whatever names fit your mail.
 - **Keywords are lowercase**, letters, digits, `-`, `_`, `.` (max 32 chars). Keywords starting with `$` or `\` belong to other systems and are never offered or shown: Thunderbird's five built-in tags (`$label1` to `$label5`) stay invisible, while a custom Thunderbird tag has a plain keyword and shows up in neomd's picker on any message that carries it. Toggle it once from neomd and it renders as a chip from then on.
 - **Filter the list by tag.** In the picker, `f` toggles the highlighted tag into the list filter and `F` clears it; close the picker and only emails carrying any of the active tags remain (one or several tags, OR). The filter is a view mode like `z` unread-only: it stays on when you switch folders, reload, or open Search / Everything, and the footer shows `tags: work, invoice` while it is active. `esc` in the inbox clears it (together with `/` and unread-only). If the filter hides every row, `<space>t` still opens the picker in filter-only mode so you can change or clear it. The filter runs on the loaded window of the folder (`inbox_count`), like `/`.
+- **Delete a tag with `D`.** In the picker, `D` on the highlighted tag deletes it. A tag no email carries disappears at once (its registry file is removed). A tag that emails still carry asks `y/n` first, then removes the keyword from **every email in every configured folder of the account** on the server (one search plus one flag change per folder) and forgets it locally — so there is no need to untag 100 emails by hand. Only that one keyword is touched; the emails and their other tags stay. If a folder could not be searched, the status line names it and the tag may remain on emails there. There is no undo: re-tagging is the only way back.
 - **Nothing is automatic.** Tags are manual labels per message. Sorting mail by sender is the [screener](/docs/screener/)'s job, not tags.
 - **A local backup exists**, per account, at `~/.config/neomd/tags/<account-address>/<keyword>.txt` (one Message-ID per line). neomd writes it on every toggle; it is only there in case a provider ever purges unknown keywords. The server is the source of truth.
 
@@ -88,7 +89,7 @@ bg = "none"
 
 ![tags compact glyph-only](/images/tags-glyph-only.png)
 
-**Tag picker** — `<space>t` on the cursor email or a marked set: `enter`/`space` toggle a tag (`✓` on all targets, `~` on some), `a` adds a new tag, `f`/`F` set and clear the list filter, `/` finds a tag in the list:
+**Tag picker** — `<space>t` on the cursor email or a marked set: `enter`/`space` toggle a tag (`✓` on all targets, `~` on some), `a` adds a new tag, `f`/`F` set and clear the list filter, `D` deletes a tag, `/` finds a tag in the list:
 
 ![tags picker](/images/tags-picker.png)
 
