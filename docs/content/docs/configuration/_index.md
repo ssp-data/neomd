@@ -115,7 +115,7 @@ bg        = ""          # default chip background (or "transparent"/"none" for n
 # Optional per-tag overrides — display only, the stored IMAP keyword never changes:
 # [tags.important]
 # enabled = true          # false hides this tag's chips while the feature is on; never overrides the global switch
-# display = " Important"  # chip text; nerd-font symbols welcome (pill mode honors typed spaces)
+# display = "\uF0A3 Important"  # chip text; nerd-font glyph as \uXXXX escape or pasted literally (pill mode honors typed spaces)
 # fg      = "#FFFF00"     # hex or ANSI number
 # bg      = "#8B0000"     # or "transparent"
 ```
@@ -585,19 +585,19 @@ bg = "#660000"
 
 ![tags per-tag colours](/images/tags-per-tag-colours.png)
 
-**Nerd-font glyphs in the display text** — paste any glyph into `display` (Omarchy ships nerd fonts by default):
+**Nerd-font glyphs in the display text** — put a glyph into `display`, either pasted literally or as a TOML `\uXXXX` escape (the escape survives copy-paste, which strips private-use glyphs in many places; find code points at nerdfonts.com/cheat-sheet). Omarchy ships nerd fonts by default:
 
 ```toml
 [tags.test]
 enabled = true
-display = " Testing"
+display = "\uF0A3 Testing"
 fg = "#00FF00"
 bg = "#006600"
 ```
 
 ![tags nerd-font glyph](/images/tags-nerd-glyph.png)
 
-**Compact glyph-only** — glyphs with `bg = "none"`; on a transparent terminal the background shows through:
+**Compact glyph-only** — glyph-only `display` with `bg = "none"`; on a transparent terminal the background shows through. The tag names (`important`, `test`, `help`) are just examples: a `[tags.<keyword>]` section styles a tag of that name once it exists, it does not create it — tags are created in the picker (`<space>t`, `a`):
 
 ```toml
 [tags]
@@ -606,19 +606,19 @@ nerd_pill = false
 
 [tags.important]
 enabled = true
-display = ""
+display = "\uF071"   # nf-fa-warning
 fg = "#FF9944"
 bg = "none"
 
 [tags.test]
 enabled = true
-display = ""
+display = "\uF0A3"   # nf-fa-certificate
 fg = "#00FF00"
 bg = "none"
 
 [tags.help]
 enabled = true
-display = ""
+display = "\uF059"   # nf-fa-question_circle
 fg = "#777777"
 bg = "none"
 ```
