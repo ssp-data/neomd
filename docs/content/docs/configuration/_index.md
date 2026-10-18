@@ -552,6 +552,85 @@ The scopes required depends on the provider and is better confirmed by your emai
 
 ## Email Tags (IMAP Keywords)
 
+### How they Look: Example
+
+**Standard view** — just turn the feature on; tags render as reverse-video chips before the subject:
+
+```toml
+[tags]
+enabled = true
+```
+
+![tags standard view](/images/tags-standard.png)
+
+**Nerd-font pills** — half-sphere end caps around each chip (needs a nerd font in the terminal):
+
+```toml
+[tags]
+enabled = true
+nerd_pill = true
+```
+
+![tags nerd-font pills](/images/tags-nerd-pill.png)
+
+**Per-tag display text and colours** — one `[tags.<keyword>]` section per tag you want to customize. The stored IMAP keyword is always lowercase and never changes; only how it displays does:
+
+```toml
+[tags.important]
+enabled = true
+display = "Important"
+fg = "#FF9900"
+bg = "#660000"
+```
+
+![tags per-tag colours](/images/tags-per-tag-colours.png)
+
+**Nerd-font glyphs in the display text** — paste any glyph into `display` (Omarchy ships nerd fonts by default):
+
+```toml
+[tags.test]
+enabled = true
+display = " Testing"
+fg = "#00FF00"
+bg = "#006600"
+```
+
+![tags nerd-font glyph](/images/tags-nerd-glyph.png)
+
+**Compact glyph-only** — glyphs with `bg = "none"`; on a transparent terminal the background shows through:
+
+```toml
+[tags]
+enabled = true
+nerd_pill = false
+
+[tags.important]
+enabled = true
+display = ""
+fg = "#FF9944"
+bg = "none"
+
+[tags.test]
+enabled = true
+display = ""
+fg = "#00FF00"
+bg = "none"
+
+[tags.help]
+enabled = true
+display = ""
+fg = "#777777"
+bg = "none"
+```
+
+![tags compact glyph-only](/images/tags-glyph-only.png)
+
+**Tag picker** — `<space>t` on the cursor email or a marked set: `enter`/`space` toggle a tag (`✓` on all targets, `~` on some), `a` adds a new tag, `/` filters:
+
+![tags picker](/images/tags-picker.png)
+
+### How to activate/configure
+
 Opt-in (`[tags] enabled = true`) server-side tagging: `<space>t` on the cursor email or a marked set opens a picker that toggles IMAP keywords — the RFC 9051 tagging mechanism, so tags live on the message, survive reinstalls, and are seen by other clients that support keywords. Tags render as coloured chips **before** the subject (` work ` by default, or nerd-font pills with `nerd_pill = true`); per-tag `[tags.<keyword>]` sections override the display text (nerd-font symbols welcome), colours, and visibility.
 
 For a compact glyph-only look, give each tag a nerd-font `display` symbol and set `mono = true`: every chip then renders in the active theme's muted colour with no background (per-tag `fg`/`bg` are ignored, `display` and `enabled` still apply), so tags read as quiet markers instead of a rainbow.
