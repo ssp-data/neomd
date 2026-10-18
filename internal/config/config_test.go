@@ -362,6 +362,7 @@ func TestValidate_InvalidPort(t *testing.T) {
 			IMAP: "imap.example.com:99999",
 			SMTP: "smtp.example.com:587",
 			User: "test@example.com",
+			From: "test@example.com",
 		}},
 	}
 	err := cfg.validate()
@@ -380,11 +381,121 @@ func TestValidate_ValidConfig(t *testing.T) {
 			IMAP: "imap.example.com:993",
 			SMTP: "smtp.example.com:587",
 			User: "test@example.com",
+			From: "test@example.com",
 		}},
 	}
 	err := cfg.validate()
 	if err != nil {
 		t.Errorf("valid config should not error, got: %v", err)
+	}
+}
+
+// An account without a from must fail at config load — this is the exact
+// incident: from = "" on every account loaded fine, showed a blank pre-send
+// From line, and failed only after the mail was written.
+func TestValidate_AccountRequiresFrom(t *testing.T) {
+	cfg := &Config{
+		Accounts: []AccountConfig{{
+			Name: "Main",
+			IMAP: "imap.example.com:993",
+			SMTP: "smtp.example.com:587",
+			User: "me@example.com",
+		}},
+	}
+	err := cfg.validate()
+	if err == nil {
+		t.Fatal("expected error for account with empty from")
+	}
+	if !strings.Contains(err.Error(), "from is required") {
+		t.Errorf("error should mention 'from is required', got: %v", err)
+	}
+}
+
+// A [[senders]] alias exists only to send as its From address — an empty one
+// would put an empty entry in the pre-send ctrl+f cycle.
+func TestValidate_SenderRequiresFrom(t *testing.T) {
+	cfg := &Config{
+		Accounts: []AccountConfig{{
+			Name: "Test",
+			IMAP: "imap.example.com:993",
+			SMTP: "smtp.example.com:587",
+			User: "test@example.com",
+			From: "test@example.com",
+		}},
+		Senders: []SenderConfig{{Name: "alias", Account: "Test"}},
+	}
+	err := cfg.validate()
+	if err == nil {
+		t.Fatal("expected error for sender with empty from")
+	}
+	if !strings.Contains(err.Error(), "from is required") {
+		t.Errorf("error should mention 'from is required', got: %v", err)
+	}
+}
+
+// A non-empty from that is not a valid address (from = "xx") must fail at
+// load too — the send path's extractDomain applies the same RFC 5322 bar
+// when building the Message-ID, so such an account can never send.
+func TestValidate_FromFormat(t *testing.T) {
+	valid := []string{
+		"me@example.com",
+		"Me <me@example.com>",
+		"me@sub.example.co.uk",
+	}
+	invalid := []string{
+		"xx",
+		"Name <xx>",
+		"xx@",
+		"@example.com",
+		"me@example.com, other@example.com", // From is a single address
+	}
+	for _, from := range valid {
+		cfg := &Config{Accounts: []AccountConfig{{
+			Name: "T", IMAP: "imap.example.com:993", SMTP: "smtp.example.com:587",
+			User: "u@example.com", From: from,
+		}}}
+		if err := cfg.validate(); err != nil {
+			t.Errorf("from %q: unexpected error: %v", from, err)
+		}
+	}
+	for _, from := range invalid {
+		cfg := &Config{Accounts: []AccountConfig{{
+			Name: "T", IMAP: "imap.example.com:993", SMTP: "smtp.example.com:587",
+			User: "u@example.com", From: from,
+		}}}
+		err := cfg.validate()
+		if err == nil {
+			t.Errorf("from %q: expected validation error, got nil", from)
+			continue
+		}
+		if !strings.Contains(err.Error(), "not a valid email address") {
+			t.Errorf("from %q: error should mention 'not a valid email address', got: %v", from, err)
+		}
+	}
+}
+
+// The from checks run through Load, so a config file with an empty from is
+// rejected before neomd starts — not after the first mail is composed.
+func TestLoad_EmptyFromIsLoadError(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfgBody := `
+[[accounts]]
+name     = "Main"
+imap     = "imap.example.com:993"
+smtp     = "smtp.example.com:587"
+user     = "me@example.com"
+password = "x"
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, err := Load(cfgPath)
+	if err == nil {
+		t.Fatal("expected Load error for empty from")
+	}
+	if !strings.Contains(err.Error(), "from is required") {
+		t.Errorf("error should mention 'from is required', got: %v", err)
 	}
 }
 
@@ -395,6 +506,7 @@ func TestValidate_NegativeUIValues(t *testing.T) {
 			IMAP: "imap.example.com:993",
 			SMTP: "smtp.example.com:587",
 			User: "test@example.com",
+			From: "test@example.com",
 		}},
 		UI: UIConfig{InboxCount: -1},
 	}

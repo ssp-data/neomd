@@ -650,6 +650,14 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 
 - **Config validation on load** — host:port format, port 1–65535, required fields;
   `$VAR`/`${VAR}` expansion in `user`/`password`. Tests: `TestValidate*`, `TestExpandEnv`.
+- **`from` is validated at load** — every `[[accounts]]` entry and `[[senders]]` alias must
+  carry a `from` that is a single RFC 5322 address with a non-empty domain
+  (`validFromAddress`, `internal/config/config.go`, the same bar the send path's
+  `extractDomain` applies for the Message-ID). Empty or malformed `from` fails
+  `config.Load` at startup with a clear message — never a blank pre-send `From:` line
+  that only surfaces as `invalid From address ""` after the mail is written.
+  Tests: `TestValidate_AccountRequiresFrom`, `TestValidate_SenderRequiresFrom`,
+  `TestValidate_FromFormat`, `TestLoad_EmptyFromIsLoadError`.
 - **`password = "keyring"` sentinel** — resolved in `config.Load()` so IMAP, SMTP, and
   `[[senders]]` aliases all see it; preserved with a warning if the keyring is unavailable.
   Test: `TestUseKeyring`.

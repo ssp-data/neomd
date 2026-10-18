@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -728,6 +729,24 @@ func (cfg *Config) validate() error {
 		if a.User == "" && !a.IsOAuth2() {
 			return fmt.Errorf("account %q: user is required", label)
 		}
+		if a.From == "" {
+			return fmt.Errorf("account %q: from is required (set from to your address, e.g. \"Name <you@example.com>\")", label)
+		}
+		if !validFromAddress(a.From) {
+			return fmt.Errorf("account %q: from %q is not a valid email address — mail from this account cannot be sent", label, a.From)
+		}
+	}
+	for i, s := range cfg.Senders {
+		label := s.Name
+		if label == "" {
+			label = fmt.Sprintf("senders[%d]", i)
+		}
+		if s.From == "" {
+			return fmt.Errorf("sender %q: from is required — it exists only to send as that address", label)
+		}
+		if !validFromAddress(s.From) {
+			return fmt.Errorf("sender %q: from %q is not a valid email address", label, s.From)
+		}
 	}
 	// Validate legacy single-account fields if used
 	if cfg.Account.IMAP != "" {
@@ -870,6 +889,20 @@ func resolveKeyringPassword(accountName, password string) string {
 		fmt.Fprintf(os.Stderr, "neomd: account %q: keyring unavailable: %v\n", accountName, err)
 	}
 	return password // leave sentinel for downstream
+}
+
+// validFromAddress reports whether s is usable as a sender address: RFC 5322
+// parseable (bare address or "Name <addr>") with a non-empty domain. This is
+// the same bar the send path applies when deriving the Message-ID domain
+// (extractDomain in internal/smtp), checked here so an unsendable From fails
+// at startup instead of after the mail is written.
+func validFromAddress(s string) bool {
+	addr, err := mail.ParseAddress(strings.TrimSpace(s))
+	if err != nil {
+		return false
+	}
+	i := strings.LastIndex(addr.Address, "@")
+	return i >= 0 && i < len(addr.Address)-1
 }
 
 // expandEnv resolves a value that is entirely a single env var reference
