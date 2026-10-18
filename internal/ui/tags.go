@@ -1,6 +1,6 @@
 package ui
 
-// ── IMAP keyword tags (space k) ──────────────────────────────────────────
+// ── IMAP keyword tags (space t) ──────────────────────────────────────────
 //
 // Tags are stored as IMAP keywords on the message itself (server-side, works
 // in other clients, survives reinstalls); <config dir>/tags/ is the local
@@ -87,7 +87,7 @@ type tagsModel struct {
 	err          string // validation error shown inside the picker
 
 	// pending holds the wanted keyword state of in-flight tag toggles
-	// (space k); fetch results landing meanwhile take this state so a
+	// (space t); fetch results landing meanwhile take this state so a
 	// refresh cannot snap the chips back. Cleared by tagsDoneMsg.
 	pending map[tagPendingKey]bool
 }
@@ -116,7 +116,7 @@ func newTagsModel(cfg *config.Config, themeFG, themeBG lipgloss.Color) (tagsMode
 		store = nil
 	}
 	tagKeywordSource = func() []string { return store.All(tagActiveAccount) }
-	chipStyle, tagRules, colorWarn := buildTagStyles(&cfg.Tags, themeFG, themeBG)
+	chipStyle, tagRules, colorWarn := buildTagStyles(&cfg.Tags, themeFG, themeBG, colorMuted)
 	styleTagChip = chipStyle
 	tagRuleSource = tagRules
 	tagPillMode = cfg.Tags.NerdPill
@@ -790,9 +790,15 @@ func validTagColor(val string) bool {
 // style (theme reverse, [tags] fg/bg override) and the per-tag rule resolver
 // ([tags.<keyword>] display/fg/bg/enabled, falling back per field to the
 // [tags] defaults). Returns a warning about unrecognized colour values, if any.
-func buildTagStyles(cfg *config.TagsConfig, themeFG, themeBG lipgloss.Color) (lipgloss.Style, func(string) tagRuleView, string) {
+// [tags] mono = true short-circuits every colour to themeMuted on no
+// background (display text and per-tag enabled still apply) — one quiet
+// colour for glyph-only chips instead of a per-tag rainbow.
+func buildTagStyles(cfg *config.TagsConfig, themeFG, themeBG, themeMuted lipgloss.Color) (lipgloss.Style, func(string) tagRuleView, string) {
 	defaultFG := resolveTagColor(cfg.FG, themeFG)
 	defaultBG := resolveTagColor(cfg.BG, themeBG)
+	if cfg.Mono {
+		defaultFG, defaultBG = themeMuted, lipgloss.Color("")
+	}
 	def := lipgloss.NewStyle().Foreground(defaultFG).Background(defaultBG)
 
 	var warn []string
@@ -816,12 +822,16 @@ func buildTagStyles(cfg *config.TagsConfig, themeFG, themeBG lipgloss.Color) (li
 		if !ok {
 			return tagRuleView{show: true, fg: defaultFG, bg: defaultBG}
 		}
-		return tagRuleView{
+		v := tagRuleView{
 			show:    rule.Shown(),
 			display: rule.Display,
 			fg:      resolveTagColor(rule.FG, defaultFG),
 			bg:      resolveTagColor(rule.BG, defaultBG),
 		}
+		if cfg.Mono {
+			v.fg, v.bg = defaultFG, defaultBG // per-tag colours ignored
+		}
+		return v
 	}
 	warning := ""
 	if len(warn) > 0 {

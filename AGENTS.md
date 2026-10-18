@@ -508,6 +508,12 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   `TestMem_MovePreservesKeyword`, `TestTagsStore_RoundTripPerAccountFiles`,
   `TestTagsStore_AccountsAreIsolated`, `TestTagsStore_EmailAddressKeyVerbatim`,
   `TestTagChips_DisabledConfigIsGlobalKillSwitch`.
+- **`[tags] mono = true` is one colour, no background, for every chip** — `buildTagStyles`
+  (`internal/ui/tags.go`) short-circuits the default and every per-tag colour to the
+  theme's muted foreground on an empty background; `display` and per-tag `enabled`
+  still apply, pill caps draw in the muted colour. The leader chord is `<space>t`
+  (`[tags] key` default `"t"`, `TagsKey()` fallback) — `k` is list navigation. Test:
+  `TestTagColors_MonoIgnoresConfiguredColours`.
 - **Reserved keywords are blocked and never displayed** — input starting with `$` or
   `\` is rejected in the picker with "not allowed to use this keyword, it is reserved
   for other systems" (`tags.NormalizeKeyword`), and chips render only for
@@ -515,10 +521,10 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   or Thunderbird's `$label1-5` never chip. Tests: `TestTagsPicker_ReservedKeywordRejected`,
   `TestTagChips_OnlyRegistryKeywordsRender`.
 - **The picker previews display tags** — a tag with a `display` value renders
-  a live chip preview right of its keyword in the `<space>k` dialog, through
+  a live chip preview right of its keyword in the `<space>t` dialog, through
   the identical pill/fallback path and config colours as the inbox row.
   Test: `TestTagsPicker_ShowsDisplayPreviewRightOfKeyword`.
-- **A tag toggle is optimistic, never a reload** — `<space>k` (configurable via
+- **A tag toggle is optimistic, never a reload** — `<space>t` (configurable via
   `[tags] key`) flips `Email.Keywords` at once in `m.emails`, the folder cache snapshot
   and the picker's captured targets (`applyTag`/`setKeywordLocal`), then runs the
   STOREs via `withConn` (mutating ⇒ never retried); `tagsModel.pending` overlays every fetch
@@ -554,11 +560,11 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   Tests: `TestTagChips_WidthAccounting`,
   `TestTagChips_OnlyRegistryKeywordsRender`, `TestTagRules_DisplayTextAndHidden`,
   `TestTagChips_NerdPillMode`, `TestResolveTagColor`, `TestRowFitsTerminalWidth`.
-- **`<space>k` capability probe leaves no trace** — `:keyword-test` / `:kt`
+- **`<space>t` capability probe leaves no trace** — `:tag-test` / `:tt`
   (`KeywordProbe` in `internal/imap/keywords.go`, dialog in `internal/ui/keywordtest.go`)
   writes exactly one `NeomdTest` keyword to one message, reports PERMANENTFLAGS/`\*`,
   STORE, SEARCH and cleanup per step, and removes the keyword again (keep mode via
-  `:kt keep` opts out for persistence checks). Tests: `TestKeywordProbe_*`.
+  `:tt keep` opts out for persistence checks). Tests: `TestKeywordProbe_*`.
 
 ## Reading & Security
 

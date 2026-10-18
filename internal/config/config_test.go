@@ -709,8 +709,8 @@ func TestLoad_SetsTagsDirNextToConfig(t *testing.T) {
 	if cfg.Tags.Enabled {
 		t.Error("absent [tags] section must leave tagging disabled (opt-in)")
 	}
-	if cfg.Tags.TagsKey() != "k" {
-		t.Errorf("TagsKey = %q, want k", cfg.Tags.TagsKey())
+	if cfg.Tags.TagsKey() != "t" {
+		t.Errorf("TagsKey = %q, want t", cfg.Tags.TagsKey())
 	}
 }
 
@@ -725,7 +725,7 @@ func TestTagsConfig_EnabledOptIn(t *testing.T) {
 	if tc.TagsKey() != "t" {
 		t.Errorf("TagsKey = %q, want t", tc.TagsKey())
 	}
-	if (TagsConfig{}).TagsKey() != "k" {
+	if (TagsConfig{}).TagsKey() != "t" {
 		t.Error("zero-value TagsConfig must default to key k")
 	}
 }
@@ -746,7 +746,7 @@ from = "u@example.com"
 
 [tags]
 enabled = true
-key = "t"
+key = "k"
 
 [tags.important]
 enabled = true
@@ -767,7 +767,7 @@ display = "Just Text"
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !cfg.Tags.Enabled || cfg.Tags.TagsKey() != "t" {
+	if !cfg.Tags.Enabled || cfg.Tags.TagsKey() != "k" {
 		t.Errorf("[tags] scalars misparsed: %+v", cfg.Tags)
 	}
 	r, ok := cfg.Tags.Rule("important")
@@ -805,6 +805,7 @@ from = "u@example.com"
 [tags]
 enabled = true
 nerd_pill = true
+mono = true
 `
 	if err := os.WriteFile(path, []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
@@ -815,6 +816,9 @@ nerd_pill = true
 	}
 	if !cfg.Tags.NerdPill {
 		t.Error("nerd_pill = true must parse")
+	}
+	if !cfg.Tags.Mono {
+		t.Error("mono = true must parse")
 	}
 	if (TagsConfig{}).NerdPill {
 		t.Error("nerd_pill must default to false (padded-text fallback)")

@@ -118,12 +118,12 @@ func init() {
 			},
 		},
 		{
-			name:    "keyword-test",
-			aliases: []string{"kt"},
-			desc:    "probe IMAP keyword (tag) support of the current server on the selected email; \":keyword-test keep\" leaves the keyword on the message to verify persistence",
+			name:    "tag-test",
+			aliases: []string{"tt"},
+			desc:    "probe IMAP keyword (tag) support of the current server on the selected email; \":tag-test keep\" leaves the keyword on the message to verify persistence",
 			runArgs: func(m *Model, args string) (tea.Model, tea.Cmd) {
 				if args != "" && args != "keep" {
-					m.status = "Usage: :keyword-test [keep]"
+					m.status = "Usage: :tag-test [keep]"
 					m.isError = true
 					return m, nil
 				}

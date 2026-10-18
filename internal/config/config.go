@@ -320,13 +320,19 @@ type TagsConfig struct {
 	// kill-switch that per-tag [tags.<keyword>] enabled values cannot
 	// override — those only hide single keywords while the feature is on).
 	Enabled bool `toml:"enabled"`
-	// Key is the leader-chord key that opens the tag picker (default "k",
-	// i.e. <space>k). Matched in handleChord against the chord key.
+	// Key is the leader-chord key that opens the tag picker (default "t",
+	// i.e. <space>t). Matched in handleChord against the chord key.
 	Key string `toml:"key"`
 	// NerdPill renders chips as nerd-font "pills" — half-sphere end caps
 	// (U+E0B6/U+E0B4) coloured like the chip — instead of the padded-text
 	// fallback. Needs a nerd font in the terminal; default false.
 	NerdPill bool `toml:"nerd_pill"`
+	// Mono renders every chip in a single theme colour — the muted foreground
+	// with no background — and ignores [tags] fg/bg and every per-tag colour
+	// (display text and per-tag enabled still apply). Meant for glyph-only
+	// `display` values on a transparent terminal: one quiet colour instead of
+	// a rainbow. Default false.
+	Mono bool `toml:"mono"`
 	// FG/BG are the default chip colours — the fallback for every tag
 	// without its own [tags.<keyword>] section. Values: hex ("#1F1F28"), an
 	// ANSI number ("21"), or "transparent"/"none" for bg (emits no
@@ -380,10 +386,10 @@ func (t TagsConfig) Rule(keyword string) (TagRule, bool) {
 	return TagRule{}, false
 }
 
-// TagsKey returns the picker's leader-chord key (default "k").
+// TagsKey returns the picker's leader-chord key (default "t").
 func (t TagsConfig) TagsKey() string {
 	if t.Key == "" {
-		return "k"
+		return "t"
 	}
 	return t.Key
 }
@@ -946,7 +952,7 @@ func defaults() *Config {
 			// Written into the generated default config so the option is
 			// discoverable.
 			Enabled: false,
-			Key:     "k", // <space>k opens the tag picker once enabled
+			Key:     "t", // <space>t opens the tag picker once enabled
 		},
 		AI: AIConfig{
 			// Default: hand off to Claude Code in **interactive** mode (not

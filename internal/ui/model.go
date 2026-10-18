@@ -48,8 +48,8 @@ const (
 	stateWelcome               // first-run welcome popup
 	stateReaction              // emoji reaction picker
 	stateContacts              // contacts picker (space c)
-	stateTags                  // IMAP keyword tag picker (space k)
-	stateKeywordTest           // IMAP keyword support probe dialog (:kt)
+	stateTags                  // IMAP keyword tag picker (space t)
+	stateKeywordTest           // IMAP keyword support probe dialog (:tt)
 )
 
 // async message types
@@ -726,7 +726,7 @@ type Model struct {
 	reactionSelected int         // selected emoji index (0-7)
 	pendingReaction  bool        // true if we need to fetch body before entering reaction mode
 
-	// IMAP keyword support probe (:keyword-test / :kt) — state in keywordtest.go
+	// IMAP keyword support probe (:tag-test / :tt) — state in keywordtest.go
 	keywordTest keywordTestModel
 
 	// Status / error
@@ -787,7 +787,7 @@ type Model struct {
 	contactsFilterActive bool
 	contactsCursor       int
 
-	// IMAP keyword tags (space k): picker state, optimistic-toggle overlay
+	// IMAP keyword tags (space t): picker state, optimistic-toggle overlay
 	// and registry — tagsModel lives in tags.go next to its methods.
 	tags tagsModel
 
@@ -884,7 +884,7 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 	if err != nil {
 		notice = "merges.toml: " + err.Error()
 	}
-	// Tags (space k): registry load and chip styling live in tags.go —
+	// Tags (space t): registry load and chip styling live in tags.go —
 	// newTagsModel also wires the package-level chip pipeline and returns
 	// a startup notice when the registry or a colour value needs attention.
 	tm, tagNotice := newTagsModel(cfg, colorBg, colorText)
@@ -4134,7 +4134,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case " ": // leader key — wait for digit or shortcut
 		m.pendingKey = " "
-		m.status = "leader:  1-9 folder tab  / IMAP search  c contacts  S scan spy pixels  k tags  w welcome  (esc to cancel)"
+		m.status = "leader:  1-9 folder tab  / IMAP search  c contacts  S scan spy pixels  t tags  w welcome  (esc to cancel)"
 		return m, nil
 
 	case "M":
@@ -4829,7 +4829,7 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			m.status = "Scanning for spy pixels…"
 			return m, m.spyScanCmd()
 		}
-		// Tag picker: [tags] key (default "k"); opt-in feature — inert until
+		// Tag picker: [tags] key (default "t"); opt-in feature — inert until
 		// [tags] enabled = true (openTags shows the hint).
 		if m.cfg != nil && key == m.cfg.Tags.TagsKey() {
 			return m.openTags()

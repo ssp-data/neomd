@@ -26,7 +26,7 @@ type keywordTestTarget struct {
 	subject string
 }
 
-// keywordTestDoneMsg reports the IMAP keyword support probe result (:kt).
+// keywordTestDoneMsg reports the IMAP keyword support probe result (:tt).
 type keywordTestDoneMsg struct {
 	result *imap.KeywordProbeResult
 	target keywordTestTarget
@@ -41,8 +41,8 @@ type keywordTestModel struct {
 	target  keywordTestTarget
 }
 
-// openKeywordTest opens the IMAP keyword support probe dialog (space k or
-// :keyword-test) and starts the round trip on the selected email (first email
+// openKeywordTest opens the IMAP keyword support probe dialog (space t or
+// :tag-test) and starts the round trip on the selected email (first email
 // as fallback). keep=true leaves the keyword on the message afterwards.
 func (m Model) openKeywordTest(keep bool) (tea.Model, tea.Cmd) {
 	cli := m.imapCli()

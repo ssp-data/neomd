@@ -1,6 +1,6 @@
 package ui
 
-// IMAP keyword tagging (space k): the picker toggles optimistically (chips
+// IMAP keyword tagging (space t): the picker toggles optimistically (chips
 // flip at once, STORE behind the list, no spinner/reload), a refresh landing
 // mid-flight cannot snap chips back, an error reverts them, reserved
 // keywords are rejected at input, foreign keywords never chip, and rows with
@@ -83,7 +83,7 @@ func openPicker(t *testing.T, m Model) Model {
 func TestTagsPicker_ToggleOptimisticFlip(t *testing.T) {
 	m := tagsTestModel(t, 3)                      // list 3,2,1, cursor on uid 3
 	m.tags.store.Add("me@x", "work", "<other@x>") // a known tag to pick
-	res, _ := m.handleChord(" ", "k")
+	res, _ := m.handleChord(" ", "t")
 	mm := res.(Model)
 	if mm.state != stateTags {
 		t.Fatalf("state = %v, want stateTags", mm.state)
@@ -146,7 +146,7 @@ func listItemAt(m Model, uid uint32) emailItem {
 func TestTagsPicker_RefreshLandingMidFlightKeepsChip(t *testing.T) {
 	m := tagsTestModel(t, 2)
 	m.tags.store.Add("me@x", "work", "<x@x>")
-	res, _ := m.handleChord(" ", "k")
+	res, _ := m.handleChord(" ", "t")
 	mm := res.(Model)
 	res, _ = mm.updateTags(key(" "))
 	mm = res.(Model)
@@ -166,7 +166,7 @@ func TestTagsPicker_RefreshLandingMidFlightKeepsChip(t *testing.T) {
 func TestTagsCmd_ErrorReverts(t *testing.T) {
 	m := tagsTestModel(t, 2)
 	m.tags.store.Add("me@x", "work", "<x@x>")
-	res, _ := m.handleChord(" ", "k")
+	res, _ := m.handleChord(" ", "t")
 	mm := res.(Model)
 	res, _ = mm.updateTags(key(" "))
 	mm = res.(Model)
@@ -413,7 +413,7 @@ func TestTagChips_DisabledConfigIsGlobalKillSwitch(t *testing.T) {
 func TestTagsPicker_DisabledConfigRefused(t *testing.T) {
 	m := tagsTestModel(t, 1)
 	m.cfg.Tags.Enabled = false
-	res, _ := m.handleChord(" ", "k")
+	res, _ := m.handleChord(" ", "t")
 	mm := res.(Model)
 	if mm.state == stateTags {
 		t.Error("picker must not open when [tags] enabled = false")
@@ -428,7 +428,7 @@ func TestTagsPicker_LocalOnlyAccount(t *testing.T) {
 	// the done message says so.
 	m := tagsTestModel(t, 1)
 	m.tags.store.Add("me@x", "work", "<x@x>")
-	res, _ := m.handleChord(" ", "k")
+	res, _ := m.handleChord(" ", "t")
 	mm := res.(Model)
 	res, cmd := mm.updateTags(key(" "))
 	mm = res.(Model)
@@ -451,7 +451,7 @@ func TestTagsPicker_NoSelectionGuard(t *testing.T) {
 	m := tagsTestModel(t, 1)
 	m.emails = nil
 	m.applyFilter()
-	res, _ := m.handleChord(" ", "k")
+	res, _ := m.handleChord(" ", "t")
 	mm := res.(Model)
 	if mm.state == stateTags {
 		t.Error("picker must not open without a target")
@@ -500,7 +500,7 @@ func TestTagRules_DisplayTextAndHidden(t *testing.T) {
 			"secret":    {Enabled: &hide},              // enabled=false → chips hidden
 		},
 	}
-	def, resolve, warn := buildTagStyles(&cfg, colorBg, colorText)
+	def, resolve, warn := buildTagStyles(&cfg, colorBg, colorText, colorMuted)
 	if warn != "" {
 		t.Fatalf("unexpected warning: %q", warn)
 	}
@@ -561,7 +561,7 @@ func TestBuildTagStyles_WarnsOnUnknownColors(t *testing.T) {
 			"x": {FG: "reddish"},
 		},
 	}
-	_, _, warn := buildTagStyles(&cfg, colorBg, colorText)
+	_, _, warn := buildTagStyles(&cfg, colorBg, colorText, colorMuted)
 	if !strings.Contains(warn, `[tags] bg = "yelow"`) || !strings.Contains(warn, `[tags.x] fg = "reddish"`) {
 		t.Errorf("warning = %q, want both unknown colours named", warn)
 	}
@@ -614,7 +614,7 @@ func TestTagChips_NerdPillMode(t *testing.T) {
 	cfg := config.TagsConfig{Rules: map[string]config.TagRule{
 		"important": {FG: "#FFFF00", BG: "#8B0000"},
 	}}
-	def, resolve, warn := buildTagStyles(&cfg, lipgloss.Color("#111111"), lipgloss.Color("#222222"))
+	def, resolve, warn := buildTagStyles(&cfg, lipgloss.Color("#111111"), lipgloss.Color("#222222"), lipgloss.Color("#777777"))
 	if warn != "" {
 		t.Fatalf("unexpected warning: %q", warn)
 	}
@@ -689,7 +689,7 @@ func TestTagsPicker_ShowsDisplayPreviewRightOfKeyword(t *testing.T) {
 	cfg := config.TagsConfig{Rules: map[string]config.TagRule{
 		"fancy": {Display: "\uf0e7 Fancy"},
 	}}
-	def, resolve, _ := buildTagStyles(&cfg, lipgloss.Color("#111111"), lipgloss.Color("#222222"))
+	def, resolve, _ := buildTagStyles(&cfg, lipgloss.Color("#111111"), lipgloss.Color("#222222"), lipgloss.Color("#777777"))
 	tagRuleSource = resolve
 	styleTagChip = def
 	defer func() { tagRuleSource = nil }()
@@ -729,7 +729,7 @@ func TestTagsPicker_PreviewColumnStableWithoutCount(t *testing.T) {
 		"kept": {Display: "Kept Tag"},
 		"gone": {Display: "Gone Tag"},
 	}}
-	def, resolve, _ := buildTagStyles(&cfg, lipgloss.Color("#111111"), lipgloss.Color("#222222"))
+	def, resolve, _ := buildTagStyles(&cfg, lipgloss.Color("#111111"), lipgloss.Color("#222222"), lipgloss.Color("#777777"))
 	tagRuleSource = resolve
 	styleTagChip = def
 	defer func() { tagRuleSource = nil }()
@@ -761,7 +761,7 @@ func TestTagColors_TransparentBackground(t *testing.T) {
 	cfg := config.TagsConfig{Rules: map[string]config.TagRule{
 		"ghost": {FG: "#FFFF00", BG: "transparent"},
 	}}
-	def, resolve, warn := buildTagStyles(&cfg, lipgloss.Color("#111111"), lipgloss.Color("#222222"))
+	def, resolve, warn := buildTagStyles(&cfg, lipgloss.Color("#111111"), lipgloss.Color("#222222"), lipgloss.Color("#777777"))
 	if warn != "" {
 		t.Fatalf("transparent must be a valid colour: %q", warn)
 	}
@@ -814,5 +814,47 @@ func TestCalculateSubjectMaxWithTags(t *testing.T) {
 	// Very narrow (58): not even one chip fits → original behaviour, no chips.
 	if got, subj, c := calculateSubjectMaxWithTags(58, 29, 20, "subject", chips, false); c != nil || subj != "subject" {
 		t.Errorf("tight: must drop chips and keep the subject, got %d %q %v", got, subj, c)
+	}
+}
+
+// [tags] mono = true renders every chip in one theme colour — the muted
+// foreground, no background — ignoring [tags] fg/bg and every per-tag colour,
+// so a glyph-only display stays monochrome whatever the per-tag sections say.
+// display text and enabled still apply.
+func TestTagColors_MonoIgnoresConfiguredColours(t *testing.T) {
+	hide := false
+	cfg := config.TagsConfig{
+		Mono: true,
+		FG:   "#FF0000",
+		BG:   "#00FF00",
+		Rules: map[string]config.TagRule{
+			"important": {Display: "", FG: "#FF9900", BG: "#660000"},
+			"secret":    {Enabled: &hide},
+		},
+	}
+	muted := lipgloss.Color("#777777")
+	def, resolve, warn := buildTagStyles(&cfg, lipgloss.Color("#111111"), lipgloss.Color("#222222"), muted)
+	if warn != "" {
+		t.Fatalf("unexpected warning: %q", warn)
+	}
+	if def.GetForeground() != muted || def.GetBackground() != lipgloss.Color("") {
+		t.Errorf("mono default style = fg %q bg %q, want muted fg and no bg", def.GetForeground(), def.GetBackground())
+	}
+	v := resolve("important")
+	if v.fg != muted || v.bg != lipgloss.Color("") {
+		t.Errorf("mono must ignore per-tag colours: fg %q bg %q", v.fg, v.bg)
+	}
+	if v.display != "" || !v.show {
+		t.Errorf("mono must keep display text and visibility: %+v", v)
+	}
+	if v.edgeStyle().GetForeground() != muted {
+		t.Errorf("pill caps in mono must draw in the muted colour, got %q", v.edgeStyle().GetForeground())
+	}
+	if resolve("secret").show {
+		t.Error("per-tag enabled=false must still hide the chip in mono mode")
+	}
+	plain := resolve("work")
+	if plain.fg != muted || plain.bg != lipgloss.Color("") {
+		t.Errorf("mono tag without rule: fg %q bg %q", plain.fg, plain.bg)
 	}
 }

@@ -106,8 +106,9 @@ Connect: [LinkedIn](https://example.com/)
 
 [tags]
 enabled   = false       # opt-in master switch: false = feature completely off (no picker, no chips)
-key       = "k"         # leader chord key that opens the picker
+key       = "t"         # leader chord key that opens the picker (<space>t)
 nerd_pill = false       # render chips as nerd-font pills (half-sphere caps); needs a nerd font
+mono      = false       # one theme colour (muted, no background) for every chip; ignores all fg/bg below
 fg        = ""          # default chip text colour ("#RRGGBB" or ANSI number; empty = theme reverse video)
 bg        = ""          # default chip background (or "transparent"/"none" for no background at all)
 
@@ -551,13 +552,15 @@ The scopes required depends on the provider and is better confirmed by your emai
 
 ## Email Tags (IMAP Keywords)
 
-Opt-in (`[tags] enabled = true`) server-side tagging: `<space>k` on the cursor email or a marked set opens a picker that toggles IMAP keywords — the RFC 9051 tagging mechanism, so tags live on the message, survive reinstalls, and are seen by other clients that support keywords. Tags render as coloured chips **before** the subject (` work ` by default, or nerd-font pills with `nerd_pill = true`); per-tag `[tags.<keyword>]` sections override the display text (nerd-font symbols welcome), colours, and visibility.
+Opt-in (`[tags] enabled = true`) server-side tagging: `<space>t` on the cursor email or a marked set opens a picker that toggles IMAP keywords — the RFC 9051 tagging mechanism, so tags live on the message, survive reinstalls, and are seen by other clients that support keywords. Tags render as coloured chips **before** the subject (` work ` by default, or nerd-font pills with `nerd_pill = true`); per-tag `[tags.<keyword>]` sections override the display text (nerd-font symbols welcome), colours, and visibility.
+
+For a compact glyph-only look, give each tag a nerd-font `display` symbol and set `mono = true`: every chip then renders in the active theme's muted colour with no background (per-tag `fg`/`bg` are ignored, `display` and `enabled` still apply), so tags read as quiet markers instead of a rainbow.
 
 `enabled = false` (the default) is the global kill-switch: neither the picker nor any chip renders. The per-tag `enabled = false` is the fine-grained form — it hides that one tag's chips while the feature is on — and can never override the global switch.
 
 Every toggle writes through to a local per-account registry at `~/.config/neomd/tags/<account-address>/<keyword>.txt` (one Message-ID per line) — the backup if a provider ever purges unknown keywords. Keywords are lowercased and compared case-insensitively; keywords starting with `$` or `\` belong to other systems and are never offered or rendered.
 
-Provider support varies — run `:kt` (`:keyword-test`) on an email to probe your server: it stores a test keyword, verifies it via FETCH and SEARCH, and removes it again, with a verdict per step.
+Provider support varies — run `:tt` (`:tag-test`) on an email to probe your server: it stores a test keyword, verifies it via FETCH and SEARCH, and removes it again, with a verdict per step.
 
 {{< callout type="info" >}}
 Verified with full support on Infomaniak (`PERMANENTFLAGS \*`, STORE + SEARCH, persistence across sessions; keywords are invisible but preserved in their webmail). Third-party keywords like `$HasAttachment` may already live on your messages — neomd never touches or displays them.
