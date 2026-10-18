@@ -552,6 +552,17 @@ The scopes required depends on the provider and is better confirmed by your emai
 
 ## Email Tags (IMAP Keywords)
 
+### How tags work
+
+A tag is a label you put on a message, like `work`, `invoice` or `waiting`. There is no fixed set of tags and no hierarchy: you invent the names, and a message can carry any number of them.
+
+- **Tags live on the server, not in neomd.** Every tag is stored as an IMAP *keyword* on the message itself (RFC 9051 user flags). This is the standard IMAP tagging mechanism, the same one [Thunderbird uses for its message tags](https://support.mozilla.org/en-US/kb/message-tags), so your tags survive a reinstall, follow the mail when it is moved between folders, and are visible to any other keyword-aware client on the same account. Deleting neomd's config does not delete a single tag.
+- **Tags are created in the picker, never in the config.** Put the cursor on an email (or mark several with `m`), press `<space>t`, then `a`, type the name and `enter`. That creates the tag and applies it in one step. Next time, the tag is in the picker's list: select it and press `enter` or `space` to toggle it on or off (`✓` = on every selected email, `~` = on some of them).
+- **`[tags.<name>]` sections only change how an existing tag looks.** A section such as `[tags.important]` sets the chip text (`display`), colours and visibility for a tag called `important`. It does not create that tag: until a message actually carries the keyword `important`, the section does nothing. The examples below use `important`, `test` and `help` only because those are the tag names in the screenshots; use whatever names fit your mail.
+- **Keywords are lowercase**, letters, digits, `-`, `_`, `.` (max 32 chars). Keywords starting with `$` or `\` belong to other systems and are never offered or shown: Thunderbird's five built-in tags (`$label1` to `$label5`) stay invisible, while a custom Thunderbird tag has a plain keyword and shows up in neomd's picker on any message that carries it. Toggle it once from neomd and it renders as a chip from then on.
+- **Nothing is automatic.** Tags are manual labels per message. Sorting mail by sender is the [screener](/docs/screener/)'s job, not tags.
+- **A local backup exists**, per account, at `~/.config/neomd/tags/<account-address>/<keyword>.txt` (one Message-ID per line). neomd writes it on every toggle; it is only there in case a provider ever purges unknown keywords. The server is the source of truth.
+
 ### How they Look: Example
 
 **Standard view** — just turn the feature on; tags render as reverse-video chips before the subject:
@@ -597,7 +608,7 @@ bg = "#006600"
 
 ![tags nerd-font glyph](/images/tags-nerd-glyph.png)
 
-**Compact glyph-only** — glyph-only `display` with `bg = "none"`; on a transparent terminal the background shows through. The tag names (`important`, `test`, `help`) are just examples: a `[tags.<keyword>]` section styles a tag of that name once it exists, it does not create it — tags are created in the picker (`<space>t`, `a`):
+**Compact glyph-only** — glyph-only `display` with `bg = "none"`; on a transparent terminal the background shows through (tag names are examples, see [How tags work](#how-tags-work)):
 
 ```toml
 [tags]
