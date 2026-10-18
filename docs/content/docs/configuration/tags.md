@@ -88,7 +88,7 @@ bg = "none"
 
 ![tags compact glyph-only](/images/tags-glyph-only.png)
 
-**Tag picker** — `<space>t` on the cursor email or a marked set: `enter`/`space` toggle a tag (`✓` on all targets, `~` on some), `a` adds a new tag, `/` filters:
+**Tag picker** — `<space>t` on the cursor email or a marked set: `enter`/`space` toggle a tag (`✓` on all targets, `~` on some), `a` adds a new tag, `f`/`F` set and clear the list filter, `/` finds a tag in the list:
 
 ![tags picker](/images/tags-picker.png)
 
