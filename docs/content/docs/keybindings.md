@@ -103,7 +103,7 @@ To update both the help overlay and this document at once, edit that file and ru
 | `<space>/` | IMAP search ALL emails on server (From + Subject) |
 | `<space>c` | contacts picker — browse harvested + [contacts] file names; / filter, y copy address, Y copy "Name <addr>", enter compose to contact |
 | `<space>S` | scan current folder for spy pixels (skips already scanned) |
-| `<space>t` | tag picker — toggle IMAP keyword tags on marked/cursor email(s) ([tags] enabled = false turns it off); a new tag, / filter, chips show before the subject |
+| `<space>t` | tag picker — toggle IMAP keyword tags on marked/cursor email(s) ([tags] enabled = false turns it off); a new tag, / find, chips show before the subject; f filters the list to emails with that tag (any of several), F clears — the filter stays on across folders until esc |
 | `<space>h  (reader)` | show key mail headers (From, Reply-To, List-Id, List-Unsubscribe, Return-Path, spam verdicts, …) — press again for all headers, again to return to the email |
 | `<space>u  (reader)` | unsubscribe — List-Unsubscribe https link opens in $BROWSER, mailto: prefills a compose, else first body link mentioning "unsubscribe" |
 | `<space>d  (reader)` | download raw email source (.eml) to ~/Downloads |

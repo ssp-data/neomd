@@ -8,6 +8,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -856,5 +857,166 @@ func TestTagColors_MonoIgnoresConfiguredColours(t *testing.T) {
 	plain := resolve("work")
 	if plain.fg != muted || plain.bg != lipgloss.Color("") {
 		t.Errorf("mono tag without rule: fg %q bg %q", plain.fg, plain.bg)
+	}
+}
+
+// ── tag filter (f / F in the picker) ────────────────────────────────────
+
+// tagFilterModel: three emails — uid 3 tagged work, uid 2 tagged invoice,
+// uid 1 untagged — with both tags registry-known.
+func tagFilterModel(t *testing.T) Model {
+	t.Helper()
+	m := tagsTestModel(t, 3)
+	m.tags.store.Add("me@x", "work", "<m3@x>")
+	m.tags.store.Add("me@x", "invoice", "<m2@x>")
+	m.emails[0].Keywords = []string{"work"}    // uid 3
+	m.emails[1].Keywords = []string{"invoice"} // uid 2
+	m.applyFilter()
+	return m
+}
+
+func shownUIDs(m Model) []uint32 {
+	var out []uint32
+	for _, it := range m.inbox.Items() {
+		out = append(out, it.(emailItem).email.UID)
+	}
+	return out
+}
+
+// f in the picker toggles the highlighted tag into the list filter; closing
+// the picker shows only emails carrying ANY active tag (OR). F clears all.
+func TestTagFilter_ToggleInPickerFiltersList(t *testing.T) {
+	m := tagFilterModel(t)
+	res, _ := m.handleChord(" ", "t")
+	mm := res.(Model)
+	// picker lists sorted: invoice, work — cursor on invoice
+	res, _ = mm.updateTags(key("j")) // → work
+	mm = res.(Model)
+	res, _ = mm.updateTags(key("f"))
+	mm = res.(Model)
+	if !mm.tags.active["work"] {
+		t.Fatalf("f must add the highlighted tag to the filter: %v", mm.tags.active)
+	}
+	if !strings.Contains(stripANSI(mm.viewTags()), "filter") {
+		t.Errorf("picker must mark a filtered tag:\n%s", stripANSI(mm.viewTags()))
+	}
+	res, _ = mm.updateTags(key("esc"))
+	mm = res.(Model)
+	if mm.state != stateInbox {
+		t.Fatalf("state = %v, want inbox", mm.state)
+	}
+	if got := shownUIDs(mm); len(got) != 1 || got[0] != 3 {
+		t.Fatalf("filter work: shown %v, want [3]", got)
+	}
+	if !strings.Contains(stripANSI(mm.View()), "tags: work") {
+		t.Errorf("inbox must show the active tag filter in its footer")
+	}
+
+	// OR: add invoice → both tagged emails, untagged still hidden.
+	res, _ = mm.handleChord(" ", "t")
+	mm = res.(Model)
+	res, _ = mm.updateTags(key("f")) // cursor on invoice
+	mm = res.(Model)
+	res, _ = mm.updateTags(key("q"))
+	mm = res.(Model)
+	if got := shownUIDs(mm); len(got) != 2 || got[0] != 3 || got[1] != 2 {
+		t.Fatalf("filter work|invoice: shown %v, want [3 2]", got)
+	}
+
+	// f again on an active tag removes it; F clears everything.
+	res, _ = mm.handleChord(" ", "t")
+	mm = res.(Model)
+	res, _ = mm.updateTags(key("f")) // invoice off
+	mm = res.(Model)
+	if mm.tags.active["invoice"] {
+		t.Error("f on an active tag must remove it from the filter")
+	}
+	res, _ = mm.updateTags(key("F"))
+	mm = res.(Model)
+	if len(mm.tags.active) != 0 {
+		t.Errorf("F must clear the filter: %v", mm.tags.active)
+	}
+	res, _ = mm.updateTags(key("esc"))
+	mm = res.(Model)
+	if got := shownUIDs(mm); len(got) != 3 {
+		t.Fatalf("cleared filter: shown %v, want all 3", got)
+	}
+}
+
+// The tag filter survives a folder load (unlike the / text filter) — it is a
+// view mode like z unread-only, applied to whatever list arrives next.
+func TestTagFilter_PersistsAcrossFolderLoad(t *testing.T) {
+	m := tagFilterModel(t)
+	m.tags.active = map[string]bool{"work": true}
+	m.applyFilter()
+	mk := func(uid uint32, kws ...string) imap.Email {
+		e := mkEmail(uid, fmt.Sprintf("<a%d@x>", uid), "s", "Sender <s@example.com>", int(uid), true)
+		e.Folder = "Archive"
+		e.Keywords = kws
+		return e
+	}
+	// Switch the active tab to Archive (a stray result for a non-active
+	// folder is dropped by design), then let its load land.
+	for i, f := range m.folders {
+		if f == "Archive" {
+			m.activeFolderI = i
+		}
+	}
+	if m.activeFolder() != "Archive" {
+		t.Fatalf("activeFolder = %q, want Archive", m.activeFolder())
+	}
+	res, _ := m.Update(emailsLoadedMsg{emails: []imap.Email{mk(9, "work"), mk(8), mk(7, "work", "invoice")}, folder: "Archive"})
+	mm := res.(Model)
+	if !mm.tags.active["work"] {
+		t.Fatal("folder load must not reset the tag filter")
+	}
+	got := shownUIDs(mm)
+	if len(got) != 2 || (got[0] != 9 && got[1] != 9) || (got[0] != 7 && got[1] != 7) {
+		t.Fatalf("after folder load: shown %v, want 9 and 7 (8 has no tag)", got)
+	}
+}
+
+// esc in the inbox clears the tag filter together with / and unread-only.
+func TestTagFilter_EscClears(t *testing.T) {
+	m := tagFilterModel(t)
+	m.tags.active = map[string]bool{"work": true}
+	m.applyFilter()
+	if got := shownUIDs(m); len(got) != 1 {
+		t.Fatalf("precondition: shown %v", got)
+	}
+	res, _ := m.updateInbox(key("esc"))
+	mm := res.(Model)
+	if len(mm.tags.active) != 0 {
+		t.Errorf("esc must clear the tag filter: %v", mm.tags.active)
+	}
+	if got := shownUIDs(mm); len(got) != 3 {
+		t.Fatalf("after esc: shown %v, want all 3", got)
+	}
+}
+
+// A filter that hides every row must not lock the user out: <space>t still
+// opens the picker (filter-only, no targets) so F / f can clear it.
+func TestTagFilter_EmptyListStillOpensPicker(t *testing.T) {
+	m := tagFilterModel(t)
+	m.tags.store.Add("me@x", "nothing", "<zz@x>")
+	m.tags.active = map[string]bool{"nothing": true}
+	m.applyFilter()
+	if got := shownUIDs(m); len(got) != 0 {
+		t.Fatalf("precondition: shown %v, want none", got)
+	}
+	res, _ := m.handleChord(" ", "t")
+	mm := res.(Model)
+	if mm.state != stateTags {
+		t.Fatalf("picker must open on an empty filtered list, state = %v", mm.state)
+	}
+	// Toggling a tag with no targets is a no-op, not a panic.
+	res, _ = mm.updateTags(key(" "))
+	mm = res.(Model)
+	res, _ = mm.updateTags(key("F"))
+	mm = res.(Model)
+	res, _ = mm.updateTags(key("esc"))
+	mm = res.(Model)
+	if got := shownUIDs(mm); len(got) != 3 {
+		t.Fatalf("after F: shown %v, want all 3", got)
 	}
 }

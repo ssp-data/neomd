@@ -325,8 +325,9 @@ type TagsConfig struct {
 	Key string `toml:"key"`
 	// NerdPill renders chips as nerd-font "pills" — half-sphere end caps
 	// (U+E0B6/U+E0B4) coloured like the chip — instead of the padded-text
-	// fallback. Default true; needs a nerd font in the terminal — without
-	// one set nerd_pill = false (the only nerd-font dependency in neomd).
+	// fallback. Default false: it NEEDS a nerd font in the terminal (the
+	// only nerd-font dependency in neomd) and shows placeholder boxes
+	// without one.
 	NerdPill bool `toml:"nerd_pill"`
 	// Mono renders every chip in a single theme colour — the muted foreground
 	// with no background — and ignores [tags] fg/bg and every per-tag colour
@@ -951,10 +952,9 @@ func defaults() *Config {
 		Tags: TagsConfig{
 			// On by default: inert until the user creates a tag. Written
 			// into the generated default config so the switch is
-			// discoverable. nerd_pill needs a nerd font (see NerdPill).
-			Enabled:  true,
-			NerdPill: true,
-			Key:      "t", // <space>t opens the tag picker
+			// discoverable. nerd_pill stays off: it needs a nerd font.
+			Enabled: true,
+			Key:     "t", // <space>t opens the tag picker
 		},
 		AI: AIConfig{
 			// Default: hand off to Claude Code in **interactive** mode (not

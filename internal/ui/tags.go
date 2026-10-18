@@ -90,6 +90,39 @@ type tagsModel struct {
 	// (space t); fetch results landing meanwhile take this state so a
 	// refresh cannot snap the chips back. Cleared by tagsDoneMsg.
 	pending map[tagPendingKey]bool
+
+	// active is the list's tag filter (f / F in the picker): while
+	// non-empty, applyFilter shows only emails carrying ANY of these
+	// keywords (OR). A view mode like z unread-only, not a search: it
+	// survives folder switches, reloads and account changes until F or
+	// esc in the inbox clears it.
+	active map[string]bool
+}
+
+// tagFilterMatch reports whether e carries any keyword of the active tag
+// filter (case-insensitive, like every keyword comparison).
+func (t tagsModel) tagFilterMatch(e imap.Email) bool {
+	if len(t.active) == 0 {
+		return true
+	}
+	for _, kw := range e.Keywords {
+		for a := range t.active {
+			if strings.EqualFold(kw, a) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// tagFilterLabel is the footer text while the tag filter is on.
+func (t tagsModel) tagFilterLabel() string {
+	kws := make([]string, 0, len(t.active))
+	for kw := range t.active {
+		kws = append(kws, kw)
+	}
+	sort.Strings(kws)
+	return "tags: " + strings.Join(kws, ", ")
 }
 
 // newTagsModel loads the local write-through registry (one folder per
@@ -152,11 +185,13 @@ func (m Model) openTags() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	targets := m.targetEmails()
-	if len(targets) == 0 {
+	if len(targets) == 0 && len(m.tags.active) == 0 {
 		m.status = "Tags: no email selected."
 		m.isError = true
 		return m, nil
 	}
+	// No targets but a tag filter on (it hid every row): open filter-only
+	// so f / F can change or clear it — otherwise the user is locked out.
 	m.prevState = m.state
 	m.state = stateTags
 	m.tags.targets = append([]imap.Email(nil), targets...)
@@ -317,11 +352,31 @@ func (m Model) updateTags(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.state == stateTags {
 			m.state = stateInbox
 		}
-		return m, nil
+		// The tag filter may have changed (f / F): re-filter the list now.
+		return m, m.applyFilter()
 	case "ctrl+c":
 		return m, tea.Quit
 	case "/":
 		m.tags.filterActive = true
+		return m, nil
+	case "f": // toggle the highlighted tag in the list filter
+		if len(entries) == 0 {
+			return m, nil
+		}
+		kw := entries[m.tags.cursor]
+		active := make(map[string]bool, len(m.tags.active)+1)
+		for k, v := range m.tags.active {
+			active[k] = v
+		}
+		if active[kw] {
+			delete(active, kw)
+		} else {
+			active[kw] = true
+		}
+		m.tags.active = active
+		return m, nil
+	case "F": // clear the list filter
+		m.tags.active = nil
 		return m, nil
 	case "a":
 		m.tags.inputActive = true
@@ -846,7 +901,11 @@ func (m Model) viewTags() string {
 	entries := m.filteredPickerTags()
 	w := 60
 	var lines []string
-	lines = append(lines, styleHeader.Render(fmt.Sprintf("Tags — %d email%s", len(m.tags.targets), plural(len(m.tags.targets)))), "")
+	title := fmt.Sprintf("Tags — %d email%s", len(m.tags.targets), plural(len(m.tags.targets)))
+	if len(m.tags.targets) == 0 {
+		title = "Tags — filter only (no email selected)"
+	}
+	lines = append(lines, styleHeader.Render(title), "")
 
 	rows := 12
 	start := 0
@@ -886,8 +945,12 @@ func (m Model) viewTags() string {
 		if count != "" {
 			countCol = count
 		}
+		filterCol := "        "
+		if m.tags.active[kw] {
+			filterCol = styleHelp.Render("filter  ")
+		}
 		kwCol := runewidth.Truncate(kw, 20, "…")
-		line := fmt.Sprintf("  %s%-20s%-6s%s", mark, kwCol, countCol, previewField)
+		line := fmt.Sprintf("  %s%-20s%-6s%s%s", mark, kwCol, countCol, filterCol, previewField)
 		if i == m.tags.cursor {
 			line = styleSelected.Render("▸" + line[1:])
 		}
@@ -905,7 +968,7 @@ func (m Model) viewTags() string {
 	} else if m.tags.filterActive {
 		lines = append(lines, "", styleInputLabel.Render("filter:")+" "+m.tags.filter+"█")
 	}
-	lines = append(lines, "", styleHelp.Render(" enter/space toggle · a new tag · / filter · esc close"))
+	lines = append(lines, "", styleHelp.Render(" enter/space toggle · a new tag · f filter list by tag · F clear filter · / find · esc close"))
 
 	// Border follows the active theme (built at render time, like the row styles).
 	boxStyle := lipgloss.NewStyle().

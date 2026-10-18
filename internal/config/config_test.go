@@ -705,12 +705,13 @@ func TestLoad_SetsTagsDirNextToConfig(t *testing.T) {
 	if cfg.TagsDir != want {
 		t.Errorf("TagsDir = %q, want %q", cfg.TagsDir, want)
 	}
-	// A config without [tags] has tagging on (default) in pill mode with the default key.
+	// A config without [tags] has tagging on (default), plain chips (nerd_pill
+	// off — it needs a nerd font) and the default key.
 	if !cfg.Tags.Enabled {
 		t.Error("absent [tags] section must leave tagging enabled (default on)")
 	}
-	if !cfg.Tags.NerdPill {
-		t.Error("absent [tags] section must default to nerd_pill = true")
+	if cfg.Tags.NerdPill {
+		t.Error("absent [tags] section must default to nerd_pill = false (needs a nerd font)")
 	}
 	if cfg.Tags.TagsKey() != "t" {
 		t.Errorf("TagsKey = %q, want t", cfg.Tags.TagsKey())

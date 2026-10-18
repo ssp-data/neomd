@@ -514,6 +514,14 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   still apply, pill caps draw in the muted colour. The leader chord is `<space>t`
   (`[tags] key` default `"t"`, `TagsKey()` fallback) — `k` is list navigation. Test:
   `TestTagColors_MonoIgnoresConfiguredColours`.
+- **The tag filter is a view mode, not a search** — `tagsModel.active` (`f`/`F` in the
+  picker) is checked in `applyFilter` next to `showUnreadOnly` and, like it, is NOT reset
+  by folder switches, reloads, off-tabs or `ctrl+a`; only `F` or inbox `esc` clear it.
+  Match is OR across active tags (`tagFilterMatch`, `EqualFold`). `openTags` must open
+  with zero targets while a filter is on (filter-only mode), or an all-hiding filter
+  locks the user out. `nerd_pill` defaults to false — it needs a nerd font. Tests:
+  `TestTagFilter_ToggleInPickerFiltersList`, `TestTagFilter_PersistsAcrossFolderLoad`,
+  `TestTagFilter_EscClears`, `TestTagFilter_EmptyListStillOpensPicker`.
 - **Reserved keywords are blocked and never displayed** — input starting with `$` or
   `\` is rejected in the picker with "not allowed to use this keyword, it is reserved
   for other systems" (`tags.NormalizeKeyword`), and chips render only for

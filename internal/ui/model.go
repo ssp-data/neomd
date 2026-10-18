@@ -4100,10 +4100,11 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.markedUIDs = make(map[uint32]bool)
 			return m, m.applyFilter()
 		}
-		if m.filterText != "" || m.showUnreadOnly {
+		if m.filterText != "" || m.showUnreadOnly || len(m.tags.active) > 0 {
 			m.filterActive = false
 			m.filterText = ""
 			m.showUnreadOnly = false
+			m.tags.active = nil
 			return m, m.applyFilter()
 		}
 		if m.imapSearchResults {
@@ -4765,6 +4766,10 @@ func (m *Model) applyFilter() tea.Cmd {
 		if m.showUnreadOnly && e.Seen {
 			continue
 		}
+		// Skip if a tag filter is on and the email carries none of its tags
+		if !m.tags.tagFilterMatch(e) {
+			continue
+		}
 
 		// Skip if text filter is active and doesn't match
 		if m.filterText != "" {
@@ -4787,7 +4792,7 @@ func (m *Model) applyFilter() tea.Cmd {
 	}
 
 	// If no filters are active, use all emails
-	if m.filterText == "" && !m.showUnreadOnly {
+	if m.filterText == "" && !m.showUnreadOnly && len(m.tags.active) == 0 {
 		filtered = m.emails
 	}
 
@@ -7302,6 +7307,8 @@ func (m Model) viewInbox() string {
 		b.WriteString(styleHelp.Render(fmt.Sprintf("  / %s%s  · enter confirm · esc clear", m.filterText, cursor)))
 	} else if m.status != "" {
 		b.WriteString(statusBar(m.status, m.isError))
+	} else if len(m.tags.active) > 0 {
+		b.WriteString(styleHelp.Render("  " + m.tags.tagFilterLabel() + "  · <space>t f/F change · esc clear"))
 	} else {
 		b.WriteString(m.inboxHintBar())
 	}
