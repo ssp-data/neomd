@@ -108,6 +108,11 @@ type tagsModel struct {
 	// still carry ("" = no prompt). y purges it server-wide (tagDeleteCmd).
 	confirmDelete string
 
+	// pendingSpace is set after a bare <space> inside the picker so that
+	// <space>t closes it — the same chord that opened it. Toggling is enter
+	// only (space used to toggle too; one key per action reads clearer).
+	pendingSpace bool
+
 	// active is the list's tag filter (f / F in the picker): while
 	// non-empty, applyFilter shows only emails carrying ANY of these
 	// keywords (OR). A view mode like z unread-only, not a search: it
@@ -218,6 +223,7 @@ func (m Model) openTags() (tea.Model, tea.Cmd) {
 	m.tags.inputActive = false
 	m.tags.input = ""
 	m.tags.err = ""
+	m.tags.pendingSpace = false
 	return m, nil
 }
 
@@ -363,6 +369,18 @@ func (m Model) updateTags(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.tags.pendingSpace {
+		m.tags.pendingSpace = false
+		if m.cfg != nil && key == m.cfg.Tags.TagsKey() { // <space>t again closes
+			m.state = m.prevState
+			if m.state == stateTags {
+				m.state = stateInbox
+			}
+			return m, m.applyFilter()
+		}
+		return m, nil
+	}
+
 	if m.tags.confirmDelete != "" {
 		kw := m.tags.confirmDelete
 		m.tags.confirmDelete = ""
@@ -448,7 +466,10 @@ func (m Model) updateTags(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		clamp()
 	case "g":
 		m.tags.cursor = 0
-	case " ", "enter":
+	case " ": // leader: <space>t closes the picker
+		m.tags.pendingSpace = true
+		return m, nil
+	case "enter":
 		if len(entries) == 0 {
 			return m, nil
 		}
@@ -1142,7 +1163,11 @@ func (m Model) viewTags() string {
 	} else if m.tags.filterActive {
 		lines = append(lines, "", styleInputLabel.Render("filter:")+" "+m.tags.filter+"█")
 	}
-	lines = append(lines, "", styleHelp.Render(" enter/space toggle · a new tag · f filter list by tag · F clear filter · D delete tag · / find · esc close"))
+	help := " enter toggle · a new tag · f filter list by tag · F clear filter · D delete tag · / find · esc / <space>t close"
+	if m.tags.pendingSpace {
+		help = " <space> t close"
+	}
+	lines = append(lines, "", styleHelp.Render(help))
 
 	// Border follows the active theme (built at render time, like the row styles).
 	boxStyle := lipgloss.NewStyle().

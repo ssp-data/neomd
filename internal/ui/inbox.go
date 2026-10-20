@@ -133,6 +133,14 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	// with tags it goes through calculateSubjectMaxWithTags, which also picks
 	// the chip set and subject variant that fit (see its comment).
 	subjectMax, subjectText, chipKws := calculateSubjectMaxWithTags(width, fixed, fromMax, subjectText, e.email.Keywords, e.merge != nil)
+	// A private note (space n) shows its first line after the subject, muted
+	// with a ✎ marker, inside the subject budget (at most half of it): the
+	// row stays one line high. Merged rows have no single note.
+	noteStr, noteW := "", 0
+	if e.merge == nil {
+		noteStr, noteW = noteRowSnippet(e.email.MessageID, subjectMax)
+	}
+	subjectMax -= noteW
 	subject := truncate(displaySafe(subjectText), subjectMax)
 
 	if isSelected {
@@ -140,7 +148,7 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		// stay readable), so the row is composed in three segments.
 		head := num + flag + replyStr + threadStr + dateStr + attachStr + spyStr +
 			padRight(from, fromMax) + "  "
-		tail := padRight(subject, subjectMax) + "  " + sizeStr
+		tail := padRight(subject, subjectMax) + padRight(noteStr, noteW) + "  " + sizeStr
 		fmt.Fprint(w, styleSelected.Render(head)+tagChipsStyled(chipKws)+styleSelected.Render(tail))
 		return
 	}
@@ -178,7 +186,12 @@ func (d emailDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	subS := subStyle.Render(padRight(subject, subjectMax))
 	sizeS := lipgloss.NewStyle().Foreground(colorSizeCol).Render(sizeStr)
 
-	fmt.Fprint(w, numS+flagS+replyS+threadS+dateS+attachS+spyS+fromS+"  "+tagChipsStyled(chipKws)+subS+"  "+sizeS)
+	noteS := ""
+	if noteW > 0 {
+		noteS = noteStyle().Render(padRight(noteStr, noteW))
+	}
+
+	fmt.Fprint(w, numS+flagS+replyS+threadS+dateS+attachS+spyS+fromS+"  "+tagChipsStyled(chipKws)+subS+noteS+"  "+sizeS)
 }
 
 // cleanFrom strips the <addr> part when a display name is present.

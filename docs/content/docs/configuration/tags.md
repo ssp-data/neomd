@@ -1,5 +1,5 @@
 ---
-title: Email Tags (IMAP Keywords)
+title: Email Tags and Private Notes (IMAP Keywords)
 weight: 5
 ---
 
@@ -9,7 +9,7 @@ weight: 5
 A tag is a label you put on a message, like `work`, `invoice` or `waiting`. There is no fixed set of tags and no hierarchy: you invent the names, and a message can carry any number of them.
 
 - **Tags live on the server, not in neomd.** Every tag is stored as an IMAP *keyword* on the message itself (RFC 9051 user flags). This is the standard IMAP tagging mechanism, the same one [Thunderbird uses for its message tags](https://support.mozilla.org/en-US/kb/message-tags), so your tags survive a reinstall, follow the mail when it is moved between folders, and are visible to any other keyword-aware client on the same account. Deleting neomd's config does not delete a single tag.
-- **Tags are created in the picker, never in the config.** Put the cursor on an email (or mark several with `m`), press `<space>t`, then `a`, type the name and `enter`. That creates the tag and applies it in one step. Next time, the tag is in the picker's list: select it and press `enter` or `space` to toggle it on or off (`✓` = on every selected email, `~` = on some of them).
+- **Tags are created in the picker, never in the config.** Put the cursor on an email (or mark several with `m`), press `<space>t`, then `a`, type the name and `enter`. That creates the tag and applies it in one step. Next time, the tag is in the picker's list: select it and press `enter` to toggle it on or off (`✓` = on every selected email, `~` = on some of them). `<space>t` again (or `esc`) closes the picker.
 - **`[tags.<name>]` sections only change how an existing tag looks.** A section such as `[tags.important]` sets the chip text (`display`), colours and visibility for a tag called `important`. It does not create that tag: until a message actually carries the keyword `important`, the section does nothing. The examples below use `important`, `test` and `help` only because those are the tag names in the screenshots; use whatever names fit your mail.
 - **Keywords are lowercase**, letters, digits, `-`, `_`, `.` (max 32 chars). Keywords starting with `$` or `\` belong to other systems and are never offered or shown: Thunderbird's five built-in tags (`$label1` to `$label5`) stay invisible, while a custom Thunderbird tag has a plain keyword and shows up in neomd's picker on any message that carries it. Toggle it once from neomd and it renders as a chip from then on.
 - **Filter the list by tag.** In the picker, `f` toggles the highlighted tag into the list filter and `F` clears it; close the picker and only emails carrying any of the active tags remain (one or several tags, OR). The filter is a view mode like `z` unread-only: it stays on when you switch folders, reload, or open Search / Everything, and the footer shows `tags: work, invoice` while it is active. `esc` in the inbox clears it (together with `/` and unread-only). If the filter hides every row, `<space>t` still opens the picker in filter-only mode so you can change or clear it. The filter runs on the loaded window of the folder (`inbox_count`), like `/`.
@@ -89,7 +89,7 @@ bg = "none"
 
 ![tags compact glyph-only](/images/tags-glyph-only.png)
 
-**Tag picker** — `<space>t` on the cursor email or a marked set: `enter`/`space` toggle a tag (`✓` on all targets, `~` on some), `a` adds a new tag, `f`/`F` set and clear the list filter, `D` deletes a tag, `/` finds a tag in the list:
+**Tag picker** — `<space>t` on the cursor email or a marked set: `enter` toggles a tag (`✓` on all targets, `~` on some), `a` adds a new tag, `f`/`F` set and clear the list filter, `D` deletes a tag, `/` finds a tag in the list, `<space>t` again or `esc` closes:
 
 ![tags picker](/images/tags-picker.png)
 
@@ -108,3 +108,33 @@ Provider support varies — run `:tt` (`:tag-test`) on an email to probe your se
 {{< callout type="info" >}}
 Verified with full support on Infomaniak (`PERMANENTFLAGS \*`, STORE + SEARCH, persistence across sessions; keywords are invisible but preserved in their webmail). Third-party keywords like `$HasAttachment` may already live on your messages — neomd never touches or displays them.
 {{< /callout >}}
+
+## Private notes (thread notes)
+
+![private notes](/images/neomd-notes.png)
+
+A note is a private comment on one email — "have replied", "this is the book email", a phone number from the call — the way [HEY's thread notes](https://www.hey.com/features/thread-notes/) work. Nobody but you sees it, it is never sent, and it follows the email across machines.
+
+- **`<space>n` on the cursor email (inbox) or the open email (reader)** opens the note popup: the full note, or "no note yet". `e` (or `enter`) opens the note in `$EDITOR` as a plain Markdown file — any length, any lines. Save and quit: the note is stored. Empty the file to delete the note, or press `d` in the popup. `<space>n` again or `esc` closes the popup, the same way `<space>t` closes the tag picker.
+- **In the list** the first line of the note shows muted after the subject, marked `✎` — rows stay one line high, and the snippet never takes more than half of the subject column. **In the reader** the whole note sits in the header as a `Note:` block, under the date.
+- **Where notes live.** Each note is a tiny message of its own in a dedicated IMAP folder — `neomd/Notes` by default — whose `X-Neomd-Note-For` header names the email's Message-ID. **The email itself is never touched**: no re-upload, no new UID, no flag change, so threading, undo and other clients are unaffected. Editing a note uploads a fresh copy and expunges the old one; only the note's own UID changes. This works on every IMAP server (Gmail, Dovecot, Proton Bridge …) — the ANNOTATE extension (RFC 5257) that was designed for per-message comments is only implemented by Cyrus, so neither Gmail nor a Dovecot host like Hostpoint has it, and METADATA (RFC 5464) is per-mailbox only. The folder is created on your first note, never before. `/` in the name is replaced by the server's hierarchy delimiter (`neomd.Notes` on a Dovecot with `.` separators). 
+- **A local copy** sits at `~/.config/neomd/notes/<account-address>/<message-id>.md` (a small header block, then the Markdown body), written through on every save: the snippet shows before the first server fetch, and nothing is lost if the folder ever disappears. The server copy is fetched in the background at start, on account switch and on every background sync — the server wins per Message-ID, notes written offline are kept and uploaded on their next edit.
+- **Notes are per email, not per thread**: `<space>n` on a reply does not show the note of the original. Other clients see the folder as an ordinary mailbox with one short message per note (subject `Note: <email subject>`); unsubscribe it there if it gets in the way.
+
+```toml
+[notes]
+enabled = true          # false turns the feature off: no popup, no ✎ snippet, no Note line
+folder = "neomd/Notes"  # IMAP folder for the note messages (created on first use)
+```
+
+### How to edit notes
+
+
+![private notes](/images/neomd-edit-notes.png)
+
+
+{{< callout type="info" >}}
+Verified on Hostpoint (Dovecot) and the in-memory test server: save, read back, edit (replaces the old note), delete — with the noted email's UID and flags unchanged throughout.
+{{< /callout >}}
+
+

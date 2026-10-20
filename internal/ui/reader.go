@@ -199,6 +199,8 @@ func renderEmailHeader(e *imap.Email, attachments []imap.Attachment, spyPixels i
 		styleSubject.Render("Subject: ")+subjVal,
 		styleDate.Render("Date:    ")+fmtDateFull(e.Date),
 	)
+	// Private note (space n): the full text, every line, right in the header.
+	lines = append(lines, readerNoteLines(e.MessageID, width)...)
 
 	attachStyle := lipgloss.NewStyle().Foreground(colorSubjectRead) // waveAqua2 — visible but not dominant
 	if len(attachments) > 0 {

@@ -49,6 +49,7 @@ const (
 	stateReaction              // emoji reaction picker
 	stateContacts              // contacts picker (space c)
 	stateTags                  // IMAP keyword tag picker (space t)
+	stateNote                  // private per-email note popup (space n)
 	stateKeywordTest           // IMAP keyword support probe dialog (:tt)
 )
 
@@ -791,6 +792,10 @@ type Model struct {
 	// and registry — tagsModel lives in tags.go next to its methods.
 	tags tagsModel
 
+	// Private per-email notes (space n): popup state, local store and the
+	// sidecar folder — notesModel lives in notes.go next to its methods.
+	notes notesModel
+
 	// cmdMode / cmdText / cmdTabI implement vim-style ":" command line.
 	cmdMode    bool
 	cmdText    string
@@ -891,6 +896,12 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 	if tagNotice != "" {
 		notice = tagNotice
 	}
+	// Notes (space n): local copy load and the snippet pipeline live in
+	// notes.go (the same per-account key as tags).
+	nm, noteNotice := newNotesModel(cfg)
+	if noteNotice != "" {
+		notice = noteNotice
+	}
 	m := Model{
 		cfg:         cfg,
 		accounts:    cfg.ActiveAccounts(),
@@ -912,6 +923,7 @@ func New(cfg *config.Config, clients []*imap.Client, sc *screener.Screener, mail
 		contacts:       cs,
 		merges:         ms,
 		tags:           tm,
+		notes:          nm,
 		startupNotice:  notice,
 		sortField:      "date",
 		sortReverse:    true, // newest first
@@ -1083,6 +1095,7 @@ func (m Model) Init() tea.Cmd {
 		m.fetchFolderCmd(m.activeFolder()),
 		m.scheduleBgSync(),
 		m.checkOverdueScheduledCmd(),
+		m.fetchNotesCmd(),
 	}
 	if config.IsFirstRun() {
 		cmds = append(cmds, m.ensureFoldersCmd())
@@ -3323,6 +3336,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// locally only now — see handleTagDeleteDone.
 		return m.handleTagDeleteDone(msg)
 
+	case noteEditorDoneMsg:
+		// $EDITOR closed on a note: local copy first, sidecar APPEND behind
+		// the list — see handleNoteEditorDone.
+		return m.handleNoteEditorDone(msg)
+	case noteSavedMsg:
+		return m.handleNoteSaved(msg)
+	case notesLoadedMsg:
+		// Server notes arrived (startup / account switch / bg sync): merge
+		// into the local copy, server wins per Message-ID.
+		return m.handleNotesLoaded(msg)
+
 	case keywordTestDoneMsg:
 		return m.handleKeywordTestDone(msg)
 
@@ -3597,7 +3621,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Also poll any extra notification folders (e.g. PaperTrail, Feed)
 		// so VIP mail screened out of Inbox by the daemon still notifies.
 		m.bgSyncInProgress = true
-		cmds := []tea.Cmd{m.bgFetchInboxCmd(), m.scheduleBgSync(), m.checkOverdueScheduledCmd()}
+		cmds := []tea.Cmd{m.bgFetchInboxCmd(), m.scheduleBgSync(), m.checkOverdueScheduledCmd(), m.fetchNotesCmd()}
 		for _, f := range m.vipNotifyFolders() {
 			cmds = append(cmds, m.bgFetchVipFolderCmd(f))
 		}
@@ -3910,6 +3934,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateContacts(msg)
 		case stateTags:
 			return m.updateTags(msg)
+		case stateNote:
+			return m.updateNote(msg)
 		case stateKeywordTest:
 			return m.updateKeywordTest(msg)
 		}
@@ -4140,7 +4166,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case " ": // leader key — wait for digit or shortcut
 		m.pendingKey = " "
-		m.status = "leader:  1-9 folder tab  / IMAP search  c contacts  S scan spy pixels  t tags  w welcome  (esc to cancel)"
+		m.status = "leader:  1-9 folder tab  / IMAP search  c contacts  S scan spy pixels  t tags  n note  w welcome  (esc to cancel)"
 		return m, nil
 
 	case "M":
@@ -4477,8 +4503,8 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.activeFolderI = 0
 			m.leaveSyntheticView()
 			m.prefetched = false                // warm the new account's tabs too
-			setTagAccount(m.activeAccountKey()) // chips follow the account
-			return m, m.loadActiveFolder()
+			setTagAccount(m.activeAccountKey()) // chips and note snippets follow the account
+			return m, tea.Batch(m.loadActiveFolder(), m.fetchNotesCmd())
 		}
 
 	case "c":
@@ -4844,6 +4870,9 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 		if m.cfg != nil && key == m.cfg.Tags.TagsKey() {
 			return m.openTags()
 		}
+		if key == "n" { // private note on the cursor email
+			return m.openNote()
+		}
 		if len(key) == 1 && key >= "1" && key <= "9" {
 			idx := int(key[0] - '1') // 0-based
 			if idx < len(m.folders) {
@@ -5065,13 +5094,18 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.status = "rsvp: a=accept · d=decline · t=tentative · o=open in calendar app"
 				return m, nil
 			}
-			// space + n / N = add open email's sender (or @domain) to notify.txt
-			if key == "n" || key == "N" {
+			// space + n = private note on the open email (popup; e edits)
+			if key == "n" {
+				return m.openNote()
+			}
+			// space + b / B = add open email's sender (or @domain) to notify.txt
+			// ("bell"; n is taken by notes)
+			if key == "b" || key == "B" {
 				if m.openEmail == nil {
 					return m, nil
 				}
 				entry := strings.ToLower(extractEmailAddr(m.openEmail.From))
-				if key == "N" {
+				if key == "B" {
 					entry = domainEntry(m.openEmail.From)
 				}
 				if entry == "" {
@@ -5085,7 +5119,7 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.status = fmt.Sprintf("Added %s to notify.txt — desktop notifications will fire for new mail from this %s.",
-					entry, map[bool]string{true: "domain", false: "sender"}[key == "N"])
+					entry, map[bool]string{true: "domain", false: "sender"}[key == "B"])
 				return m, nil
 			}
 			// Not a digit or 'l' — fall through
@@ -5260,7 +5294,7 @@ func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if len(m.openLinks) > 0 {
 			hints = append(hints, "1-0 links")
 		}
-		hints = append(hints, "h headers", "u unsubscribe", "d download .eml", "n add sender to notify.txt", "N add @domain to notify.txt")
+		hints = append(hints, "h headers", "u unsubscribe", "d download .eml", "n note", "b add sender to notify.txt", "B add @domain to notify.txt")
 		m.status = "space: " + strings.Join(hints, "  ·  ")
 		return m, nil
 	case "g":
@@ -7168,6 +7202,8 @@ func (m Model) View() string {
 		return m.viewContacts()
 	case stateTags:
 		return m.viewTags()
+	case stateNote:
+		return m.viewNote()
 	case stateKeywordTest:
 		return m.viewKeywordTest()
 	}

@@ -93,7 +93,7 @@ func TestTagsPicker_ToggleOptimisticFlip(t *testing.T) {
 		t.Fatalf("targets = %v, want uid 3", mm.tags.targets)
 	}
 
-	res, cmd := mm.updateTags(key(" "))
+	res, cmd := mm.updateTags(key("enter"))
 	mm = res.(Model)
 	if cmd == nil {
 		t.Fatal("toggle must fire the STORE command")
@@ -128,7 +128,7 @@ func TestTagsPicker_ToggleOptimisticFlip(t *testing.T) {
 	}
 	waitTagFile(t, filepath.Join("me@x", "work.txt"))
 	// Toggling again removes (all targets carry it now).
-	res, _ = mm.updateTags(key(" "))
+	res, _ = mm.updateTags(key("enter"))
 	mm = res.(Model)
 	if got := keywordsOf(mm, 3); len(got) != 0 {
 		t.Errorf("second toggle must remove the tag, got %v", got)
@@ -149,7 +149,7 @@ func TestTagsPicker_RefreshLandingMidFlightKeepsChip(t *testing.T) {
 	m.tags.store.Add("me@x", "work", "<x@x>")
 	res, _ := m.handleChord(" ", "t")
 	mm := res.(Model)
-	res, _ = mm.updateTags(key(" "))
+	res, _ = mm.updateTags(key("enter"))
 	mm = res.(Model)
 
 	stale := append([]imap.Email(nil), mm.emails...) // server still untagged
@@ -169,7 +169,7 @@ func TestTagsCmd_ErrorReverts(t *testing.T) {
 	m.tags.store.Add("me@x", "work", "<x@x>")
 	res, _ := m.handleChord(" ", "t")
 	mm := res.(Model)
-	res, _ = mm.updateTags(key(" "))
+	res, _ = mm.updateTags(key("enter"))
 	mm = res.(Model)
 	if got := keywordsOf(mm, 2); len(got) != 1 {
 		t.Fatalf("optimistic flip missing before error, got %v", got)
@@ -431,7 +431,7 @@ func TestTagsPicker_LocalOnlyAccount(t *testing.T) {
 	m.tags.store.Add("me@x", "work", "<x@x>")
 	res, _ := m.handleChord(" ", "t")
 	mm := res.(Model)
-	res, cmd := mm.updateTags(key(" "))
+	res, cmd := mm.updateTags(key("enter"))
 	mm = res.(Model)
 	msg := cmd().(tagsDoneMsg)
 	if msg.err != nil {
@@ -1010,7 +1010,7 @@ func TestTagFilter_EmptyListStillOpensPicker(t *testing.T) {
 		t.Fatalf("picker must open on an empty filtered list, state = %v", mm.state)
 	}
 	// Toggling a tag with no targets is a no-op, not a panic.
-	res, _ = mm.updateTags(key(" "))
+	res, _ = mm.updateTags(key("enter"))
 	mm = res.(Model)
 	res, _ = mm.updateTags(key("F"))
 	mm = res.(Model)
