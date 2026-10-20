@@ -94,6 +94,10 @@ type Client struct {
 	conn            *imapclient.Client
 	selectedMailbox string
 	lastActivity    time.Time // tracks last successful operation for health checks
+	// hierDelim is the server's mailbox hierarchy delimiter (notes.go), 0 =
+	// unknown; hierDelimKnown avoids repeating the LIST probe.
+	hierDelim      rune
+	hierDelimKnown bool
 }
 
 // New creates a new IMAP client (does not connect yet).

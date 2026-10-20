@@ -72,6 +72,19 @@ type tagPendingKey struct {
 	keyword string
 }
 
+// tagDeleteDoneMsg reports a D purge (tagDeleteCmd): removed messages lost
+// the keyword on the server, skipped folders could not be searched (the
+// keyword may remain there), err aborted the purge — then nothing local
+// changes, the tag is still on the server.
+type tagDeleteDoneMsg struct {
+	keyword     string
+	account     string
+	registryKey string
+	removed     int
+	skipped     []string
+	err         error
+}
+
 // tagsModel is the whole tag-feature state on Model (the composeModel
 // pattern: the state lives here, next to its methods; Model keeps one
 // field, tags). targets is captured by value when the picker opens and
@@ -90,6 +103,15 @@ type tagsModel struct {
 	// (space t); fetch results landing meanwhile take this state so a
 	// refresh cannot snap the chips back. Cleared by tagsDoneMsg.
 	pending map[tagPendingKey]bool
+
+	// confirmDelete is the keyword awaiting y/n after D on a tag that emails
+	// still carry ("" = no prompt). y purges it server-wide (tagDeleteCmd).
+	confirmDelete string
+
+	// pendingSpace is set after a bare <space> inside the picker so that
+	// <space>t closes it — the same chord that opened it. Toggling is enter
+	// only (space used to toggle too; one key per action reads clearer).
+	pendingSpace bool
 
 	// active is the list's tag filter (f / F in the picker): while
 	// non-empty, applyFilter shows only emails carrying ANY of these
@@ -201,6 +223,7 @@ func (m Model) openTags() (tea.Model, tea.Cmd) {
 	m.tags.inputActive = false
 	m.tags.input = ""
 	m.tags.err = ""
+	m.tags.pendingSpace = false
 	return m, nil
 }
 
@@ -346,6 +369,30 @@ func (m Model) updateTags(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.tags.pendingSpace {
+		m.tags.pendingSpace = false
+		if m.cfg != nil && key == m.cfg.Tags.TagsKey() { // <space>t again closes
+			m.state = m.prevState
+			if m.state == stateTags {
+				m.state = stateInbox
+			}
+			return m, m.applyFilter()
+		}
+		return m, nil
+	}
+
+	if m.tags.confirmDelete != "" {
+		kw := m.tags.confirmDelete
+		m.tags.confirmDelete = ""
+		switch key {
+		case "y", "Y":
+			return m.deleteTagEverywhere(kw)
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+		return m, nil // n / esc / anything else: cancelled
+	}
+
 	switch key {
 	case "esc", "q":
 		m.state = m.prevState
@@ -354,6 +401,29 @@ func (m Model) updateTags(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// The tag filter may have changed (f / F): re-filter the list now.
 		return m, m.applyFilter()
+	case "D": // delete the highlighted tag
+		if len(entries) == 0 {
+			return m, nil
+		}
+		kw := entries[m.tags.cursor]
+		if m.tagInUse(kw) {
+			m.tags.confirmDelete = kw // y/n first: this touches the server
+			m.tags.err = ""
+			return m, nil
+		}
+		// No email carries it (as far as the registry and the loaded rows
+		// know): just forget it locally, no round trip.
+		if err := m.tags.store.Delete(m.activeAccountKey(), kw); err != nil {
+			m.tags.err = "delete: " + err.Error()
+			return m, nil
+		}
+		m.tags.active = tagFilterWithout(m.tags.active, kw)
+		if m.tags.cursor >= len(m.filteredPickerTags()) && m.tags.cursor > 0 {
+			m.tags.cursor--
+		}
+		m.status = fmt.Sprintf("tag %q deleted", kw)
+		m.isError = false
+		return m, nil
 	case "ctrl+c":
 		return m, tea.Quit
 	case "/":
@@ -396,7 +466,10 @@ func (m Model) updateTags(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		clamp()
 	case "g":
 		m.tags.cursor = 0
-	case " ", "enter":
+	case " ": // leader: <space>t closes the picker
+		m.tags.pendingSpace = true
+		return m, nil
+	case "enter":
 		if len(entries) == 0 {
 			return m, nil
 		}
@@ -895,6 +968,124 @@ func buildTagStyles(cfg *config.TagsConfig, themeFG, themeBG, themeMuted lipglos
 	return def, resolve, warning
 }
 
+// tagInUse reports whether any email is known to carry kw: the registry
+// counts it, or a loaded row (list, folder cache, picker targets) has it.
+func (m Model) tagInUse(kw string) bool {
+	if m.tags.store.Count(m.activeAccountKey(), kw) > 0 {
+		return true
+	}
+	has := func(es []imap.Email) bool {
+		for _, e := range es {
+			if tags.Has(e.Keywords, kw) {
+				return true
+			}
+		}
+		return false
+	}
+	if has(m.emails) || has(m.tags.targets) {
+		return true
+	}
+	for _, snap := range m.folderCache {
+		if has(snap.emails) {
+			return true
+		}
+	}
+	return false
+}
+
+// tagFilterWithout returns the active filter minus kw (nil when empty).
+func tagFilterWithout(active map[string]bool, kw string) map[string]bool {
+	if !active[kw] {
+		return active
+	}
+	out := make(map[string]bool, len(active))
+	for k, v := range active {
+		if !strings.EqualFold(k, kw) {
+			out[k] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// accountFolders lists the configured IMAP folders a purge walks — the same
+// set the <space>/ search covers.
+func (m Model) accountFolders() []string {
+	f := m.cfg.Folders
+	folders := []string{
+		f.Inbox, f.Sent, f.Trash, f.Drafts,
+		f.ToScreen, f.Feed, f.PaperTrail, f.ScreenedOut,
+		f.Archive, f.Waiting, f.Scheduled, f.Someday, f.Spam,
+	}
+	if f.Work != "" {
+		folders = append(folders, f.Work)
+	}
+	return folders
+}
+
+// deleteTagEverywhere (y after D) purges kw from every configured folder of
+// the active account in the background, then tagDeleteDoneMsg applies the
+// result. Nothing changes locally until the server confirms — unlike a
+// toggle this is not optimistic: one failed STORE would leave the tag on
+// the server while the picker had already forgotten it.
+func (m Model) deleteTagEverywhere(kw string) (tea.Model, tea.Cmd) {
+	account := m.activeAccountName()
+	registryKey := m.activeAccountKey()
+	cli := m.tagsClientFor(account)
+	folders := m.accountFolders()
+	m.status = fmt.Sprintf("deleting tag %q from all folders…", kw)
+	m.isError = false
+	return m, func() tea.Msg {
+		if cli == nil { // imap_disabled account: registry-only
+			return tagDeleteDoneMsg{keyword: kw, account: account, registryKey: registryKey}
+		}
+		res := cli.PurgeKeyword(nil, folders, kw)
+		return tagDeleteDoneMsg{keyword: kw, account: account, registryKey: registryKey, removed: res.Removed, skipped: res.Skipped, err: res.Err}
+	}
+}
+
+// handleTagDeleteDone applies a finished purge: the registry forgets the
+// tag, every loaded row of the account (list, folder cache, picker targets)
+// drops the keyword, and the tag leaves the active filter. On error nothing
+// is touched — the tag is still on the server.
+func (m Model) handleTagDeleteDone(msg tagDeleteDoneMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.status = fmt.Sprintf("tag %q: %v — nothing deleted", msg.keyword, msg.err)
+		m.isError = true
+		return m, nil
+	}
+	if err := m.tags.store.Delete(msg.registryKey, msg.keyword); err != nil {
+		log.Printf("tags: deleting registry file for %q failed: %v", msg.keyword, err)
+	}
+	if msg.account == m.activeAccountName() {
+		strip := func(es []imap.Email) {
+			for i := range es {
+				es[i].Keywords = tags.WithoutKeyword(es[i].Keywords, msg.keyword)
+			}
+		}
+		strip(m.emails)
+		strip(m.tags.targets)
+		for key, snap := range m.folderCache {
+			if strings.HasPrefix(key, cacheKey(msg.account, "")) {
+				strip(snap.emails)
+				m.folderCache[key] = snap
+			}
+		}
+		m.tags.active = tagFilterWithout(m.tags.active, msg.keyword)
+		if n := len(m.filteredPickerTags()); m.tags.cursor >= n && m.tags.cursor > 0 {
+			m.tags.cursor = n - 1
+		}
+	}
+	m.status = fmt.Sprintf("tag %q deleted — removed from %d email%s", msg.keyword, msg.removed, plural(msg.removed))
+	if len(msg.skipped) > 0 {
+		m.status += " · folders not searched: " + strings.Join(msg.skipped, ", ")
+	}
+	m.isError = false
+	return m, m.applyFilter()
+}
+
 // ── picker view ──────────────────────────────────────────────────────────
 
 func (m Model) viewTags() string {
@@ -963,12 +1154,20 @@ func (m Model) viewTags() string {
 	if m.tags.err != "" {
 		lines = append(lines, " "+styleError.Render(truncate(m.tags.err, w-6)))
 	}
+	if kw := m.tags.confirmDelete; kw != "" {
+		n := m.tags.store.Count(m.activeAccountKey(), kw)
+		lines = append(lines, "", styleError.Render(fmt.Sprintf(" delete tag %q? removes it from %d email%s on the server (all folders) · y/n", kw, n, plural(n))))
+	}
 	if m.tags.inputActive {
 		lines = append(lines, "", styleInputLabel.Render("new tag:")+" "+m.tags.input+"█")
 	} else if m.tags.filterActive {
 		lines = append(lines, "", styleInputLabel.Render("filter:")+" "+m.tags.filter+"█")
 	}
-	lines = append(lines, "", styleHelp.Render(" enter/space toggle · a new tag · f filter list by tag · F clear filter · / find · esc close"))
+	help := " enter toggle · a new tag · f filter list by tag · F clear filter · D delete tag · / find · esc / <space>t close"
+	if m.tags.pendingSpace {
+		help = " <space> t close"
+	}
+	lines = append(lines, "", styleHelp.Render(help))
 
 	// Border follows the active theme (built at render time, like the row styles).
 	boxStyle := lipgloss.NewStyle().

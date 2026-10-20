@@ -828,3 +828,43 @@ mono = true
 		t.Error("nerd_pill must default to false (padded-text fallback)")
 	}
 }
+
+func TestNotesConfig_Defaults(t *testing.T) {
+	cfg := defaults()
+	if !cfg.Notes.Enabled || cfg.Notes.NotesFolder() != "neomd/Notes" {
+		t.Errorf("defaults: enabled=%v folder=%q", cfg.Notes.Enabled, cfg.Notes.NotesFolder())
+	}
+	if (NotesConfig{}).NotesFolder() != "neomd/Notes" {
+		t.Error("zero-value NotesConfig must fall back to neomd/Notes")
+	}
+	if (NotesConfig{Folder: " Notes "}).NotesFolder() != "Notes" {
+		t.Error("configured folder must be trimmed and used")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	conf := `[[accounts]]
+name = "t"
+imap_host = "imap.example.com:993"
+smtp_host = "smtp.example.com:465"
+user = "u@example.com"
+password = "pw"
+from = "u@example.com"
+
+[notes]
+enabled = false
+folder = "Notes"
+`
+	if err := os.WriteFile(path, []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Notes.Enabled || loaded.Notes.NotesFolder() != "Notes" {
+		t.Errorf("[notes] not parsed: %+v", loaded.Notes)
+	}
+	if loaded.NotesDir != filepath.Join(dir, "notes") {
+		t.Errorf("NotesDir = %q", loaded.NotesDir)
+	}
+}

@@ -163,3 +163,48 @@ func TestMem_StoreKeyword_MissingMailboxErrors(t *testing.T) {
 		t.Errorf("selectedMailbox = %q after failed SELECT, want empty", cli.selectedMailbox)
 	}
 }
+
+// PurgeKeyword finds every message carrying the keyword (UID SEARCH KEYWORD
+// per folder) and removes it with one STORE per folder; folders the server
+// does not have are skipped, not fatal. Other keywords are untouched.
+func TestMem_PurgeKeyword_RemovesFromAllFolders(t *testing.T) {
+	cli, user := startMemIMAP(t)
+	seedMessage(t, user, "INBOX", "p1", false)
+	seedMessage(t, user, "INBOX", "p2", false)
+	seedMessage(t, user, "INBOX", "p3", false)
+	ctx := context.Background()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(cli.AddKeyword(ctx, "INBOX", 1, "help"))
+	must(cli.AddKeyword(ctx, "INBOX", 3, "help"))
+	must(cli.AddKeyword(ctx, "INBOX", 3, "work"))
+
+	uids, err := cli.SearchKeyword(ctx, "INBOX", "help")
+	must(err)
+	if len(uids) != 2 || uids[0] != 1 || uids[1] != 3 {
+		t.Fatalf("SearchKeyword = %v, want [1 3]", uids)
+	}
+
+	res := cli.PurgeKeyword(ctx, []string{"INBOX", "NoSuchFolder"}, "help")
+	if res.Err != nil {
+		t.Fatalf("PurgeKeyword: %v", res.Err)
+	}
+	if res.Removed != 2 {
+		t.Errorf("Removed = %d, want 2", res.Removed)
+	}
+	if len(res.Skipped) != 1 || res.Skipped[0] != "NoSuchFolder" {
+		t.Errorf("Skipped = %v, want [NoSuchFolder]", res.Skipped)
+	}
+	for _, uid := range []uint32{1, 2} {
+		if got := keywordsOfUID(t, cli, "INBOX", uid); len(got) != 0 {
+			t.Errorf("uid %d keywords = %v, want none", uid, got)
+		}
+	}
+	if got := keywordsOfUID(t, cli, "INBOX", 3); len(got) != 1 || got[0] != "work" {
+		t.Errorf("uid 3 keywords = %v, want [work] (other keywords untouched)", got)
+	}
+}

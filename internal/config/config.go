@@ -389,6 +389,32 @@ func (t TagsConfig) Rule(keyword string) (TagRule, bool) {
 }
 
 // TagsKey returns the picker's leader-chord key (default "t").
+// NotesConfig holds private per-email notes ([notes] in config.toml) — a
+// free-text Markdown comment on one email, visible only to you (HEY "thread
+// notes"). The server copy is a small sidecar message in Folder whose
+// X-Neomd-Note-For header names the email's Message-ID (see internal/notes);
+// the email itself is never touched. <config dir>/notes/ is the local
+// write-through copy.
+type NotesConfig struct {
+	// Enabled is the master switch — on by default; `enabled = false` leaves
+	// <space>n inert and renders no ✎ snippet or reader Note line.
+	Enabled bool `toml:"enabled"`
+	// Folder is the IMAP folder holding the sidecar messages (default
+	// "neomd/Notes"; "/" is replaced by the server's hierarchy delimiter, so
+	// a Dovecot with "." separators gets "neomd.Notes"). Created on the first
+	// save. Hide it in other clients by unsubscribing — neomd never reads
+	// the subscription list.
+	Folder string `toml:"folder"`
+}
+
+// NotesFolder is Folder with the default applied.
+func (n NotesConfig) NotesFolder() string {
+	if strings.TrimSpace(n.Folder) == "" {
+		return "neomd/Notes"
+	}
+	return strings.TrimSpace(n.Folder)
+}
+
 func (t TagsConfig) TagsKey() string {
 	if t.Key == "" {
 		return "t"
@@ -506,6 +532,9 @@ type Config struct {
 	// Tags configures IMAP keyword tagging ([tags] in config.toml).
 	Tags TagsConfig `toml:"tags"`
 
+	// Notes configures private per-email notes ([notes] in config.toml).
+	Notes NotesConfig `toml:"notes"`
+
 	// OOO configures out-of-office auto-replies, processed by the headless
 	// daemon (--headless) only. Replies go solely to screened-in senders,
 	// once per sender per OOO period.
@@ -526,6 +555,10 @@ type Config struct {
 	// keeps a later restore a per-account operation). Set during Load(),
 	// not a TOML field.
 	TagsDir string `toml:"-"`
+	// NotesDir is <config dir>/notes/ — the local write-through copy of the
+	// private per-email notes (see internal/notes): one folder per account,
+	// one Markdown file per note. Set during Load(), not a TOML field.
+	NotesDir string `toml:"-"`
 }
 
 // OOOConfig holds out-of-office auto-reply settings ([ooo] in config.toml).
@@ -791,6 +824,7 @@ func Load(path string) (*Config, error) {
 	cfg.OOOFile = filepath.Join(filepath.Dir(path), "ooo.toml")
 	cfg.MergesFile = filepath.Join(filepath.Dir(path), "merges.toml")
 	cfg.TagsDir = filepath.Join(filepath.Dir(path), "tags")
+	cfg.NotesDir = filepath.Join(filepath.Dir(path), "notes")
 	cfg.Tags.Rules = parseTagRules(path)
 	if override, err := LoadOOOOverride(cfg.OOOFile); err != nil {
 		return nil, err
@@ -955,6 +989,12 @@ func defaults() *Config {
 			// discoverable. nerd_pill stays off: it needs a nerd font.
 			Enabled: true,
 			Key:     "t", // <space>t opens the tag picker
+		},
+		Notes: NotesConfig{
+			// On by default: inert until the user writes a note. The folder
+			// is created on the first save, never before.
+			Enabled: true,
+			Folder:  "neomd/Notes",
 		},
 		AI: AIConfig{
 			// Default: hand off to Claude Code in **interactive** mode (not

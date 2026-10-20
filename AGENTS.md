@@ -514,6 +514,17 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   still apply, pill caps draw in the muted colour. The leader chord is `<space>t`
   (`[tags] key` default `"t"`, `TagsKey()` fallback) — `k` is list navigation. Test:
   `TestTagColors_MonoIgnoresConfiguredColours`.
+- **Deleting a tag is server-first, never optimistic** — `D` in the picker on a tag in
+  use (`tagInUse`: registry count, list, folder cache or targets) asks `y/n`, then
+  `deleteTagEverywhere` runs `PurgeKeyword` (`internal/imap/tags.go`: per configured
+  folder one `UID SEARCH KEYWORD` + one `STORE -FLAGS` on the UID set, `withConn`, never
+  retried; unsearchable folders are reported as skipped, a failed STORE aborts) and only
+  `handleTagDeleteDone` forgets the tag locally (registry `Delete`, rows, folder cache,
+  picker targets, active filter). On error nothing local changes — the tag is still on
+  the server. An unused tag is deleted registry-only, no round trip. Tests:
+  `TestTagsPicker_DeleteUnusedTag`, `TestTagsPicker_DeleteUsedTagConfirmsThenPurges`,
+  `TestTagsPicker_DeleteUsedTagErrorKeepsTag`, `TestMem_PurgeKeyword_RemovesFromAllFolders`,
+  `TestTagsStore_DeleteRemovesFile`.
 - **The tag filter is a view mode, not a search** — `tagsModel.active` (`f`/`F` in the
   picker) is checked in `applyFilter` next to `showUnreadOnly` and, like it, is NOT reset
   by folder switches, reloads, off-tabs or `ctrl+a`; only `F` or inbox `esc` clear it.
@@ -573,6 +584,41 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   writes exactly one `NeomdTest` keyword to one message, reports PERMANENTFLAGS/`\*`,
   STORE, SEARCH and cleanup per step, and removes the keyword again (keep mode via
   `:tt keep` opts out for persistence checks). Tests: `TestKeywordProbe_*`.
+
+## Private Notes (space n)
+
+- **A note never touches the email** — the server copy is a sidecar message in
+  `[notes] folder` (default `neomd/Notes`; `internal/imap/notes.go`) whose
+  `X-Neomd-Note-For` header carries the email's Message-ID; the noted email keeps its
+  UID, flags and keywords. Editing APPENDs the new sidecar BEFORE expunging the old one
+  (`SaveNote`), deleting expunges exactly that UID (`DeleteNote`), reading is PEEK
+  (`FetchNotes`; a missing folder = no notes, no error — the folder is created on the
+  first save, never at startup). `/` in the folder name maps to the server's hierarchy
+  delimiter (`resolveFolder`, one cached `LIST "" ""`). ANNOTATE/METADATA are NOT used:
+  Hostpoint (Dovecot) and Gmail advertise neither.
+  Tests: `TestMem_Notes_SaveFetchReplaceDelete` (asserts the INBOX email is unchanged),
+  `TestMem_Notes_ForeignMessageIgnored`.
+- **Local copy first, server behind the list, everything async** — `internal/notes`
+  `Store` (`<config dir>/notes/<address>/<message-id>.md`, header block + Markdown
+  body, keyed per account like tags) is updated and saved (`safeGo`) before the
+  `SaveNote` cmd runs; the ✎ row snippet (`noteRowSnippet`, `internal/ui/inbox.go`,
+  ≤ half the subject budget, row width identical to a note-less row) and the reader
+  `Note:` block (`readerNoteLines`) read the store through the package-level
+  `noteSnippetSource` (nil = feature off). `fetchNotesCmd` runs on Init, `ctrl+a` and
+  every `bgSyncTickMsg`; `handleNotesLoaded` merges server-wins per Message-ID and
+  keeps local-only notes; fetch errors are silent, save errors keep the local copy and
+  say so. `[notes] enabled = false`: `newNotesModel` wires nothing, `openNote` refuses.
+  Tests: `TestNotes_EditorDoneSavesLocallyAndRendersSnippet`,
+  `TestNotes_LocalFileWrittenThrough`, `TestNotes_ServerLoadMergesIntoStore`,
+  `TestNotes_SavedMsgRecordsUIDAndErrorKeepsLocal`, `TestNotes_RowSnippetWidthAccounting`,
+  `TestNotes_DisabledConfigIsKillSwitch`.
+- **Chords: `<space>n` opens AND closes the popup; `<space>t` closes the tag picker;
+  `enter` is the only tag toggle** — both pickers hold a `pendingSpace` flag after a
+  bare space (the next key is consumed as the chord key). The reader's notify.txt
+  chords are `<space>b` / `<space>B` (moved from `n`/`N`). An email without a
+  Message-ID cannot carry a note (`openNote` refuses). Tests:
+  `TestNotes_PopupOpensOnCursorAndSpaceNCloses`, `TestNotes_NoMessageIDRefused`,
+  `TestTagsPicker_SpaceTClosesEnterToggles`.
 
 ## Reading & Security
 

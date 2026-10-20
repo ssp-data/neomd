@@ -1,6 +1,6 @@
 ---
 title: Notifications
-weight: 6
+weight: 7
 ---
 
 neomd can fire desktop notifications via `notify-send` (or any compatible CLI) when **specific** senders deliver new mail. The list of "notify-worthy" senders is independent of the screener categories — being approved (`screened_in`) does not automatically mean you want to be paged about it.

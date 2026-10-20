@@ -548,9 +548,9 @@ The scopes required depends on the provider and is better confirmed by your emai
 
 - To enable OAuth2 authentication for Office365 accounts, follow the documentation [here](https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth)
 - For GMAIL, follow the documentation [here](https://developers.google.com/workspace/gmail/imap/xoauth2-protocol)
-## Email Tags and filters
+## Email Tags and Private Notes
 
-You can filter and tag emails with IMAP functionality, see the docs at [Email Tags (IMAP Keywords)](tags/)
+Tags (IMAP keywords, filterable) and private per-email notes (HEY-style thread notes) are described with screenshots on [Tags & Private Notes](/docs/tags-and-notes/); the `[tags]` and `[notes]` settings are on [Tags & Notes Settings](tags/).
 
 ## Dedicated Platforms
 
