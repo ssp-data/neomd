@@ -1437,3 +1437,90 @@ func TestUndoableMovesSkipsUnknownDestUID(t *testing.T) {
 		t.Errorf("undoableMoves = %+v, skipped %d; want only uid 77 kept, 1 skipped", keep, skipped)
 	}
 }
+
+// TestReplyToOwnMailOutsideSentFolder pins reply/reply-all on a mail *I* sent
+// when it is opened from a non-Sent tab: the conversation view (T) and merges
+// pull Sent messages into Inbox threads, so "am I the sender?" must be decided
+// per message (Folder == Sent, or From is one of my addresses), never from the
+// active tab. Regression: ctrl+r on my own last message in an Inbox thread put
+// me in To and the real recipient in Cc.
+func TestReplyToOwnMailOutsideSentFolder(t *testing.T) {
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{Name: "Personal", User: "simu@sspaeti.com", From: "Simon Späti <simu@sspaeti.com>"},
+			{Name: "Work", User: "simon@sspaeti.com", From: "Simon Späti <simon@ssp.sh>"},
+		},
+		Folders: config.FoldersConfig{Sent: "Sent"},
+	}
+	fromSent := &imap.Email{
+		Folder: "Sent",
+		From:   "Simon Späti <simon@ssp.sh>",
+		To:     "anna.muster@example.org",
+	}
+	// Same mail, but filed elsewhere (archived thread, differently named Sent
+	// folder on another provider): only the From address identifies it as mine.
+	fromArchive := &imap.Email{
+		Folder: "Archive",
+		From:   "Simon Späti <simon@ssp.sh>",
+		To:     "anna.muster@example.org",
+		CC:     "Simon Späti <simu@sspaeti.com>, colleague@example.com",
+	}
+	received := &imap.Email{
+		Folder: "INBOX",
+		From:   "anna.muster@example.org",
+		To:     "Simon Späti <simon@ssp.sh>",
+		CC:     "colleague@example.com",
+	}
+
+	tests := []struct {
+		name     string
+		email    *imap.Email
+		replyAll bool
+		wantTo   string
+		wantCC   string
+		wantFrom int
+	}{
+		{"r on my Sent mail in Inbox thread", fromSent, false,
+			"anna.muster@example.org", "", 1},
+		{"ctrl+r on my Sent mail in Inbox thread", fromSent, true,
+			"anna.muster@example.org", "", 1},
+		{"ctrl+r on my archived mail → To + Cc minus every own address", fromArchive, true,
+			"anna.muster@example.org", "colleague@example.com", 1},
+		{"r on received mail unchanged → sender", received, false,
+			"anna.muster@example.org", "", 1},
+		{"ctrl+r on received mail unchanged → sender + others minus me", received, true,
+			"anna.muster@example.org", "colleague@example.com", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				cfg:           cfg,
+				accounts:      cfg.ActiveAccounts(),
+				folders:       []string{"Inbox"}, // NOT the Sent tab
+				activeFolderI: 0,
+			}
+			gotTo, gotCC := m.replyRecipients(tt.email, tt.replyAll)
+			if gotTo != tt.wantTo {
+				t.Errorf("To = %q, want %q", gotTo, tt.wantTo)
+			}
+			if gotCC != tt.wantCC {
+				t.Errorf("Cc = %q, want %q", gotCC, tt.wantCC)
+			}
+			for _, own := range []string{"simon@ssp.sh", "simu@sspaeti.com"} {
+				if strings.Contains(strings.ToLower(gotTo+gotCC), own) {
+					t.Errorf("own address %s leaked into reply: To=%q Cc=%q", own, gotTo, gotCC)
+				}
+			}
+			if got := m.matchFromForReply(tt.email); got != tt.wantFrom {
+				t.Errorf("matchFromForReply = %d (%q), want %d", got, m.presendFroms()[maxInt(got, 0)], tt.wantFrom)
+			}
+		})
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}

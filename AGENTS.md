@@ -129,13 +129,17 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   start with `re:`/`aw:`/`sv:`/`vs:` (case-insensitive); localized prefixes are treated as
   replies, never double-prefixed. Test: `TestHasReplyPrefix`.
 - **Reply From auto-selection** — replying picks the From address matching the email's
-  To/CC; in the Sent folder the user's own address is in `From` instead
-  (`matchFromForReply`, `internal/ui/model.go`).
-- **Replying from the Sent folder goes to the original recipients** — `r` on a mail I
-  sent addresses the reply to its original `To` (not to me, the sender); `ctrl+r` adds the
-  original `Cc` minus own addresses. Outside Sent the classic Reply-To/From → To and
-  To+Cc → Cc logic is unchanged (`replyRecipients`, `internal/ui/model.go`). Test:
-  `TestReplyFromSentFolderTargetsOriginalRecipients`.
+  To/CC; for a mail I sent the user's own address is in `From` instead
+  (`matchFromForReply`, `internal/ui/model.go`). Reactions (`ctrl+e`) use the same picker.
+- **Replying to a mail I sent goes to the original recipients — decided per message,
+  never per tab** — `isOwnMessage` (`internal/ui/model.go`): the mail lives in the Sent
+  folder *or* its `From` is one of my addresses (logins, account Froms, `[[senders]]`).
+  `r` addresses the reply to its original `To` (not to me, the sender); `ctrl+r` adds the
+  original `Cc` minus own addresses. This must hold outside the Sent tab too: the
+  conversation view (`T`) and merges pull Sent mails into Inbox threads, and own mails may
+  be archived. For received mail the classic Reply-To/From → To and To+Cc → Cc logic is
+  unchanged (`replyRecipients`). Tests: `TestReplyFromSentFolderTargetsOriginalRecipients`,
+  `TestReplyToOwnMailOutsideSentFolder`.
 - **Reply-all excludes all own addresses** — both IMAP login addresses (`account.User`)
   and send-as addresses (accounts + `[[senders]]` aliases) are stripped from CC. Test:
   `TestReplyAllExcludesAllOwnAddresses`.

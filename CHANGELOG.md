@@ -1,5 +1,9 @@
 # Changelog
 
+# 2026-11-01
+
+- **Fix: replying to my own mail from an Inbox thread no longer addresses it to me** — `r`/`ctrl+r` on a message *I* sent that is opened outside the Sent tab (the conversation view `T` and merges pull Sent mails into Inbox threads; own mails may also sit in Archive) put my own address in To, demoted the real recipient to Cc, and could pick the wrong From account. Cause: "is this a mail I sent?" was decided from the *active tab* (`activeFolder() == Folders.Sent`), not from the message. Now `isOwnMessage` decides per message: the mail's folder is the Sent folder *or* its From is one of my addresses (IMAP logins, account Froms, `[[senders]]` aliases). Own mail: To = original To, reply-all Cc = original Cc minus own addresses, From = the address the mail was sent from. Received mail: unchanged (Reply-To/From → To, To+Cc minus me → Cc, From = the address that received it). Reactions (`ctrl+e`) use the same From picker. Where: `internal/ui/model.go` (`isOwnMessage`, `ownAddrs`, `replyRecipients`, `matchFromForReply`). Test: `TestReplyToOwnMailOutsideSentFolder`.
+
 # 2026-10-20
 
 - **Docs: tags and private notes get their own page** — [Tags & Private Notes](https://neomd.ssp.sh/docs/tags-and-notes/) (`docs/content/docs/tags-and-notes.md`, between Reading and Sending) now carries the feature walkthrough with every screenshot (picker, the chip looks, the notes popup and editor); `docs/content/docs/configuration/tags.md` is reduced to the `[tags]`, `[tags.<name>]` and `[notes]` reference. README feature bullets for both link to the new page. Why: configuration pages should hold configuration; the screenshots were buried there.

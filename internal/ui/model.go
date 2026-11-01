@@ -6738,7 +6738,7 @@ func (m Model) enterReactionMode(e *imap.Email) (tea.Model, tea.Cmd) {
 	m.pendingReaction = false
 
 	// Pre-select the correct From address (same logic as reply)
-	if idx := m.matchFromIndex(e.To, e.CC); idx >= 0 {
+	if idx := m.matchFromForReply(e); idx >= 0 {
 		m.presendFromI = idx
 	}
 
@@ -6872,19 +6872,50 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 	})
 }
 
+// ownAddrs returns every address that counts as "me": IMAP logins
+// (account.User), account From addresses and [[senders]] aliases. Built from
+// both User and From to handle setups where they differ
+// (e.g., user123@provider vs simon@domain). Keys are lowercase bare addresses.
+func (m Model) ownAddrs() map[string]bool {
+	own := make(map[string]bool)
+	for _, acc := range m.accounts {
+		own[strings.ToLower(extractEmailAddr(acc.User))] = true
+	}
+	for _, from := range m.presendFroms() {
+		own[strings.ToLower(extractEmailAddr(from))] = true
+	}
+	delete(own, "")
+	return own
+}
+
+// isOwnMessage reports whether e is a mail *I* sent: it lives in the Sent
+// folder or its From is one of my addresses. This is decided per message,
+// never from the active tab, because the conversation view (T) and merges
+// pull Sent messages into Inbox threads (and my own mails may be archived or
+// live in a differently named Sent folder on another provider).
+func (m Model) isOwnMessage(e *imap.Email) bool {
+	if e == nil {
+		return false
+	}
+	if m.cfg != nil && m.cfg.Folders.Sent != "" && e.Folder == m.cfg.Folders.Sent {
+		return true
+	}
+	return m.ownAddrs()[strings.ToLower(extractEmailAddr(e.From))]
+}
+
 // replyRecipients computes the To and Cc for a reply (r) or reply-all (ctrl+r).
 //
-// Normal folders: To = Reply-To (else From); reply-all Cc = original To + Cc
+// Received mail: To = Reply-To (else From); reply-all Cc = original To + Cc
 // minus every own address.
 //
-// Sent folder: the mail is one *I* sent, so From/Reply-To are me. Replying
-// must go back to the people I wrote to: To = original To; reply-all
-// Cc = original Cc minus own addresses. Without this, r in Sent would
-// address the reply to myself.
+// Mail I sent (see isOwnMessage): From/Reply-To are me, so replying must go
+// back to the people I wrote to: To = original To; reply-all Cc = original Cc
+// minus own addresses. Without this, replying to my own mail would address the
+// reply to myself and demote the real recipient to Cc.
 func (m Model) replyRecipients(e *imap.Email, replyAll bool) (to, cc string) {
-	inSent := len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent
+	own := m.isOwnMessage(e)
 
-	if inSent {
+	if own {
 		to = e.To
 	} else {
 		// Use Reply-To if present, else From
@@ -6898,18 +6929,9 @@ func (m Model) replyRecipients(e *imap.Email, replyAll bool) (to, cc string) {
 		return to, ""
 	}
 
-	// Exclude all own addresses. Build the set from both account User (IMAP
-	// login) and From (send-as) to handle setups where they differ
-	// (e.g., user123@provider vs simon@domain).
-	ownAddrs := make(map[string]bool)
-	for _, acc := range m.accounts {
-		ownAddrs[strings.ToLower(extractEmailAddr(acc.User))] = true
-	}
-	for _, from := range m.presendFroms() {
-		ownAddrs[strings.ToLower(extractEmailAddr(from))] = true
-	}
+	ownAddrs := m.ownAddrs()
 	src := e.To + "," + e.CC
-	if inSent {
+	if own {
 		src = e.CC // original To already went into `to`
 	}
 	var parts []string
@@ -6942,12 +6964,19 @@ func (m Model) matchFromIndex(toField, ccField string) int {
 	return -1
 }
 
-// matchFromForReply picks the right From index for a reply. In the Sent folder
-// the user's own address lives in e.From (e.To is the original recipient);
-// elsewhere it lives in e.To/CC.
+// matchFromForReply picks the right From index for a reply. For a mail I
+// sent (see isOwnMessage) my address lives in e.From (e.To is the original
+// recipient); for received mail it lives in e.To/CC. Decided per message, not
+// per active tab, so my own mails inside Inbox threads reply from the same
+// address they were sent from.
 func (m Model) matchFromForReply(e *imap.Email) int {
-	if len(m.folders) > 0 && m.activeFolder() == m.cfg.Folders.Sent {
-		return m.matchFromIndex(e.From, "")
+	if e == nil {
+		return -1
+	}
+	if m.isOwnMessage(e) {
+		if idx := m.matchFromIndex(e.From, ""); idx >= 0 {
+			return idx
+		}
 	}
 	return m.matchFromIndex(e.To, e.CC)
 }
