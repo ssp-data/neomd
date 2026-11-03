@@ -1524,3 +1524,199 @@ func maxInt(a, b int) int {
 	}
 	return b
 }
+
+// TestReplyToAliasAddressUsesAccountAndExcludesAlias covers mail that reaches
+// me at an address that is not an account/sender From — a catch-all or alias
+// such as inquiries@example.org on a domain I own. `alternative_emails`
+// (exact addresses or `*@domain`) marks such addresses as mine: reply-all must
+// not Cc them (that would mail myself) and From must be the owning account.
+// With no match at all, From falls back to default_from instead of whatever
+// was selected last. Regression: ctrl+r on a mail To inquiries@… produced
+// Cc: inquiries@… and From: the previously selected account.
+func TestReplyToAlternativeEmailUsesAccountAndExcludesIt(t *testing.T) {
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{Name: "Personal", User: "simu@sspaeti.com", From: "Simon Späti <simu@sspaeti.com>"},
+			{Name: "Work", User: "simon@sspaeti.com", From: "Simon Späti <simon@ssp.sh>",
+				AlternativeEmails: []string{"inquiries@ssp.sh", "*@example.org"}},
+		},
+		DefaultFrom:       "simon@ssp.sh",
+		AlternativeEmails: []string{"*@example.net"},
+	}
+	tests := []struct {
+		name     string
+		email    *imap.Email
+		wantTo   string
+		wantCC   string
+		wantFrom int
+	}{
+		{"exact alias: reply-all drops the alias, From = owning account",
+			&imap.Email{Folder: "INBOX", From: "Blessing Example <blessing@example.com>", To: "inquiries@ssp.sh"},
+			"Blessing Example <blessing@example.com>", "", 1},
+		{"wildcard alias: anything@example.org is mine",
+			&imap.Email{Folder: "INBOX", From: "pat@partner.com", To: "sales@example.org", CC: "colleague@partner.com"},
+			"pat@partner.com", "colleague@partner.com", 1},
+		{"root-level alternative domain → mine (dropped from Cc), From = default_from",
+			&imap.Email{Folder: "INBOX", From: "pat@partner.com", To: "hello@example.net", CC: "colleague@partner.com"},
+			"pat@partner.com", "colleague@partner.com", 1},
+		{"no match anywhere → default_from, Cc keeps the unknown recipient",
+			&imap.Email{Folder: "INBOX", From: "pat@partner.com", To: "someone-else@other.com"},
+			"pat@partner.com", "someone-else@other.com", 1},
+		{"exact From match still wins over default_from",
+			&imap.Email{Folder: "INBOX", From: "pat@partner.com", To: "simu@sspaeti.com"},
+			"pat@partner.com", "", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				cfg:           cfg,
+				accounts:      cfg.ActiveAccounts(),
+				folders:       []string{"Inbox"},
+				activeFolderI: 0,
+				presendFromI:  0, // "last used" was Personal — must not leak into the reply
+			}
+			gotTo, gotCC := m.replyRecipients(tt.email, true)
+			if gotTo != tt.wantTo {
+				t.Errorf("To = %q, want %q", gotTo, tt.wantTo)
+			}
+			if gotCC != tt.wantCC {
+				t.Errorf("Cc = %q, want %q", gotCC, tt.wantCC)
+			}
+			if got := m.replyFromIndex(tt.email); got != tt.wantFrom {
+				t.Errorf("replyFromIndex = %d, want %d", got, tt.wantFrom)
+			}
+		})
+	}
+}
+
+// TestReplyMatrix is the single table that pins every reply shape neomd
+// supports. Reply is the bread and butter of the client: when a new case is
+// found, add a row here — never fix one shape by hand-checking the others.
+//
+// Columns: tab the mail is opened in, the mail, r vs ctrl+r, expected To /
+// Cc, expected From index into presendFroms() (accounts first, then senders).
+func TestReplyMatrix(t *testing.T) {
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{Name: "Personal", User: "simu@sspaeti.com", From: "Simon Späti <simu@sspaeti.com>"},
+			{Name: "Work", User: "simon@sspaeti.com", From: "Simon Späti <simon@ssp.sh>",
+				AlternativeEmails: []string{"*@ssp.sh"}}, // catch-all domain: inquiries@, hello@, …
+			{Name: "WorkInfo", User: "info@ssp.sh", From: "SSP Data GmbH <info@ssp.sh>"},
+			{Name: "Gmail", User: "simon.spaeti@gmail.com", From: "Simon Späti <simon.spaeti@gmail.com>", IMAPDisabled: true},
+		},
+		Senders: []config.SenderConfig{
+			{Name: "Simon Späti", From: "Simon Späti <s@ssp.sh>", Account: "Personal"},
+		},
+		Folders:           config.FoldersConfig{Sent: "Sent"},
+		DefaultFrom:       "simon@ssp.sh",
+		AlternativeEmails: []string{"*@sspaeti.com"}, // root-level: mine, reply from default_from
+	}
+	const personal, work, workInfo, gmail, alias = 0, 1, 2, 3, 4
+
+	type row struct {
+		name     string
+		tab      string
+		email    imap.Email
+		replyAll bool
+		wantTo   string
+		wantCC   string
+		wantFrom int
+	}
+	rows := []row{
+		// ---- received mail -------------------------------------------------
+		{"received: r → sender, From = receiving account", "Inbox",
+			imap.Email{Folder: "INBOX", From: "Anna <anna@partner.com>", To: "Simon Späti <simon@ssp.sh>", CC: "bob@partner.com"},
+			false, "Anna <anna@partner.com>", "", work},
+		{"received: ctrl+r → sender + everyone else minus me", "Inbox",
+			imap.Email{Folder: "INBOX", From: "Anna <anna@partner.com>", To: "Simon Späti <simon@ssp.sh>, carol@partner.com", CC: "bob@partner.com"},
+			true, "Anna <anna@partner.com>", "carol@partner.com, bob@partner.com", work},
+		{"received: Reply-To wins over From", "Inbox",
+			imap.Email{Folder: "INBOX", From: "noreply@shop.com", ReplyTo: "support@shop.com", To: "simu@sspaeti.com"},
+			false, "support@shop.com", "", personal},
+		{"received: ctrl+r strips every own identity (login, From, sender alias, alternative email)", "Inbox",
+			imap.Email{Folder: "INBOX", From: "anna@partner.com", To: "simon@ssp.sh, simon@sspaeti.com, s@ssp.sh",
+				CC: "simu@sspaeti.com, inquiries@ssp.sh, bob@partner.com"},
+			true, "anna@partner.com", "bob@partner.com", work},
+		{"received at sender alias s@ → From = that alias", "Inbox",
+			imap.Email{Folder: "INBOX", From: "anna@partner.com", To: "s@ssp.sh"},
+			false, "anna@partner.com", "", alias},
+		{"received at catch-all alias (*@ssp.sh) → From = owning account, alias not Cc'd", "Inbox",
+			imap.Email{Folder: "INBOX", From: "Blessing <blessing@example.com>", To: "inquiries@ssp.sh"},
+			true, "Blessing <blessing@example.com>", "", work},
+		{"received at root-level alternative domain → not Cc'd, From = default_from", "Inbox",
+			imap.Email{Folder: "INBOX", From: "anna@partner.com", To: "hello@sspaeti.com", CC: "bob@partner.com"},
+			true, "anna@partner.com", "bob@partner.com", work},
+		{"exact login/From at a root-level alternative domain still picks its own account", "Inbox",
+			imap.Email{Folder: "INBOX", From: "anna@partner.com", To: "simu@sspaeti.com"},
+			false, "anna@partner.com", "", personal},
+		{"received at an exact account address beats the domain wildcard of another account", "Inbox",
+			imap.Email{Folder: "INBOX", From: "anna@partner.com", To: "info@ssp.sh"},
+			false, "anna@partner.com", "", workInfo},
+		{"wildcard must not swallow a look-alike domain (notssp.sh)", "Inbox",
+			imap.Email{Folder: "INBOX", From: "anna@partner.com", To: "someone@notssp.sh"},
+			true, "anna@partner.com", "someone@notssp.sh", work}, // work = default_from
+		{"received via mailing list (me nowhere) → From = default_from, list stays in Cc", "Inbox",
+			imap.Email{Folder: "INBOX", From: "anna@partner.com", To: "list@groups.io"},
+			true, "anna@partner.com", "list@groups.io", work},
+		{"received: Bcc'd at Gmail (me in CC only) → From = Gmail", "Inbox",
+			imap.Email{Folder: "INBOX", From: "anna@partner.com", To: "bob@partner.com", CC: "simon.spaeti@gmail.com"},
+			true, "anna@partner.com", "bob@partner.com", gmail},
+		{"newsletter 'via' with my name but foreign address is not me", "Inbox",
+			imap.Email{Folder: "INBOX", From: "Simon Späti via Substack <news@substack.com>", To: "simu@sspaeti.com"},
+			false, "Simon Späti via Substack <news@substack.com>", "", personal},
+		// ---- mail I sent ----------------------------------------------------
+		{"own in Sent tab: r → original To", "Sent",
+			imap.Email{Folder: "Sent", From: "Simon Späti <simon@ssp.sh>", ReplyTo: "Simon Späti <simon@ssp.sh>", To: "anna@partner.com", CC: "bob@partner.com"},
+			false, "anna@partner.com", "", work},
+		{"own in Sent tab: ctrl+r → original To + Cc minus me", "Sent",
+			imap.Email{Folder: "Sent", From: "Simon Späti <simon@ssp.sh>", To: "anna@partner.com", CC: "bob@partner.com, simu@sspaeti.com"},
+			true, "anna@partner.com", "bob@partner.com", work},
+		{"own Sent mail inside an Inbox thread (T / merge): r", "Inbox",
+			imap.Email{Folder: "Sent", From: "Simon Späti <simon@ssp.sh>", To: "anna@partner.com"},
+			false, "anna@partner.com", "", work},
+		{"own Sent mail inside an Inbox thread (T / merge): ctrl+r", "Inbox",
+			imap.Email{Folder: "Sent", From: "Simon Späti <simon@ssp.sh>", To: "anna@partner.com", CC: "bob@partner.com"},
+			true, "anna@partner.com", "bob@partner.com", work},
+		{"own mail archived (not in Sent, From is me): ctrl+r", "Archive",
+			imap.Email{Folder: "Archive", From: "Simon Späti <simu@sspaeti.com>", To: "anna@partner.com", CC: "simon@ssp.sh"},
+			true, "anna@partner.com", "", personal},
+		{"own mail sent from sender alias s@ → From = s@", "Sent",
+			imap.Email{Folder: "Sent", From: "Simon Späti <s@ssp.sh>", To: "anna@partner.com"},
+			false, "anna@partner.com", "", alias},
+		{"own mail to others with myself in To as well → still mine", "Inbox",
+			imap.Email{Folder: "INBOX", From: "Simon Späti <simon@ssp.sh>", To: "anna@partner.com, simon@ssp.sh"},
+			true, "anna@partner.com, simon@ssp.sh", "", work},
+		// ---- mail between my own addresses ---------------------------------
+		{"account→account read in receiving inbox → reply back to sender from receiver", "Inbox",
+			imap.Email{Folder: "INBOX", From: "Simon Späti <simu@sspaeti.com>", To: "Simon Späti <simon@ssp.sh>"},
+			false, "Simon Späti <simu@sspaeti.com>", "", work},
+		{"account→account in Sent → to the other account, from the sending one", "Sent",
+			imap.Email{Folder: "Sent", From: "Simon Späti <simu@sspaeti.com>", To: "Simon Späti <simon@ssp.sh>"},
+			false, "Simon Späti <simon@ssp.sh>", "", personal},
+		{"me-to-me note in Inbox: r → myself", "Inbox",
+			imap.Email{Folder: "INBOX", From: "Simon Späti <simon@ssp.sh>", To: "Simon Späti <simon@ssp.sh>"},
+			false, "Simon Späti <simon@ssp.sh>", "", work},
+	}
+	for _, tt := range rows {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				cfg:           cfg,
+				accounts:      cfg.ActiveAccounts(),
+				folders:       []string{tt.tab},
+				activeFolderI: 0,
+				presendFromI:  gmail, // stale "last used" From must never leak
+			}
+			e := tt.email
+			gotTo, gotCC := m.replyRecipients(&e, tt.replyAll)
+			if gotTo != tt.wantTo {
+				t.Errorf("To = %q, want %q", gotTo, tt.wantTo)
+			}
+			if gotCC != tt.wantCC {
+				t.Errorf("Cc = %q, want %q", gotCC, tt.wantCC)
+			}
+			if got := m.replyFromIndex(&e); got != tt.wantFrom {
+				t.Errorf("From = %d (%s), want %d (%s)", got, m.presendFroms()[got], tt.wantFrom, m.presendFroms()[tt.wantFrom])
+			}
+		})
+	}
+}

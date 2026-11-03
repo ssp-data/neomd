@@ -6738,9 +6738,7 @@ func (m Model) enterReactionMode(e *imap.Email) (tea.Model, tea.Cmd) {
 	m.pendingReaction = false
 
 	// Pre-select the correct From address (same logic as reply)
-	if idx := m.matchFromForReply(e); idx >= 0 {
-		m.presendFromI = idx
-	}
+	m.presendFromI = m.replyFromIndex(e)
 
 	return m, nil
 }
@@ -6801,10 +6799,8 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 
 	// Auto-select the From address that matches the email's To/CC field.
 	// E.g. if email was sent to simon@ssp.sh, reply from simon@ssp.sh.
-	// In Sent folder, the user's own address is in From instead.
-	if idx := m.matchFromForReply(e); idx >= 0 {
-		m.presendFromI = idx
-	}
+	// For my own mail the address is in From instead; no match → default_from.
+	m.presendFromI = m.replyFromIndex(e)
 
 	to, cc := m.replyRecipients(e, replyAll)
 
@@ -6888,11 +6884,37 @@ func (m Model) ownAddrs() map[string]bool {
 	return own
 }
 
-// isOwnMessage reports whether e is a mail *I* sent: it lives in the Sent
-// folder or its From is one of my addresses. This is decided per message,
-// never from the active tab, because the conversation view (T) and merges
-// pull Sent messages into Inbox threads (and my own mails may be archived or
-// live in a differently named Sent folder on another provider).
+// isOwnAddr reports whether addr ("Name <a@b>" or bare) is one of mine:
+// an ownAddrs() entry or an `alternative_emails` match (root-level or
+// per-account: catch-alls, role addresses that are not a send-as From).
+func (m Model) isOwnAddr(addr string) bool {
+	bare := strings.ToLower(extractEmailAddr(addr))
+	if bare == "" {
+		return false
+	}
+	if m.ownAddrs()[bare] {
+		return true
+	}
+	for _, acc := range m.accounts {
+		if acc.MatchesAlternative(bare) {
+			return true
+		}
+	}
+	return m.cfg.MatchesAlternative(bare)
+}
+
+// isOwnMessage reports whether e is a mail *I* wrote to someone else, so a
+// reply must go back to its recipients rather than to its sender (me).
+//
+// True when the mail lives in the Sent folder, or when its From is one of my
+// addresses and at least one To recipient is not. Decided per message, never
+// from the active tab: the conversation view (T) and merges pull Sent
+// messages into Inbox threads, and my own mails may be archived or live in a
+// differently named Sent folder on another provider.
+//
+// Mail between my own addresses (one account to another, or me-to-me) that is
+// not in Sent is read in the *receiving* inbox, so it is treated as received:
+// reply goes back to the sending address, from the address that got it.
 func (m Model) isOwnMessage(e *imap.Email) bool {
 	if e == nil {
 		return false
@@ -6900,7 +6922,15 @@ func (m Model) isOwnMessage(e *imap.Email) bool {
 	if m.cfg != nil && m.cfg.Folders.Sent != "" && e.Folder == m.cfg.Folders.Sent {
 		return true
 	}
-	return m.ownAddrs()[strings.ToLower(extractEmailAddr(e.From))]
+	if !m.isOwnAddr(e.From) {
+		return false
+	}
+	for _, addr := range splitAddrs(e.To) {
+		if a := strings.TrimSpace(addr); a != "" && !m.isOwnAddr(a) {
+			return true
+		}
+	}
+	return false
 }
 
 // replyRecipients computes the To and Cc for a reply (r) or reply-all (ctrl+r).
@@ -6929,17 +6959,14 @@ func (m Model) replyRecipients(e *imap.Email, replyAll bool) (to, cc string) {
 		return to, ""
 	}
 
-	ownAddrs := m.ownAddrs()
 	src := e.To + "," + e.CC
 	if own {
 		src = e.CC // original To already went into `to`
 	}
 	var parts []string
 	for _, addr := range splitAddrs(src) {
-		if a := strings.TrimSpace(addr); a != "" {
-			if !ownAddrs[strings.ToLower(extractEmailAddr(a))] {
-				parts = append(parts, a)
-			}
+		if a := strings.TrimSpace(addr); a != "" && !m.isOwnAddr(a) {
+			parts = append(parts, a)
 		}
 	}
 	return to, strings.Join(parts, ", ")
@@ -6948,20 +6975,58 @@ func (m Model) replyRecipients(e *imap.Email, replyAll bool) (to, cc string) {
 // matchFromIndex returns the presendFroms() index whose email address matches
 // one of the addresses in the email's To or CC fields. Returns -1 if no match.
 // This auto-selects the correct From when replying to an email sent to an alias.
+//
+// To outranks Cc: if I am addressed at one identity and only copied at
+// another, the reply goes out from the addressed one. Within a field, the
+// first configured identity wins (accounts first, then senders).
 func (m Model) matchFromIndex(toField, ccField string) int {
 	froms := m.presendFroms()
-	recipients := make(map[string]bool)
-	for _, addr := range splitAddrs(toField + "," + ccField) {
-		if a := strings.ToLower(extractEmailAddr(addr)); a != "" {
-			recipients[a] = true
+	for _, field := range []string{toField, ccField} {
+		recipients := make(map[string]bool)
+		for _, addr := range splitAddrs(field) {
+			if a := strings.ToLower(extractEmailAddr(addr)); a != "" {
+				recipients[a] = true
+			}
 		}
-	}
-	for i, from := range froms {
-		if recipients[strings.ToLower(extractEmailAddr(from))] {
-			return i
+		if len(recipients) == 0 {
+			continue
+		}
+		for i, from := range froms {
+			if recipients[strings.ToLower(extractEmailAddr(from))] {
+				return i
+			}
+		}
+		// No send-as address received it — maybe an account's
+		// alternative_emails did (catch-all / role address). Accounts come
+		// first in presendFroms(), so the account index is the From index.
+		for i, acc := range m.accounts {
+			for r := range recipients {
+				if acc.MatchesAlternative(r) {
+					return i
+				}
+			}
+		}
+		// Root-level alternative_emails: mine, but tied to no account →
+		// default_from.
+		for r := range recipients {
+			if m.cfg.MatchesAlternative(r) {
+				return m.defaultFromIndex()
+			}
 		}
 	}
 	return -1
+}
+
+// replyFromIndex picks the From for a reply/reaction to e: the address that
+// received the mail (or sent it, for my own mail — see matchFromForReply),
+// else default_from. Never "whatever was selected last": a reply to a mail
+// that reached an unknown address used to go out from the previous
+// compose's account.
+func (m Model) replyFromIndex(e *imap.Email) int {
+	if idx := m.matchFromForReply(e); idx >= 0 {
+		return idx
+	}
+	return m.defaultFromIndex()
 }
 
 // matchFromForReply picks the right From index for a reply. For a mail I

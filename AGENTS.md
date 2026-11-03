@@ -129,20 +129,30 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   start with `re:`/`aw:`/`sv:`/`vs:` (case-insensitive); localized prefixes are treated as
   replies, never double-prefixed. Test: `TestHasReplyPrefix`.
 - **Reply From auto-selection** — replying picks the From address matching the email's
-  To/CC; for a mail I sent the user's own address is in `From` instead
-  (`matchFromForReply`, `internal/ui/model.go`). Reactions (`ctrl+e`) use the same picker.
+  To/CC (To outranks Cc; accounts before `[[senders]]`; an `[[accounts]].alternative_emails` hit maps
+  to that account, a root-level `alternative_emails` hit to `default_from`); for a mail I sent the user's own address is in `From` instead
+  (`matchFromForReply`). **No match → `default_from`** (`replyFromIndex`), never the From
+  left over from the previous compose. Reactions (`ctrl+e`) use the same picker. The full
+  shape table is `TestReplyMatrix` (`internal/ui/model_test.go`) — **add a row there for
+  every new reply case before fixing it**; it pins received / own / own-in-Inbox-thread /
+  archived / account→account / me-to-me / alias / mailing-list / Reply-To / newsletter-via.
 - **Replying to a mail I sent goes to the original recipients — decided per message,
   never per tab** — `isOwnMessage` (`internal/ui/model.go`): the mail lives in the Sent
-  folder *or* its `From` is one of my addresses (logins, account Froms, `[[senders]]`).
+  folder, *or* its `From` is one of my addresses (logins, account Froms, `[[senders]]`,
+  `alternative_emails`) **and at least one To recipient is not** (mail between my own addresses outside
+  Sent is read in the receiving inbox, so it replies like received mail: back to the sending
+  address, from the receiving one).
   `r` addresses the reply to its original `To` (not to me, the sender); `ctrl+r` adds the
   original `Cc` minus own addresses. This must hold outside the Sent tab too: the
   conversation view (`T`) and merges pull Sent mails into Inbox threads, and own mails may
   be archived. For received mail the classic Reply-To/From → To and To+Cc → Cc logic is
   unchanged (`replyRecipients`). Tests: `TestReplyFromSentFolderTargetsOriginalRecipients`,
   `TestReplyToOwnMailOutsideSentFolder`.
-- **Reply-all excludes all own addresses** — both IMAP login addresses (`account.User`)
-  and send-as addresses (accounts + `[[senders]]` aliases) are stripped from CC. Test:
-  `TestReplyAllExcludesAllOwnAddresses`.
+- **Reply-all excludes all own addresses** — IMAP login addresses (`account.User`),
+  send-as addresses (accounts + `[[senders]]` aliases) and `alternative_emails` (root-level
+  and per-account; exact or `*@domain`, `config.matchesAlternative`) are stripped from CC
+  (`isOwnAddr`). Tests: `TestReplyAllExcludesAllOwnAddresses`,
+  `TestReplyToAlternativeEmailUsesAccountAndExcludesIt`, `TestLoad_AlternativeEmails`.
 - **Threaded inbox rendering** — threads grouped via `In-Reply-To`/`Message-ID` with
   subject+participant fallback, `│`/`╰` connectors, newest on top; the Sent folder is
   intentionally **not** threaded. Tests: `TestNormalizeSubject`, `TestParticipantMatch`.
