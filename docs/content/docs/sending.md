@@ -100,6 +100,14 @@ In the compose form, `ctrl+b` toggles the Cc and Bcc fields (hidden by default).
 
 **Catch-all and role addresses.** If mail reaches you at addresses you never send from (`inquiries@example.com`, or everything at `*@example.com`), list them in `alternative_emails` so reply-all does not Cc them and the reply comes from the right account — root-level uses `default_from`, inside an `[[accounts]]` block uses that account. See [configuration](/docs/configuration/).
 
+Use the `*@domain` wildcard only when the whole domain is yours alone. Every address at that domain counts as *you* and is dropped from reply-all — if a coworker has `mary@example.com`, a wildcard silently removes her from your replies. With other people on the domain, list your addresses exactly:
+
+```toml
+alternative_emails = ["inquiries@example.com", "hello@example.com", "hello@example.org"]
+```
+
+An address at the domain that is not listed is then treated like any other recipient: kept in Cc, and the reply From falls back to `default_from`.
+
 All replies include proper `In-Reply-To` and `References` headers for email threading, ensuring they appear in conversation threads in Gmail, Outlook, and Apple Mail.
 
 Press `f` to forward an email — works from both the reader and the inbox list (the body is fetched automatically). The editor opens with the original message quoted and `Fwd:` prepended to the subject. Fill in the `# [neomd: to: ]` field and add your own text above the quoted block.

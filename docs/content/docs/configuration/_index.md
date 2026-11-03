@@ -67,6 +67,9 @@ alternative_emails = []  # default: none. Addresses that reach you but are not a
                          # They count as *you*: reply-all never Cc's them, and a mail received
                          # at one replies from default_from. Put the list inside an [[accounts]]
                          # block instead to reply from that account.
+                         # Use "*@domain" only if the whole domain is yours alone — it drops
+                         # every address at that domain from reply-all, coworkers included.
+                         # Shared domain: list your addresses exactly.
 
 # Optional: SMTP-only aliases — cycle with ctrl+f in compose/pre-send
 # [[senders]]
