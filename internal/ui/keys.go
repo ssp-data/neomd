@@ -112,7 +112,7 @@ var HelpSections = []HelpSection{
 		{"f", "forward email  (from reader or inbox)"},
 		{"T", "show full conversation thread across folders  (from inbox or reader)"},
 		{"enter / l / T  (on ≡ merged row)", "open a merged group — every member across folders, newest first"},
-		{"V", "show all emails from this sender, across all folders  (from inbox)"},
+		{"ctrl+v", "show all emails from this sender, across all folders  (from inbox)"},
 		{"c", "compose new email"},
 		{"ctrl+b  (compose/pre-send)", "toggle Cc+Bcc fields (both hidden by default)"},
 		{"ctrl+f  (compose/pre-send)", "cycle From address through all accounts + [[senders]] aliases"},

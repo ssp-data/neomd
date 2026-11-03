@@ -4593,7 +4593,7 @@ func (m Model) updateInbox(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, tea.Batch(m.spinner.Tick, m.fetchConversationCmd(e))
 
-	case "V":
+	case "ctrl+v":
 		e := selectedEmail(m.inbox)
 		if e == nil {
 			return m, nil

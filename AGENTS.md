@@ -146,12 +146,13 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **Threaded inbox rendering** — threads grouped via `In-Reply-To`/`Message-ID` with
   subject+participant fallback, `│`/`╰` connectors, newest on top; the Sent folder is
   intentionally **not** threaded. Tests: `TestNormalizeSubject`, `TestParticipantMatch`.
-- **Sender view (`V`)** — from the inbox list, searches `from:<addr>` (bare address
+- **Sender view (`ctrl+v`)** — from the inbox list, searches `from:<addr>` (bare address
   from the selected email) across every configured folder via the same
   `SearchAllFolders` IMAP infra as `/`-search, opening results in a `Sender` off-tab
   (`internal/ui/search.go`: `senderAddr`, `fetchSenderCmd`, `handleSenderResult`).
-  `V` was chosen over `E`/`F` — both already bound (`E` = continue draft in the reader,
-  `F` = mark as Feed). Tests: `TestSenderAddr`, `TestHandleSenderResultSetsOffTabAndEmails`,
+  Originally `V` (chosen over `E`/`F` — both already bound: `E` = continue draft in the
+  reader, `F` = mark as Feed); moved to `ctrl+v` 2026-11-01 because shift+v was too easy to
+  mistype — `ctrl+v` was free and does not collide with the tmux `C-t` prefix. Tests: `TestSenderAddr`, `TestHandleSenderResultSetsOffTabAndEmails`,
   `TestHandleSenderResultNoMatches`.
 - **Merged threads (HEY-style)** — `:merge <title>` / `:merge-sender <title>` store
   Message-IDs (never UIDs) in `<config dir>/merges.toml` (`internal/merge`); the list
@@ -159,7 +160,7 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   row placed by its newest member (`collapseMerges`, `internal/ui/thread.go`), rendered
   as `<title> (n)` with `N`/`·` aggregated over members. Collapsing is gated in
   `applyFilter` (`internal/ui/model.go`) to folder views and the `Search`/`Everything`
-  off-tabs — the `T` conversation, the `V` sender view and an opened merge must always
+  off-tabs — the `T` conversation, the `ctrl+v` sender view and an opened merge must always
   list individual messages. Enter/`l`/`T` on that row opens the members across folders
   (`SearchByMessageIDs`: Message-ID OR In-Reply-To, capped at the `mergeSearchMaxIDs`
   = 100 most recently stored ids) in a `Merged: <title>` off-tab; `T` on a normal row is
@@ -452,7 +453,7 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **A background refresh keeps marks and the `/` filter** — `emailsLoadedMsg` treats a
   result as a `↻` refresh when `refreshing` is set (whatever `loading` says): marks
   survive for UIDs still in the result, the filter text stays, and `loading` is not
-  touched (a body fetch, `T`, `V` … may own the spinner). Every spinner folder load (`R`,
+  touched (a body fetch, `T`, `ctrl+v` … may own the spinner). Every spinner folder load (`R`,
   `:reload`, cache-miss switch, undo/error reloads, `gS`/`gd`/`:go-spam`) sets
   `refreshing = false` together with `loading = true`, so the two can never be
   confused; a spinner reload clears marks and filter as before. The bg sync caches the
