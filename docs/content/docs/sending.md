@@ -92,7 +92,21 @@ In compose and pre-send, press `ctrl+f` to cycle through all configured accounts
 
 ## CC, BCC, Reply-all, and Forward
 
-In the compose form, `ctrl+b` toggles the Cc and Bcc fields (hidden by default). Bcc recipients receive the email but are never written to message headers. From the reader, `r` replies to the sender and `R` replies to the sender plus all Cc recipients (your own address excluded, `Reply-To` respected).
+In the compose form, `ctrl+b` toggles the Cc and Bcc fields (hidden by default). Bcc recipients receive the email but are never written to message headers. From the reader or the inbox list, `r` replies to the sender and `ctrl+r` replies to the sender plus everyone in To and Cc (your own addresses excluded, `Reply-To` respected).
+
+**Which From is used.** A reply goes out from the address that received the mail: neomd matches To (then Cc) against your accounts, `[[senders]]` and `alternative_emails`, in that order. If nothing matches — mailing lists, unknown forwarders — it uses `default_from` (or the first account). You can always change it with `ctrl+f`.
+
+**Replying to mail you sent.** On a message whose From is you — in the Sent tab, in a conversation thread opened with `T`, or archived — `r` goes to its original To and `ctrl+r` adds its original Cc, from the address you sent it with. It never replies to yourself. Mail between two of your own accounts, read in the receiving inbox, replies back to the sending account like any received mail.
+
+**Catch-all and role addresses.** If mail reaches you at addresses you never send from (`inquiries@example.com`, or everything at `*@example.com`), list them in `alternative_emails` so reply-all does not Cc them and the reply comes from the right account — root-level uses `default_from`, inside an `[[accounts]]` block uses that account. See [configuration](/docs/configuration/).
+
+Use the `*@domain` wildcard only when the whole domain is yours alone. Every address at that domain counts as *you* and is dropped from reply-all — if a coworker has `mary@example.com`, a wildcard silently removes her from your replies. With other people on the domain, list your addresses exactly:
+
+```toml
+alternative_emails = ["inquiries@example.com", "hello@example.com", "hello@example.org"]
+```
+
+An address at the domain that is not listed is then treated like any other recipient: kept in Cc, and the reply From falls back to `default_from`.
 
 All replies include proper `In-Reply-To` and `References` headers for email threading, ensuring they appear in conversation threads in Gmail, Outlook, and Apple Mail.
 

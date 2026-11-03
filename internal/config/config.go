@@ -43,6 +43,13 @@ type AccountConfig struct {
 	STARTTLS    bool   `toml:"starttls"`
 	TLSCertFile string `toml:"tls_cert_file"` // optional PEM CA/cert for self-signed local bridges
 
+	// AlternativeEmails are extra addresses that deliver to this account but
+	// are not a From you send as: catch-alls, forwarders, role addresses.
+	// Exact ("inquiries@example.com") or whole domains ("*@example.com").
+	// They count as "me": reply-all never Cc's them and a mail received at
+	// one replies from this account's From. See also Config.AlternativeEmails.
+	AlternativeEmails []string `toml:"alternative_emails"`
+
 	IMAPDisabled bool `toml:"imap_disabled"` // skip IMAP connection; account is send-only
 
 	// OAuth2 fields — only used when auth_type = "oauth2".
@@ -57,6 +64,45 @@ type AccountConfig struct {
 
 	// Signature
 	Signature SignatureConfig `toml:"signature_block"` // Per account Signature
+}
+
+// MatchesAlternative reports whether addr (a bare email address) is one of
+// the account's alternative_emails.
+func (a AccountConfig) MatchesAlternative(addr string) bool {
+	return matchesAlternative(a.AlternativeEmails, addr)
+}
+
+// MatchesAlternative reports whether addr is one of the root-level
+// alternative_emails (mine, but tied to no particular account).
+func (c *Config) MatchesAlternative(addr string) bool {
+	return c != nil && matchesAlternative(c.AlternativeEmails, addr)
+}
+
+// matchesAlternative is case-insensitive; "*@domain" and "@domain" entries
+// match every address at exactly that domain.
+func matchesAlternative(list []string, addr string) bool {
+	addr = strings.ToLower(strings.TrimSpace(addr))
+	if addr == "" {
+		return false
+	}
+	for _, al := range list {
+		al = strings.ToLower(strings.TrimSpace(al))
+		switch {
+		case al == "":
+			continue
+		case strings.HasPrefix(al, "*@"):
+			if strings.HasSuffix(addr, al[1:]) && strings.Count(addr, "@") == 1 {
+				return true
+			}
+		case strings.HasPrefix(al, "@"):
+			if strings.HasSuffix(addr, al) && strings.Count(addr, "@") == 1 {
+				return true
+			}
+		case al == addr:
+			return true
+		}
+	}
+	return false
 }
 
 // IsOAuth2 reports whether this account uses OAuth2 instead of password auth.
@@ -526,6 +572,14 @@ type Config struct {
 	// against accounts first, then senders. Empty (the default) preserves
 	// prior behavior: the first account wins.
 	DefaultFrom string `toml:"default_from"`
+
+	// AlternativeEmails are addresses that reach me but belong to no single
+	// account and are not a From I send as: catch-all domains, forwarders.
+	// Exact ("inquiries@example.com") or whole domains ("*@example.com").
+	// They count as "me": reply-all never Cc's them, and a mail received at
+	// one replies from DefaultFrom. Per-account AlternativeEmails tie the
+	// reply to that account instead.
+	AlternativeEmails []string `toml:"alternative_emails"`
 
 	Listmonk ListmonkConfig `toml:"listmonk"`
 

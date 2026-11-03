@@ -208,7 +208,7 @@ message_ids = ["<a@x>", "<b@y>"]
 
 ## Sender View
 
-Press `V` on any email in the inbox list to see **every email from that sender, across every folder** — not just the current one. neomd extracts the sender's address and runs an IMAP `from:` search across Inbox, Sent, Archive, ToScreen, Feed, PaperTrail, ScreenedOut, Waiting, Scheduled, Someday, Spam, Drafts, Trash, and Work (if configured).
+Press `ctrl+v` on any email in the inbox list to see **every email from that sender, across every folder** — not just the current one. neomd extracts the sender's address and runs an IMAP `from:` search across Inbox, Sent, Archive, ToScreen, Feed, PaperTrail, ScreenedOut, Waiting, Scheduled, Someday, Spam, Drafts, Trash, and Work (if configured).
 
 Results display in a temporary "Sender" tab, same as Search/Everything/Thread:
 - Each email shows a `[Folder]` prefix so you can see where it lives
@@ -225,7 +225,7 @@ This is handy for pulling up a person's full history at a glance — e.g. checki
 | `f` | forward email |
 | `T` | show full conversation thread across folders |
 | `enter` / `l` / `T` on a `≡` row | open a merged group — every member across folders |
-| `V` | show all emails from this sender, across all folders |
+| `ctrl+v` | show all emails from this sender, across all folders |
 | `E` | continue draft (only in Drafts folder) — re-opens as editable compose |
 
 ## Conversation View

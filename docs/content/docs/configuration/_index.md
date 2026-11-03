@@ -21,6 +21,13 @@ from     = "Me <me@example.com>"
 starttls = false                    # optional: force STARTTLS (see TLS/STARTTLS section below)
 tls_cert_file = ""                  # optional PEM cert/CA for self-signed local bridges
 imap_disabled = false               # set true for send-only accounts (no IMAP connection)
+alternative_emails = []             # optional: extra addresses that land in this account but are
+                                    # not a From you send as — catch-alls, forwarders, role
+                                    # addresses. Exact ("inquiries@example.com") or a whole
+                                    # domain ("*@example.com"). They count as *you*: reply-all
+                                    # never Cc's them, and a mail received at one replies from
+                                    # this account's `from`. Root-level alternative_emails (below)
+                                    # does the same without tying the reply to an account.
 
 # OAuth2 authenticated accounts are supported — set auth_type = "oauth2" plus the
 # relevant oauth2_* fields. Note that the password field is not required.
@@ -47,13 +54,22 @@ store_sent_drafts_in_sending_account = false  # default: Sent/Drafts stay in the
 auto_bcc = ""       # default: "" = disabled. Set to "addr@example.com" or "Name <addr@example.com>"
                      # to BCC every outgoing email to that address (e.g. an external archive).
                      # Shown in the composer and pre-send review so it's never a silent BCC.
-default_from = ""  # default: "" = new composes/replies use the first [[accounts]] block.
+default_from = ""  # default: "" = new composes/no-match replies use the first [[accounts]] block.
                     # Set to an address (e.g. "simon@ssp.sh") to default the From
                     # field to a different account or [[senders]] alias without
                     # reordering accounts or changing which account's inbox loads
                     # on startup. Matched against accounts first, then senders.
                     # Falls back to the first account if the address doesn't match
                     # anything configured. Cycle with ctrl+f as usual regardless.
+alternative_emails = []  # default: none. Addresses that reach you but are not a From you send
+                         # as and belong to no single account — catch-all domains, forwarders.
+                         # Exact ("hello@example.com") or whole domains ("*@example.com").
+                         # They count as *you*: reply-all never Cc's them, and a mail received
+                         # at one replies from default_from. Put the list inside an [[accounts]]
+                         # block instead to reply from that account.
+                         # Use "*@domain" only if the whole domain is yours alone — it drops
+                         # every address at that domain from reply-all, coworkers included.
+                         # Shared domain: list your addresses exactly.
 
 # Optional: SMTP-only aliases — cycle with ctrl+f in compose/pre-send
 # [[senders]]

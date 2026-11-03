@@ -868,3 +868,49 @@ folder = "Notes"
 		t.Errorf("NotesDir = %q", loaded.NotesDir)
 	}
 }
+
+func TestLoad_AlternativeEmails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `
+alternative_emails = ["*@example.net"]
+
+[[accounts]]
+name = "Work"
+imap = "imap.example.com:993"
+smtp = "smtp.example.com:587"
+user = "me@example.com"
+password = "x"
+from = "Me <me@example.com>"
+alternative_emails = ["inquiries@example.com", "*@example.org"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.Accounts[0].AlternativeEmails
+	if len(got) != 2 || got[0] != "inquiries@example.com" || got[1] != "*@example.org" {
+		t.Fatalf("account alternative_emails = %v, want [inquiries@example.com *@example.org]", got)
+	}
+	if !cfg.Accounts[0].MatchesAlternative("Inquiries@Example.com") {
+		t.Error("exact entry should match case-insensitively")
+	}
+	if !cfg.Accounts[0].MatchesAlternative("anything@example.org") {
+		t.Error("*@example.org should match anything@example.org")
+	}
+	if cfg.Accounts[0].MatchesAlternative("me@example.com") {
+		t.Error("the account From itself is not an alternative")
+	}
+	if cfg.Accounts[0].MatchesAlternative("x@notexample.org") {
+		t.Error("wildcard must match the whole domain, not a suffix")
+	}
+	if !cfg.MatchesAlternative("hello@example.net") {
+		t.Error("root-level *@example.net should match hello@example.net")
+	}
+	if cfg.MatchesAlternative("hello@example.org") {
+		t.Error("root-level list must not include account-level entries")
+	}
+}
