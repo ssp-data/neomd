@@ -8,9 +8,11 @@ The screener classifies senders into four buckets using plain-text allowlists. U
 
 ## How the Screener Workflow works
 This is how the Screener looks, notice that emails don't land in your Inbox by default:
-![neomd](docs/static/images/to-screen-workflow.webp)
+![neomd screener workflow](/images/to-screen-workflow.webp)
 
-Here's the video version showcasing that: [YouTube Video](https://youtu.be/8aKkldYLWV8?t=269).
+Here's the video version showcasing that:
+
+[![neomd screener workflow video](https://img.youtube.com/vi/8aKkldYLWV8/maxresdefault.jpg)](https://youtu.be/8aKkldYLWV8?t=269)
 
 
 ## How classification works
