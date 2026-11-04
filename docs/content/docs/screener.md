@@ -3,9 +3,19 @@ title: Screener Workflow
 weight: 3
 ---
 
+
 The screener classifies senders into four buckets using plain-text allowlists. Unknown senders land in `ToScreen` until you make a decision.
 
+## How the Screener Workflow works
+This is how the Screener looks, notice that emails don't land in your Inbox by default:
+![neomd](docs/static/images/to-screen-workflow.webp)
+
+Here's the video version showcasing that: [YouTube Video](https://youtu.be/8aKkldYLWV8?t=269).
+
+
 ## How classification works
+
+
 
 | List file           | Category                 | Where email lands |
 | ------------------- | ------------------------ | ----------------- |
