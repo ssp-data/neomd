@@ -907,11 +907,13 @@ func Load(path string) (*Config, error) {
 		cfg.Accounts[i].User = expandEnv(cfg.Accounts[i].User)
 		cfg.Accounts[i].TLSCertFile = expandPath(expandEnv(cfg.Accounts[i].TLSCertFile))
 		cfg.Accounts[i].Password = resolveKeyringPassword(cfg.Accounts[i].Name, cfg.Accounts[i].Password)
+		cfg.Accounts[i].OAuth2ClientSecret = resolveKeyringClientSecret(cfg.Accounts[i].Name, cfg.Accounts[i].OAuth2ClientSecret)
 	}
 	cfg.Account.Password = expandEnv(cfg.Account.Password)
 	cfg.Account.User = expandEnv(cfg.Account.User)
 	cfg.Account.TLSCertFile = expandPath(expandEnv(cfg.Account.TLSCertFile))
 	cfg.Account.Password = resolveKeyringPassword(cfg.Account.Name, cfg.Account.Password)
+	cfg.Account.OAuth2ClientSecret = resolveKeyringClientSecret(cfg.Account.Name, cfg.Account.OAuth2ClientSecret)
 
 	cfg.Listmonk.APIToken = expandEnv(cfg.Listmonk.APIToken)
 
@@ -1104,6 +1106,26 @@ func resolveKeyringPassword(accountName, password string) string {
 		fmt.Fprintf(os.Stderr, "neomd: account %q: keyring unavailable: %v\n", accountName, err)
 	}
 	return password // leave sentinel for downstream
+}
+
+// resolveKeyringClientSecret turns the "keyring" sentinel in
+// oauth2_client_secret into the secret stored in the OS keyring under
+// "account/<name>/oauth2_client_secret". Mirrors resolveKeyringPassword:
+// on a missing entry or unavailable keyring it warns and leaves the sentinel.
+func resolveKeyringClientSecret(accountName, secret string) string {
+	if secret != keyringSentinel || accountName == "" {
+		return secret
+	}
+	resolved, err := keyring.GetClientSecret(accountName)
+	if err == nil {
+		return resolved
+	}
+	if err == keyring.ErrNotFound {
+		fmt.Fprintf(os.Stderr, "neomd: account %q: keyring entry not set — store the OAuth2 client secret in the OS keyring under service \"neomd\", key \"account/%s/oauth2_client_secret\" (docs: Configuration → Storing passwords in the OS keyring)\n", accountName, accountName)
+	} else {
+		fmt.Fprintf(os.Stderr, "neomd: account %q: keyring unavailable: %v\n", accountName, err)
+	}
+	return secret // leave sentinel for downstream
 }
 
 // expandEnv resolves a value that is entirely a single env var reference

@@ -564,6 +564,107 @@ func TestResolveKeyringPassword(t *testing.T) {
 	})
 }
 
+// TestResolveKeyringClientSecret pins oauth2_client_secret = "keyring": resolved
+// from "account/<name>/oauth2_client_secret"; sentinel preserved when the entry
+// is missing so the downstream OAuth2 error is clear.
+func TestResolveKeyringClientSecret(t *testing.T) {
+	zalandokeyring.MockInit()
+
+	t.Run("resolved when entry exists", func(t *testing.T) {
+		const acct = "TestAcctOAuth"
+		if err := keyring.SetClientSecret(acct, "the-client-secret"); err != nil {
+			t.Fatalf("SetClientSecret: %v", err)
+		}
+		defer keyring.DeleteClientSecret(acct)
+		if got := resolveKeyringClientSecret(acct, "keyring"); got != "the-client-secret" {
+			t.Errorf("got %q, want resolved client secret", got)
+		}
+	})
+
+	t.Run("sentinel preserved when entry missing", func(t *testing.T) {
+		if got := resolveKeyringClientSecret("MissingAcct", "keyring"); got != "keyring" {
+			t.Errorf("got %q, want sentinel preserved", got)
+		}
+	})
+
+	t.Run("non-sentinel passthrough", func(t *testing.T) {
+		if got := resolveKeyringClientSecret("any", "literal-secret"); got != "literal-secret" {
+			t.Errorf("got %q, want passthrough", got)
+		}
+	})
+
+	t.Run("empty account name passthrough", func(t *testing.T) {
+		if got := resolveKeyringClientSecret("", "keyring"); got != "keyring" {
+			t.Errorf("got %q, want passthrough for empty account", got)
+		}
+	})
+
+	t.Run("password keyring entry is not reused as client secret", func(t *testing.T) {
+		const acct = "TestAcctPwOnly"
+		if err := keyring.SetPassword(acct, "imap-password"); err != nil {
+			t.Fatalf("SetPassword: %v", err)
+		}
+		defer keyring.DeletePassword(acct)
+		if got := resolveKeyringClientSecret(acct, "keyring"); got != "keyring" {
+			t.Errorf("got %q, want sentinel — separate keyring key per secret", got)
+		}
+	})
+}
+
+// TestLoad_KeyringResolvesClientSecret runs the sentinel through Load so the
+// OAuth2 flow (which reads cfg.Accounts[i].OAuth2ClientSecret) sees the real
+// value. A plain password account in the same file must be untouched.
+func TestLoad_KeyringResolvesClientSecret(t *testing.T) {
+	zalandokeyring.MockInit()
+	const acctName = "GMail"
+	const realSecret = "the-real-client-secret"
+	if err := keyring.SetClientSecret(acctName, realSecret); err != nil {
+		t.Fatalf("SetClientSecret: %v", err)
+	}
+	defer keyring.DeleteClientSecret(acctName)
+
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	cfgBody := `
+[[accounts]]
+name                 = "GMail"
+auth_type            = "oauth2"
+imap                 = "imap.gmail.com:993"
+smtp                 = "smtp.gmail.com:587"
+user                 = "me@gmail.com"
+from                 = "Me <me@gmail.com>"
+oauth2_client_id     = "client-id.apps.googleusercontent.com"
+oauth2_client_secret = "keyring"
+oauth2_issuer_url    = "https://accounts.google.com"
+
+[[accounts]]
+name     = "Plain"
+imap     = "imap.example.com:993"
+smtp     = "smtp.example.com:587"
+user     = "me@example.com"
+from     = "me@example.com"
+password = "literal"
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Accounts) != 2 {
+		t.Fatalf("expected 2 accounts, got %d", len(cfg.Accounts))
+	}
+	if got := cfg.Accounts[0].OAuth2ClientSecret; got != realSecret {
+		t.Errorf("Accounts[0].OAuth2ClientSecret = %q, want resolved %q", got, realSecret)
+	}
+	if got := cfg.Accounts[1].Password; got != "literal" {
+		t.Errorf("Accounts[1].Password = %q, want untouched literal", got)
+	}
+	if got := cfg.Accounts[1].OAuth2ClientSecret; got != "" {
+		t.Errorf("Accounts[1].OAuth2ClientSecret = %q, want empty", got)
+	}
+}
+
 // TestLoad_KeyringResolvesAcrossSenders verifies the senders-gap fix:
 // PR #5 resolved keyring at IMAP construction time, leaving SMTP send paths
 // reading the literal "keyring" sentinel. By moving resolution into Load(),

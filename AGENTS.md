@@ -824,6 +824,13 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **`password = "keyring"` sentinel** — resolved in `config.Load()` so IMAP, SMTP, and
   `[[senders]]` aliases all see it; preserved with a warning if the keyring is unavailable.
   Test: `TestUseKeyring`.
+- **`oauth2_client_secret = "keyring"` sentinel** — resolved in `config.Load()`
+  (`resolveKeyringClientSecret`) from its own key `account/<name>/oauth2_client_secret`;
+  never falls back to the password entry. OAuth2 tokens too large for the backend
+  (macOS `security` 4096-byte limit → `keyring.ErrSetDataTooBig`) are re-stored without
+  the access token (`refreshOnlyToken`) instead of silently landing in the plaintext
+  token file. Tests: `TestResolveKeyringClientSecret`, `TestLoad_KeyringResolvesClientSecret`,
+  `TestClientSecretKeyIsDistinct`, `TestRefreshOnlyToken`.
 - **Secrets never leak** — token files/dirs written with restrictive permissions; error
   messages never include tokens/passwords. Tests: `TestTokenErrors_NoTokenLeak`,
   `TestSaveToken_FilePermissions`.
