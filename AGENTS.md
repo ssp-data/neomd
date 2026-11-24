@@ -473,6 +473,13 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   `TestCache_BackgroundRefreshKeepsMarksAndFilter`,
   `TestCache_RefreshLandingDuringBodyFetchKeepsMarksAndSpinner`,
   `TestCache_BgInboxSnapshotExcludesScreenedRows`.
+- **Drafts and Spam are off-tab unless listed in `tab_order`** — the default tab order
+  contains neither; `"drafts"` / `"spam"` in `tab_order` make them real tabs at that
+  position, `activeFolder()` maps both labels to their mailbox (the Drafts case was
+  missing — the tab showed the Inbox, PR #37), and `gd` / `gS` / `:go-spam` jump to the
+  tab instead of the off-tab view (`openVirtualFolder`). Tests:
+  `TestTabLabelsDraftsSpam`, `TestActiveFolderDraftsTab`,
+  `TestOpenVirtualFolderTabVsOffTab`.
 - **A cached list is only shown with `↻` and a fetch in flight** — `loadActiveFolder`
   serves `folderCache[account+folder]` on tab switches (`[ui].instant_folder_switch`,
   default true); `emailsLoadedMsg` always caches and applies to the visible list only

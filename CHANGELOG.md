@@ -2,6 +2,7 @@
 
 # 2026-11-24
 
+- **Drafts and Spam as tabs via `tab_order`, and the Drafts tab no longer shows the Inbox** — add `"drafts"` and/or `"spam"` to `[folders] tab_order` to show them as real tabs at that position; `gd` / `gS` / `:go-spam` then jump to the tab. Without them they stay off-tab as before. Why: `activeFolder()` had no Drafts case, so a Drafts tab fetched the Inbox (reported in PR #37 by @clementnuss — fix included); `"spam"` was not a valid tab key at all. Behaviour change: `"drafts"` is removed from the default tab order (that tab was broken) — use `gd`, or list it in `tab_order`. Where: `internal/config/config.go` (`defaultTabOrder`, `keyToLabel`), `internal/ui/model.go` (`activeFolder`, `openVirtualFolder`), `internal/ui/cmdline.go`, `keys.go`, docs `configuration/_index.md`. Tests: `TestTabLabelsDraftsSpam`, `TestActiveFolderDraftsTab`, `TestOpenVirtualFolderTabVsOffTab`.
 - **New built-in theme: `catppuccin-latte`** — a second light palette alongside
   `kanagawa-light`, using the official Catppuccin Latte colors
   (https://github.com/catppuccin/catppuccin): blue `#1E66F5` primary, lavender
@@ -10,6 +11,7 @@
   `light` style for it, so markdown emails render for a light background too
   (`glamourStyleFor`, `internal/ui/styles.go`). Tests: `TestApplyTheme_KnownNames`,
   `TestGlamourStyleFor`.
+
 # 2026-11-09
 
 - **`[sig]` short alias for the `[html-signature]` placeholder** — a line containing only `[sig]` (surrounding whitespace ignored) now enables the HTML signature exactly like `[html-signature]` and is stripped before sending. Why: replies don't get the signature prelude, so the placeholder has to be typed by hand each time; `[sig]` is five keystrokes instead of sixteen. The marker is positional only in the editor — the HTML signature is still appended at the end of the HTML part. Mid-line `[sig]` and `[signature]` are left untouched. Where: `internal/ui/model.go` (`extractHTMLSignatureMarker`), hardening forbidden-marker list in `workflow_hardening_test.go`, docs `sending.md`, `configuration/_index.md`, `faq.md`, `AGENTS.md`. Test: `TestExtractHTMLSignatureMarker_SigAlias`.

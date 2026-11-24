@@ -45,9 +45,9 @@ To update both the help overlay and this document at once, edit that file and ru
 | `gc` | go to Scheduled (calendar) |
 | `gb` | go to Work (if configured) |
 | `gm` | go to Someday |
-| `gd` | go to Drafts |
+| `gd` | go to Drafts (its tab if in tab_order, else off-tab) |
 | `ge` | go to Everything — latest 50 emails across all folders |
-| `gS` | go to Spam (not in tab rotation) |
+| `gS` | go to Spam (its tab if in tab_order, else off-tab) |
 
 
 ### Screener  (marked or cursor, any folder)
@@ -191,7 +191,7 @@ To update both the help overlay and this document at once, edit that file and ru
 | `:delete-all  / :da` | permanently delete ALL emails in current folder (y/n) |
 | `:empty-trash  / :et` | permanently delete ALL emails in Trash (y/n) |
 | `:create-folders  / :cf` | create missing IMAP folders from config (safe, idempotent) |
-| `:go-spam  / :spam` | open Spam folder (not in tab rotation) |
+| `:go-spam  / :spam` | open Spam folder (its tab if in tab_order, else off-tab) |
 | `:debug  / :dbg` | diagnostic report — IMAP ping, config, folders, state (saved to /tmp/neomd/debug.log) |
 | `:notify-test  / :nt` | fire a single test desktop notification using the current [notifications] config |
 | `:quit  / :q` | quit neomd |
