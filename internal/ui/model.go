@@ -231,7 +231,10 @@ type (
 	editorDoneMsg struct {
 		to, cc, bcc, from, subject, body string
 		err                              error
-		aborted                          bool // true when file was unchanged (ZQ / :q!)
+		// aborted is true when the file was unchanged (ZQ / :q! / ZZ without
+		// edits). body then carries the raw file content so the editor can be
+		// reopened as it was from the discard prompt.
+		aborted bool
 	}
 )
 
@@ -834,6 +837,12 @@ type Model struct {
 
 	// pendingDiscard asks for y/n confirmation before dropping unsent compose state.
 	pendingDiscard bool
+	// reopenEditor marks a pendingDiscard prompt raised because the editor
+	// exited without changes or with an empty body (editorDoneMsg); "n" then
+	// reopens the editor on reopenRaw (the file as it was) instead of staying
+	// on the compose form.
+	reopenEditor bool
+	reopenRaw    string
 
 	// folderCounts holds unseen message counts for watched folder tabs.
 	// Keys are tab labels: "Inbox", "PaperTrail", "Waiting", "Scheduled".
@@ -1820,7 +1829,9 @@ func (m *Model) beginDiscardConfirm() {
 
 func (m *Model) cancelDiscardConfirm() {
 	m.pendingDiscard = false
-	if m.status == "Discard unsent message?  · y discard, n keep editing" {
+	m.reopenEditor = false
+	m.reopenRaw = ""
+	if strings.Contains(m.status, "Discard unsent message?") {
 		m.status = ""
 		m.isError = false
 	}
@@ -3850,20 +3861,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = stateInbox
 			return m, nil
 		}
-		if msg.aborted {
-			m.pendingIsReply = false
-			m.requeue = requeueRef{}
-			m.attachments = nil
-			m.status = "Aborted (no changes saved). Use :recover to reopen the latest backup."
-			m.state = stateInbox
-			return m, nil
-		}
-		if strings.TrimSpace(msg.body) == "" {
-			m.pendingIsReply = false
-			m.requeue = requeueRef{}
-			m.attachments = nil
-			m.status = "Cancelled (empty body). Use :recover if you want the latest backup."
-			m.state = stateInbox
+		if msg.aborted || strings.TrimSpace(msg.body) == "" {
+			// Do not drop the session: a ZZ without edits or a :q! at the
+			// wrong moment used to send the user straight back to the inbox,
+			// with the message recoverable only via :recover. Ask first; "n"
+			// reopens the editor on the file as it was, "y" discards.
+			m.reopenEditor = true
+			m.reopenRaw = msg.body
+			m.pendingDiscard = true
+			m.isError = true
+			if msg.aborted {
+				m.status = "Editor closed without changes. Discard unsent message?  · y discard, n reopen editor"
+			} else {
+				m.status = "Editor closed with an empty body. Discard unsent message?  · y discard, n reopen editor"
+			}
+			m.state = stateCompose
 			return m, nil
 		}
 		// Strip editor header hints and extract [attach] lines.
@@ -6058,7 +6070,7 @@ func (m Model) continueDraft() (tea.Model, tea.Cmd) {
 			return editorDoneMsg{err: readErr}
 		}
 		if string(raw) == prelude+body {
-			return editorDoneMsg{aborted: true}
+			return editorDoneMsg{aborted: true, body: string(raw)}
 		}
 		pto, pcc, pbcc, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
 		if pto == "" {
@@ -6085,6 +6097,8 @@ func (m Model) updateCompose(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "y":
 			m.pendingDiscard = false
+			m.reopenEditor = false
+			m.reopenRaw = ""
 			m.pendingIsReply = false
 			m.requeue = requeueRef{}
 			m.attachments = nil
@@ -6094,7 +6108,15 @@ func (m Model) updateCompose(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.isError = false
 			return m, nil
 		case "n", "esc":
+			reopen, raw := m.reopenEditor, m.reopenRaw
 			m.cancelDiscardConfirm()
+			if reopen {
+				if strings.TrimSpace(raw) == "" {
+					// The user emptied the file; rebuild the prelude from the form.
+					return m.launchEditorCmd()
+				}
+				return m.launchEditorRawCmd(raw)
+			}
 			return m, nil
 		default:
 			return m, nil
@@ -6621,7 +6643,7 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 			return editorDoneMsg{err: readErr}
 		}
 		if string(raw) == prelude {
-			return editorDoneMsg{aborted: true}
+			return editorDoneMsg{aborted: true, body: string(raw)}
 		}
 		pto, pcc, pbcc, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
 		if pto == "" {
@@ -6648,8 +6670,20 @@ func (m Model) launchEditorCmd() (tea.Model, tea.Cmd) {
 // signature — it is already in the body from the first compose).
 func (m Model) launchEditorWithBodyCmd(to, cc, bcc, subject, body string) (tea.Model, tea.Cmd) {
 	prelude := injectAttachmentsIntoPrelude(editor.Prelude(to, cc, bcc, m.presendFrom(), subject, ""), m.attachments)
-	content := prelude + body
+	return m.launchEditorContentCmd(prelude+body, to, cc, bcc, subject)
+}
 
+// launchEditorRawCmd reopens the editor on a previous editor file verbatim
+// (discard prompt → n after an unchanged/empty exit). Header fallbacks come
+// from the file itself.
+func (m Model) launchEditorRawCmd(raw string) (tea.Model, tea.Cmd) {
+	to, cc, bcc, _, subject, _ := editor.ParseHeaders(raw)
+	return m.launchEditorContentCmd(raw, to, cc, bcc, subject)
+}
+
+// launchEditorContentCmd writes content to a neomd-*.md temp file and runs
+// $EDITOR on it. to/cc/bcc/subject fill in any header the saved file lacks.
+func (m Model) launchEditorContentCmd(content, to, cc, bcc, subject string) (tea.Model, tea.Cmd) {
 	f, err := os.CreateTemp(neomdTempDir(), "neomd-*.md")
 	if err != nil {
 		m.status = err.Error()
@@ -6674,7 +6708,7 @@ func (m Model) launchEditorWithBodyCmd(to, cc, bcc, subject, body string) (tea.M
 			return editorDoneMsg{err: readErr}
 		}
 		if string(raw) == content {
-			return editorDoneMsg{aborted: true}
+			return editorDoneMsg{aborted: true, body: string(raw)}
 		}
 		pto, pcc, pbcc, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
 		if pto == "" {
@@ -6790,7 +6824,7 @@ func (m Model) launchForwardCmd() (tea.Model, tea.Cmd) {
 			return editorDoneMsg{err: readErr}
 		}
 		if string(raw) == prelude {
-			return editorDoneMsg{aborted: true}
+			return editorDoneMsg{aborted: true, body: string(raw)}
 		}
 		pto, _, _, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
 		if pfrom == "" {
@@ -6863,7 +6897,7 @@ func (m Model) launchReplyWithCC(extraCC string, replyAll bool) (tea.Model, tea.
 			return editorDoneMsg{err: readErr}
 		}
 		if string(raw) == prelude {
-			return editorDoneMsg{aborted: true}
+			return editorDoneMsg{aborted: true, body: string(raw)}
 		}
 		pto, pcc, _, pfrom, psubject, _ := editor.ParseHeaders(string(raw))
 		if pto == "" {

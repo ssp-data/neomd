@@ -120,7 +120,7 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   re-edit (`e`), spell check (`s`), AI handoff (`i`), and CC/BCC edit (`ctrl+b`) from
   pre-send must all preserve `replyToUID`/`replyToFolder` and the `In-Reply-To`/`References`
   headers. The flag is cleared only when the compose session ends (send, discard, editor
-  abort/error/empty, new compose/forward). Test: `TestEditorDoneReplyTrackingSurvivesReEdit`.
+  error, new compose/forward). Test: `TestEditorDoneReplyTrackingSurvivesReEdit`.
 - **Threading headers on every reply-ish send** — regular replies, emoji reactions
   (`ctrl+e`), and iCalendar RSVPs all set `In-Reply-To` + `References` so conversations
   thread in Gmail/Outlook/Apple Mail. Tests: `TestBuildReactionMessage_ThreadingHeaders`,
@@ -231,6 +231,16 @@ that conversation; "the test was too strict" is not a decision an agent makes al
 - **Drafts** — saved as plain text only (multipart caused round-trip corruption), keep
   `Bcc`; every compose session is backed up to `~/.cache/neomd/drafts/` (`:recover`);
   discarding unsent mail always asks y/n confirmation.
+- **The editor closing without changes never drops the message** — `editorDoneMsg`
+  with `aborted` (file identical to what was opened: `ZZ` without edits, `ZQ`, `:q!`) or
+  an empty body raises the same y/n discard prompt instead of jumping to the inbox;
+  `n` reopens the editor on the file exactly as it was (`reopenEditor`/`reopenRaw`,
+  `launchEditorRawCmd`), `y` discards. Reply tracking, attachments and `requeue` stay
+  intact until the user decides. The esc-triggered prompt is unchanged (`n` keeps the
+  form). Tests: `TestEditorAbortPromptsInsteadOfDroppingMessage`,
+  `TestEditorEmptyBodyPrompts`, `TestEditorAbortPromptNReopensEditor`,
+  `TestEditorAbortPromptYDiscards`, `TestEscDiscardPromptNStaysOnForm`
+  (`internal/ui/editor_abort_test.go`).
 - **Draft attachments keep their original filename** — continuing a draft writes
   extracted attachments into a fresh temp dir under their real basename (never a
   mangled `CreateTemp` name — the sent filename is the path's basename). Duplicates
@@ -261,8 +271,9 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   tracks the original (`requeue` in `internal/ui/model.go`); it is moved to
   Trash (recoverable) ONLY after the replacement is successfully scheduled,
   saved, or sent. Regular emails opened with `E` are NEVER tracked (a received
-  mail must never be trashed by sending an edit of it). Abort/discard/error
-  paths clear the tracking without touching the original; a failed cleanup
+  mail must never be trashed by sending an edit of it). Discard/error paths
+  clear the tracking without touching the original (an editor abort keeps it
+  until the discard prompt is confirmed with `y`); a failed cleanup
   warns loudly (double-delivery risk). Tests:
   `TestContinueDraftTracksQueuedOriginal`, `TestScheduleDoneReplacesQueuedOriginal`,
   `TestSendDoneReplacesQueuedOriginal`, `TestSaveDraftReplacesPreviousVersion`,
