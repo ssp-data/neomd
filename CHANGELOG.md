@@ -10,6 +10,9 @@
   `light` style for it, so markdown emails render for a light background too
   (`glamourStyleFor`, `internal/ui/styles.go`). Tests: `TestApplyTheme_KnownNames`,
   `TestGlamourStyleFor`.
+# 2026-11-09
+
+- **`[sig]` short alias for the `[html-signature]` placeholder** — a line containing only `[sig]` (surrounding whitespace ignored) now enables the HTML signature exactly like `[html-signature]` and is stripped before sending. Why: replies don't get the signature prelude, so the placeholder has to be typed by hand each time; `[sig]` is five keystrokes instead of sixteen. The marker is positional only in the editor — the HTML signature is still appended at the end of the HTML part. Mid-line `[sig]` and `[signature]` are left untouched. Where: `internal/ui/model.go` (`extractHTMLSignatureMarker`), hardening forbidden-marker list in `workflow_hardening_test.go`, docs `sending.md`, `configuration/_index.md`, `faq.md`, `AGENTS.md`. Test: `TestExtractHTMLSignatureMarker_SigAlias`.
 
 # 2026-11-03
 

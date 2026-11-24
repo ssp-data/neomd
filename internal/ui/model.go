@@ -7254,15 +7254,15 @@ func extractInlineAttachments(body string) (files []string, clean string) {
 	return files, strings.Join(kept, "\n")
 }
 
-// extractHTMLSignatureMarker scans body for [html-signature] marker.
+// extractHTMLSignatureMarker scans body for the [html-signature] marker or
+// its short alias [sig] (own line, surrounding whitespace ignored).
 // If found, removes it and returns (true, cleanBody).
 // If not found, returns (false, body unchanged).
 func extractHTMLSignatureMarker(body string) (includeHTMLSig bool, clean string) {
-	const marker = "[html-signature]"
 	var kept []string
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == marker {
+		if trimmed == "[html-signature]" || trimmed == "[sig]" {
 			includeHTMLSig = true
 			continue
 		}
