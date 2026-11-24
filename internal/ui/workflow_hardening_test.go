@@ -41,6 +41,7 @@ import (
 	"github.com/sspaeti/neomd/internal/config"
 	"github.com/sspaeti/neomd/internal/editor"
 	"github.com/sspaeti/neomd/internal/imap"
+	"github.com/sspaeti/neomd/internal/smtp"
 )
 
 // ── Fake SMTP server ─────────────────────────────────────────────────────
@@ -633,7 +634,7 @@ func TestHardening_Workflow_MarkdownFileToWire(t *testing.T) {
 	}
 
 	// Internal markers must never reach the recipient.
-	for _, forbidden := range []string{"[html-signature]", "[sig]", "[attach]", "[neomd:"} {
+	for _, forbidden := range []string{"[html-signature]", "[sig]", "[attach]", "[neomd:", smtp.HTMLSignaturePlaceholder} {
 		if strings.Contains(w.plain, forbidden) || strings.Contains(w.html, forbidden) {
 			t.Errorf("internal marker %q delivered to recipient", forbidden)
 		}
@@ -658,4 +659,58 @@ func attachedNames(m map[string][]byte) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// PR #27 (reimplemented): in a top-posted reply the user puts [sig] under
+// their text, above the quoted history. The HTML signature must land there —
+// not after the quote, where Gmail/Outlook fold it away — while the plain part
+// is exactly the typed text minus the marker line and nothing internal leaks.
+func TestHardening_Workflow_ReplySignatureAboveQuote(t *testing.T) {
+	addr, rec := startFakeSMTP(t)
+	cfg := &config.Config{
+		Accounts: []config.AccountConfig{
+			{Name: "Personal", User: "login@provider.example", Password: "pw",
+				From: "Me <me@example.com>", SMTP: addr,
+				Signature: config.SignatureConfig{HTML: `<p class="sig">My HTML Signature</p>`}},
+		},
+		Folders: config.FoldersConfig{Sent: "Sent"},
+	}
+	m := Model{cfg: cfg, accounts: cfg.ActiveAccounts(), accountI: 0}
+
+	content := editor.Prelude("you@example.com", "", "", "Me <me@example.com>", "Re: Plan", "") +
+		"Thanks, sounds good.\n[sig]\n\n---\n\n> **You** wrote:\n>\n> Original question here\n"
+	mm, _ := m.Update(editorDone(content))
+	m = mm.(Model)
+	if m.state != statePresend {
+		t.Fatalf("state = %v, want presend", m.state)
+	}
+	mm2, cmd := m.Update(pressEnter())
+	_ = mm2
+	findSendDone(t, runCmds(t, cmd))
+	_, _, _, data := rec.snapshot()
+	w := parseWire(t, data)
+
+	reply := strings.Index(w.html, "Thanks, sounds good.")
+	sig := strings.Index(w.html, `class="sig"`)
+	quote := strings.Index(w.html, "Original question here")
+	if reply < 0 || sig < 0 || quote < 0 {
+		t.Fatalf("missing parts: reply=%d sig=%d quote=%d\n%s", reply, sig, quote, w.html)
+	}
+	if !(reply < sig && sig < quote) {
+		t.Errorf("signature must sit between reply and quote: reply=%d sig=%d quote=%d", reply, sig, quote)
+	}
+	if strings.Count(w.html, `class="sig"`) != 1 {
+		t.Errorf("signature must appear exactly once")
+	}
+	if !strings.Contains(strings.ReplaceAll(w.plain, "\r\n", "\n"), "Thanks, sounds good.\n\n---") {
+		t.Errorf("plain part must be the typed text minus the marker line:\n%s", w.plain)
+	}
+	for _, forbidden := range []string{"[sig]", smtp.HTMLSignaturePlaceholder, `class="sig"`} {
+		if strings.Contains(w.plain, forbidden) {
+			t.Errorf("plain part leaked %q", forbidden)
+		}
+	}
+	if strings.Contains(w.html, "[sig]") || strings.Contains(w.html, smtp.HTMLSignaturePlaceholder) {
+		t.Error("marker or placeholder delivered in HTML")
+	}
 }

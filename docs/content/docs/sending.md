@@ -364,7 +364,7 @@ Include `[html-signature]` in your text signature (as shown above) to control HT
 - The placeholder is **visible** in the editor and pre-send preview
 - When you send, neomd strips the placeholder and appends the HTML signature to the HTML part
 - **Delete the placeholder** in the editor to send without the HTML signature for that specific email
-- **Short alias:** `[sig]` on its own line does the same thing — handy when your signature block doesn't include the placeholder (e.g. a reply) and you want to add it by hand with minimal typing. The HTML signature is always appended at the end of the HTML part, regardless of where the marker sits.
+- **Short alias:** `[sig]` on its own line does the same thing — handy when your signature block doesn't include the placeholder (e.g. a reply) and you want to add it by hand with minimal typing. The HTML signature is placed where the marker line sits — in a reply, put it under your text and it lands above the quoted history instead of below it. If there are several markers, the first one (outside fenced code) wins.
 
 This gives you full control: professional HTML signatures by default, plain signatures when needed.
 

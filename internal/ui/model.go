@@ -6237,7 +6237,7 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			from := m.presendFrom()
 			smtpAcct := m.presendSMTPAccount()
 			attachments := m.attachments
-			includeHTMLSig, cleanBody := extractHTMLSignatureMarker(ps.body)
+			includeHTMLSig, cleanBody := markHTMLSignaturePosition(ps.body)
 			m.attachments = nil
 			m.pendingSend = nil
 			m.pendingIsReply = false
@@ -6272,7 +6272,8 @@ func (m Model) updatePresend(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.spinner.Tick, m.sendListmonkCmd(ps.subject, cleanBody, listIDs, templateID))
 			}
 		}
-		return m, tea.Batch(m.spinner.Tick, m.sendEmailCmd(smtpAcct, from, ps.to, ps.cc, ps.bcc, ps.subject, cleanBody, attachments, includeHTMLSig, replyUID, replyFolder, ps.replyToAccount, ps.inReplyTo, ps.references))
+		_, sigBody := markHTMLSignaturePosition(ps.body)
+		return m, tea.Batch(m.spinner.Tick, m.sendEmailCmd(smtpAcct, from, ps.to, ps.cc, ps.bcc, ps.subject, sigBody, attachments, includeHTMLSig, replyUID, replyFolder, ps.replyToAccount, ps.inReplyTo, ps.references))
 	case "ctrl+f":
 		froms := m.presendFroms()
 		if len(froms) <= 1 {
@@ -6523,7 +6524,7 @@ func (m Model) previewInBrowser() (tea.Model, tea.Cmd) {
 
 	// Extract [html-signature] marker the same way as the send path
 	// so the preview matches what recipients will actually receive
-	includeHTMLSig, cleanBody := extractHTMLSignatureMarker(ps.body)
+	includeHTMLSig, cleanBody := markHTMLSignaturePosition(ps.body)
 
 	htmlBody, err := render.ToHTML(cleanBody)
 	if err != nil {
@@ -6532,17 +6533,13 @@ func (m Model) previewInBrowser() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Inject HTML signature before </body> tag if enabled (matching send path)
+	// Place the HTML signature exactly like the send path (marker position,
+	// else before </body>); always strips the placeholder.
+	htmlSig := ""
 	if includeHTMLSig {
-		acct := m.presendSMTPAccount()
-		htmlSig := m.cfg.Signature(acct).HTML
-		if htmlSig != "" {
-			idx := strings.LastIndex(htmlBody, "</body>")
-			if idx >= 0 {
-				htmlBody = htmlBody[:idx] + "\n" + htmlSig + "\n" + htmlBody[idx:]
-			}
-		}
+		htmlSig = m.cfg.Signature(m.presendSMTPAccount()).HTML
 	}
+	htmlBody = smtp.InjectHTMLSignature(htmlBody, htmlSig)
 
 	// Convert absolute image paths to file:// URLs so the browser can display them.
 	// goldmark renders ![](/abs/path) as <img src="/abs/path"> which browsers
@@ -7306,6 +7303,34 @@ func extractInlineAttachments(body string) (files []string, clean string) {
 // its short alias [sig] (own line, surrounding whitespace ignored).
 // If found, removes it and returns (true, cleanBody).
 // If not found, returns (false, body unchanged).
+// markHTMLSignaturePosition is extractHTMLSignatureMarker for the send and
+// preview paths: the first marker line outside fenced code is replaced by
+// smtp.HTMLSignaturePlaceholder on its own paragraph instead of being dropped,
+// so smtp.InjectHTMLSignature puts the HTML signature there (e.g. under the
+// reply, above the quoted history) rather than at the very end. Other markers
+// are dropped as before. Without a marker the body is returned unchanged.
+// Listmonk bodies must keep using extractHTMLSignatureMarker.
+func markHTMLSignaturePosition(body string) (includeHTMLSig bool, marked string) {
+	var kept []string
+	placed, inFence := false, false
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inFence = !inFence
+		}
+		if trimmed == "[html-signature]" || trimmed == "[sig]" {
+			includeHTMLSig = true
+			if !placed && !inFence {
+				kept = append(kept, "", smtp.HTMLSignaturePlaceholder, "")
+				placed = true
+			}
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return includeHTMLSig, strings.Join(kept, "\n")
+}
+
 func extractHTMLSignatureMarker(body string) (includeHTMLSig bool, clean string) {
 	var kept []string
 	for _, line := range strings.Split(body, "\n") {

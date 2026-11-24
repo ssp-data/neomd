@@ -281,7 +281,8 @@ func sendSTARTTLSWithConfig(addr, host string, tlsCfg *tls.Config, auth smtp.Aut
 // BCC must not be passed — it must never appear in message headers.
 // When attachments is non-empty the message is wrapped in multipart/mixed;
 // otherwise the structure is unchanged (multipart/alternative only).
-// htmlSignature, if non-empty, is injected before the closing </body> tag in the HTML part.
+// htmlSignature, if non-empty, replaces the HTMLSignaturePlaceholder paragraph
+// in the HTML part, or is injected before </body> when there is none.
 func BuildMessage(from, to, cc, subject, markdownBody string, attachments []string, htmlSignature string) ([]byte, error) {
 	return BuildMessageWithThreading(from, to, cc, subject, markdownBody, attachments, htmlSignature, "", "")
 }
@@ -294,15 +295,11 @@ func BuildMessageWithThreading(from, to, cc, subject, markdownBody string, attac
 	if err != nil {
 		return nil, err
 	}
-	// Inject HTML signature before </body> tag if provided
-	if htmlSignature != "" {
-		// Replace the last occurrence of </body> with signature + </body>
-		// This ensures the signature is inside the HTML document structure
-		idx := strings.LastIndex(htmlBody, "</body>")
-		if idx >= 0 {
-			htmlBody = htmlBody[:idx] + "\n" + htmlSignature + "\n" + htmlBody[idx:]
-		}
-	}
+	// Place the HTML signature at the marker position (HTMLSignaturePlaceholder)
+	// or before </body>; the placeholder is stripped from both parts even when
+	// no signature is configured.
+	htmlBody = InjectHTMLSignature(htmlBody, htmlSignature)
+	plainText = StripHTMLSignaturePlaceholder(plainText)
 	return buildMessageWithBCC(from, to, cc, "", subject, plainText, htmlBody, attachments, inReplyTo, buildRefChain(references, inReplyTo))
 }
 
