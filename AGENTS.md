@@ -224,8 +224,10 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   hard breaks survive SMTP relays; text/plain part comes before text/html.
 - **Signatures** — per-account `[accounts.signature_block]` overrides the global block
   all-or-nothing via `Config.Signature(account)`; text signature goes to editor + plain
-  part, HTML signature to HTML part only; `[html-signature]` placeholder controls
-  inclusion per-email and is extracted right before send. Test: `TestSignature`.
+  part, HTML signature to HTML part only; `[html-signature]` placeholder (or its
+  short alias `[sig]`, own line) controls inclusion per-email and is extracted right
+  before send — neither marker may ever reach a recipient. Tests: `TestSignature`,
+  `TestExtractHTMLSignatureMarker_SigAlias`.
 - **Drafts** — saved as plain text only (multipart caused round-trip corruption), keep
   `Bcc`; every compose session is backed up to `~/.cache/neomd/drafts/` (`:recover`);
   discarding unsent mail always asks y/n confirmation.

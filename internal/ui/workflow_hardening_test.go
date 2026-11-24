@@ -633,7 +633,7 @@ func TestHardening_Workflow_MarkdownFileToWire(t *testing.T) {
 	}
 
 	// Internal markers must never reach the recipient.
-	for _, forbidden := range []string{"[html-signature]", "[attach]", "[neomd:"} {
+	for _, forbidden := range []string{"[html-signature]", "[sig]", "[attach]", "[neomd:"} {
 		if strings.Contains(w.plain, forbidden) || strings.Contains(w.html, forbidden) {
 			t.Errorf("internal marker %q delivered to recipient", forbidden)
 		}
