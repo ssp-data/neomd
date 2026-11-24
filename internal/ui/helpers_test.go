@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/sspaeti/neomd/internal/smtp"
 	"os"
 	"testing"
 	"time"
@@ -47,6 +48,41 @@ func TestExtractHTMLSignatureMarker_SigAlias(t *testing.T) {
 			got, out := extractHTMLSignatureMarker(tc.body)
 			if got != tc.want || out != tc.wantOut {
 				t.Errorf("extractHTMLSignatureMarker(%q) = (%v, %q), want (%v, %q)", tc.body, got, out, tc.want, tc.wantOut)
+			}
+		})
+	}
+}
+
+// markHTMLSignaturePosition swaps the first marker outside fenced code for the
+// placeholder paragraph, drops all other markers like extractHTMLSignatureMarker,
+// and leaves marker-free bodies byte-identical.
+func TestMarkHTMLSignaturePosition(t *testing.T) {
+	P := smtp.HTMLSignaturePlaceholder
+	cases := []struct {
+		name    string
+		body    string
+		want    bool
+		wantOut string
+	}{
+		{"no marker unchanged", "Hi\nBye", false, "Hi\nBye"},
+		{"marker in place", "Hi\n[sig]\nBye", true, "Hi\n\n" + P + "\n\nBye"},
+		{"long marker", "Hi\n[html-signature]", true, "Hi\n\n" + P + "\n"},
+		{"indented marker", "Hi\n   [sig] \nBye", true, "Hi\n\n" + P + "\n\nBye"},
+		{"only first marker placed", "[sig]\nHi\n[html-signature]", true, "\n" + P + "\n\nHi"},
+		{"marker in fence not placed", "```\n[sig]\n```\nHi\n[sig]", true, "```\n```\nHi\n\n" + P + "\n"},
+		{"only fenced marker → end fallback", "~~~\n[sig]\n~~~", true, "~~~\n~~~"},
+		{"inline bracket kept", "see [sig] here", false, "see [sig] here"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, out := markHTMLSignaturePosition(tc.body)
+			if got != tc.want || out != tc.wantOut {
+				t.Errorf("markHTMLSignaturePosition(%q) = (%v, %q), want (%v, %q)", tc.body, got, out, tc.want, tc.wantOut)
+			}
+			// Round trip: stripping the placeholder must equal the old extraction.
+			_, old := extractHTMLSignatureMarker(tc.body)
+			if back := smtp.StripHTMLSignaturePlaceholder(out); back != old {
+				t.Errorf("strip(mark(body)) = %q, want extractHTMLSignatureMarker result %q", back, old)
 			}
 		})
 	}

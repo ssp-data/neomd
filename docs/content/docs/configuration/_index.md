@@ -430,7 +430,8 @@ For professional HTML signatures (with logos, tables, styled text), use the `[ui
 - **HTML signature** — appends to the `text/html` MIME part only (recipients using HTML email clients see this)
 - **`[html-signature]` placeholder** — include this in your text signature to enable HTML signature for a specific email; visible in the editor and pre-send preview, but stripped before sending
 - **Per-email control** — delete the `[html-signature]` line in the editor to send without the HTML signature for that email
-- **Short alias** — `[sig]` on its own line is equivalent to `[html-signature]`; type it anywhere in the body to add the HTML signature to a mail whose prelude didn't include the placeholder (the HTML signature is always appended at the end of the HTML part)
+- **Short alias** — `[sig]` on its own line is equivalent to `[html-signature]`; type it anywhere in the body to add the HTML signature to a mail whose prelude didn't include the placeholder
+- **Position** — the HTML signature is placed where the (first) marker line sits, so in a reply you can put it under your text and above the quoted history. A marker inside a fenced code block doesn't count for the position; with no usable position the signature goes at the end of the HTML part as before
 
 
 #### This is how it looks
