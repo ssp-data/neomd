@@ -57,7 +57,7 @@ func TestKanagawaDefault(t *testing.T) {
 }
 
 func TestApplyTheme_KnownNames(t *testing.T) {
-	for _, name := range []string{"kanagawa", "kanagawa-paper", "kanagawa-light", "rose-pine", "gruvbox", "osaka-jade"} {
+	for _, name := range []string{"kanagawa", "kanagawa-paper", "kanagawa-light", "catppuccin-latte", "rose-pine", "gruvbox", "osaka-jade"} {
 		ApplyTheme(name, config.Theme{})
 		if colorBg == "" || colorPrimary == "" {
 			t.Errorf("ApplyTheme(%q): expected colors populated, got empty", name)
@@ -111,16 +111,17 @@ func TestGlamourStyleFor(t *testing.T) {
 	// falls back to "notty" which strips colours/wrapping. The mapper must
 	// always return one of glamour's built-in style names.
 	cases := map[string]string{
-		"kanagawa":       "dark",
-		"kanagawa-paper": "dark",
-		"kanagawa-light": "light",
-		"rose-pine":      "dark",
-		"gruvbox":        "dark",
-		"osaka-jade":     "dark",
-		"":               "dark",  // empty config falls through to dark
-		"unknown-theme":  "dark",  // unknown names also fall through, never to notty
-		"light":          "light", // legacy literal still respected
-		"auto":           "dark",  // legacy "auto" collapses to dark for predictability
+		"kanagawa":         "dark",
+		"kanagawa-paper":   "dark",
+		"kanagawa-light":   "light",
+		"catppuccin-latte": "light",
+		"rose-pine":        "dark",
+		"gruvbox":          "dark",
+		"osaka-jade":       "dark",
+		"":                 "dark",  // empty config falls through to dark
+		"unknown-theme":    "dark",  // unknown names also fall through, never to notty
+		"light":            "light", // legacy literal still respected
+		"auto":             "dark",  // legacy "auto" collapses to dark for predictability
 	}
 	for in, want := range cases {
 		if got := glamourStyleFor(in); got != want {

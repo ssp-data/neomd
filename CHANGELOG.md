@@ -1,5 +1,15 @@
 # Changelog
 
+# 2026-11-24
+
+- **New built-in theme: `catppuccin-latte`** — a second light palette alongside
+  `kanagawa-light`, using the official Catppuccin Latte colors
+  (https://github.com/catppuccin/catppuccin): blue `#1E66F5` primary, lavender
+  `#8839EF` unread, peach `#DF8E1D` dates, red `#D20F39` errors/read-authors,
+  green `#40A02B` success, on the `#EFF1F5` base. The reader picks glamour's
+  `light` style for it, so markdown emails render for a light background too
+  (`glamourStyleFor`, `internal/ui/styles.go`). Tests: `TestApplyTheme_KnownNames`,
+  `TestGlamourStyleFor`.
 # 2026-11-09
 
 - **`[sig]` short alias for the `[html-signature]` placeholder** — a line containing only `[sig]` (surrounding whitespace ignored) now enables the HTML signature exactly like `[html-signature]` and is stripped before sending. Why: replies don't get the signature prelude, so the placeholder has to be typed by hand each time; `[sig]` is five keystrokes instead of sixteen. The marker is positional only in the editor — the HTML signature is still appended at the end of the HTML part. Mid-line `[sig]` and `[signature]` are left untouched. Where: `internal/ui/model.go` (`extractHTMLSignatureMarker`), hardening forbidden-marker list in `workflow_hardening_test.go`, docs `sending.md`, `configuration/_index.md`, `faq.md`, `AGENTS.md`. Test: `TestExtractHTMLSignatureMarker_SigAlias`.
