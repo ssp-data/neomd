@@ -226,8 +226,17 @@ that conversation; "the test was too strict" is not a decision an agent makes al
   all-or-nothing via `Config.Signature(account)`; text signature goes to editor + plain
   part, HTML signature to HTML part only; `[html-signature]` placeholder (or its
   short alias `[sig]`, own line) controls inclusion per-email and is extracted right
-  before send — neither marker may ever reach a recipient. Tests: `TestSignature`,
-  `TestExtractHTMLSignatureMarker_SigAlias`.
+  before send — neither marker may ever reach a recipient. The HTML signature goes
+  where the first marker outside fenced code sits (`markHTMLSignaturePosition` →
+  `smtp.HTMLSignaturePlaceholder` → `smtp.InjectHTMLSignature`), else before `</body>`;
+  the placeholder is always stripped from both parts, even without a configured
+  signature, and the plain part equals the old marker-stripped text. Listmonk bodies
+  keep using `extractHTMLSignatureMarker` (no placeholder). Send, send-later and
+  browser preview share the logic. Tests: `TestSignature`,
+  `TestExtractHTMLSignatureMarker_SigAlias`, `TestMarkHTMLSignaturePosition`,
+  `TestInjectHTMLSignature_*`, `TestStripHTMLSignaturePlaceholder`,
+  `TestBuildMessage_SignatureAtPlaceholder`, `TestBuildMessage_PlaceholderWithoutSignature`,
+  `TestHardening_Workflow_ReplySignatureAboveQuote`.
 - **Drafts** — saved as plain text only (multipart caused round-trip corruption), keep
   `Bcc`; every compose session is backed up to `~/.cache/neomd/drafts/` (`:recover`);
   discarding unsent mail always asks y/n confirmation.
