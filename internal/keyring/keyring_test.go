@@ -134,6 +134,46 @@ func TestKeyFormats(t *testing.T) {
 	}
 }
 
+// The client secret lives under its own key so it never collides with the
+// account password or the OAuth2 token blob.
+func TestClientSecretKeyIsDistinct(t *testing.T) {
+	const acct = "Personal"
+	if got, want := clientSecretKey(acct), "account/Personal/oauth2_client_secret"; got != want {
+		t.Errorf("clientSecretKey = %q, want %q", got, want)
+	}
+	if clientSecretKey(acct) == passwordKey(acct) || clientSecretKey(acct) == oauth2Key(acct) {
+		t.Error("client secret key must differ from password and oauth2 token keys")
+	}
+}
+
+// refreshOnlyToken is the shape stored when the keyring backend rejects the
+// full token as too large (macOS `security` 4096-byte command limit). It must
+// keep the refresh token and be invalid so oauth2 refreshes on first use.
+func TestRefreshOnlyToken(t *testing.T) {
+	tok := &oauth2.Token{
+		AccessToken:  "ya29." + string(make([]byte, 2500)),
+		RefreshToken: "1//0gRefresh",
+		TokenType:    "Bearer",
+		Expiry:       time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC),
+	}
+	got := refreshOnlyToken(tok)
+	if got.AccessToken != "" {
+		t.Errorf("AccessToken should be dropped, got len=%d", len(got.AccessToken))
+	}
+	if got.RefreshToken != tok.RefreshToken || got.TokenType != tok.TokenType || !got.Expiry.Equal(tok.Expiry) {
+		t.Errorf("refresh fields not preserved: %+v", got)
+	}
+	if got.Valid() {
+		t.Error("stripped token must not be Valid() so the library refreshes it")
+	}
+	if data, _ := json.Marshal(got); len(data) > 1024 {
+		t.Errorf("stripped token JSON unexpectedly large: %d bytes", len(data))
+	}
+	if tok.AccessToken == "" {
+		t.Error("original token must not be mutated")
+	}
+}
+
 func TestClear(t *testing.T) {
 	mock := NewMockBackend()
 

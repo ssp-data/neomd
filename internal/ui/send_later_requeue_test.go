@@ -6,6 +6,7 @@ package ui
 // any other way (abort/discard/error): then the original stays untouched.
 
 import (
+	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 	"testing"
 	"time"
@@ -106,17 +107,27 @@ func TestSendDoneReplacesQueuedOriginal(t *testing.T) {
 	}
 }
 
-// Aborting the editor keeps the original queued message untouched.
+// Aborting the editor keeps the original queued message untouched: the abort
+// raises the discard prompt (requeue still tracked so "n" can continue), and
+// confirming with y clears the tracking without deleting the queued copy.
 func TestEditorAbortKeepsQueuedOriginal(t *testing.T) {
 	m := requeueTestModel()
 	m.requeue = requeueRef{uid: 7, folder: "Scheduled", account: "Personal"}
 	mm, cmd := m.Update(editorDoneMsg{aborted: true})
 	m = mm.(Model)
-	if m.requeue.uid != 0 {
-		t.Error("requeue not cleared on abort")
-	}
 	if cmd != nil {
 		t.Error("abort must NOT delete the original queued copy")
+	}
+	if !m.pendingDiscard || m.requeue.uid != 7 {
+		t.Fatalf("abort should prompt and keep requeue; pendingDiscard=%v requeue=%+v", m.pendingDiscard, m.requeue)
+	}
+	mm, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m = mm.(Model)
+	if m.requeue.uid != 0 {
+		t.Error("requeue not cleared on confirmed discard")
+	}
+	if cmd != nil {
+		t.Error("discard must NOT delete the original queued copy")
 	}
 }
 

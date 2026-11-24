@@ -22,6 +22,11 @@ func oauth2Key(accountName string) string {
 	return fmt.Sprintf("account/%s/oauth2", accountName)
 }
 
+// clientSecretKey returns the keyring key for an OAuth2 client secret.
+func clientSecretKey(accountName string) string {
+	return fmt.Sprintf("account/%s/oauth2_client_secret", accountName)
+}
+
 // SetPassword stores a password in the OS keyring.
 func SetPassword(accountName, password string) error {
 	return keyring.Set(serviceName, passwordKey(accountName), password)
@@ -49,13 +54,66 @@ func DeletePassword(accountName string) error {
 	return err
 }
 
+// SetClientSecret stores an OAuth2 client secret in the OS keyring.
+func SetClientSecret(accountName, secret string) error {
+	return keyring.Set(serviceName, clientSecretKey(accountName), secret)
+}
+
+// GetClientSecret retrieves an OAuth2 client secret from the OS keyring.
+// Returns ErrNotFound if no entry exists for this account.
+func GetClientSecret(accountName string) (string, error) {
+	secret, err := keyring.Get(serviceName, clientSecretKey(accountName))
+	if err == keyring.ErrNotFound {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("keyring get oauth2 client secret: %w", err)
+	}
+	return secret, nil
+}
+
+// DeleteClientSecret removes an OAuth2 client secret from the OS keyring.
+func DeleteClientSecret(accountName string) error {
+	err := keyring.Delete(serviceName, clientSecretKey(accountName))
+	if err == keyring.ErrNotFound {
+		return nil
+	}
+	return err
+}
+
 // SetOAuth2Token stores an OAuth2 token in the OS keyring as JSON.
+//
+// If the backend rejects the entry as too large (macOS: zalando/go-keyring
+// shells out to the `security` CLI, whose command line is capped at 4096
+// bytes, and Google access tokens alone can exceed 2 KB), the token is stored
+// again without its access token. An oauth2.Token with an empty AccessToken
+// is never Valid(), so the library transparently refreshes it on first use
+// from the stored RefreshToken — the only cost is one extra token request at
+// startup. Backends without a size limit store the full token unchanged.
 func SetOAuth2Token(accountName string, token *oauth2.Token) error {
+	err := setOAuth2TokenJSON(accountName, token)
+	if err == keyring.ErrSetDataTooBig && token.RefreshToken != "" {
+		err = setOAuth2TokenJSON(accountName, refreshOnlyToken(token))
+	}
+	return err
+}
+
+func setOAuth2TokenJSON(accountName string, token *oauth2.Token) error {
 	data, err := json.Marshal(token)
 	if err != nil {
 		return fmt.Errorf("marshal oauth2 token: %w", err)
 	}
 	return keyring.Set(serviceName, oauth2Key(accountName), string(data))
+}
+
+// refreshOnlyToken returns a copy of token that keeps only what is needed to
+// obtain a fresh access token: RefreshToken, TokenType, and Expiry.
+func refreshOnlyToken(token *oauth2.Token) *oauth2.Token {
+	return &oauth2.Token{
+		TokenType:    token.TokenType,
+		RefreshToken: token.RefreshToken,
+		Expiry:       token.Expiry,
+	}
 }
 
 // GetOAuth2Token retrieves an OAuth2 token from the OS keyring.

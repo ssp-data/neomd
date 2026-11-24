@@ -17,7 +17,8 @@ imap     = "imap.example.com:993"   # :993 = TLS, :143 = STARTTLS
 smtp     = "smtp.example.com:587"   # :587 = STARTTLS, :465 = TLS
 user     = "me@example.com"
 password = "app-password"
-from     = "Me <me@example.com>"
+from     = "Me <me@example.com>"    # what you send as; defaults to `user` when omitted,
+                                    # must be a valid address — checked at startup
 starttls = false                    # optional: force STARTTLS (see TLS/STARTTLS section below)
 tls_cert_file = ""                  # optional PEM cert/CA for self-signed local bridges
 imap_disabled = false               # set true for send-only accounts (no IMAP connection)
@@ -168,7 +169,7 @@ Values containing other text or multiple `$` signs are left as-is, so passwords 
 
 Credentials are stored only in `~/.config/neomd/config.toml` (mode 0600) and never written elsewhere; all IMAP connections use TLS (port 993) or STARTTLS (port 143).
 
-### Storing passwords in the OS keyring (Linux)
+### Storing passwords in the OS keyring (Linux / macOS)
 
 Set `password = "keyring"` to fetch the password from your OS keyring (macOS Keychain, GNOME Keyring / KDE Wallet via Secret Service on Linux, Windows Credential Manager) at startup. The lookup uses the `[[accounts]].name` as the account identifier under service `neomd`.
 
@@ -212,7 +213,40 @@ secret-tool store --label "neomd WorkInfo"  service neomd username account/WorkI
 
 If the keyring entry is missing or the keyring service is unavailable, neomd prints a warning and the literal sentinel `"keyring"` is used as the password — IMAP/SMTP authentication will then fail with a clear error. `[[senders]]` aliases that reference an account inherit the resolved keyring password automatically.
 
-OAuth2 tokens are also stored in the keyring under `username = account/<name>/oauth2` with the same `service = neomd`, falling back to `~/.config/neomd/tokens/<account>.json` (mode `0600`) when no keyring is available (headless / SSH systems).
+**macOS (using the built-in `security` CLI):**
+
+```sh
+# Add the entry (prompts for the secret so it never lands in your shell history):
+security add-generic-password -s neomd -a account/Personal/password -w
+
+# Verify it was stored (read-only):
+security find-generic-password -s neomd -a account/Personal/password -w
+
+# Remove a specific entry if you want to start over:
+security delete-generic-password -s neomd -a account/Personal/password
+```
+
+#### OAuth2 client secret in the keyring
+
+Accounts using `auth_type = "oauth2"` can keep the `oauth2_client_secret` out of `config.toml` the same way: set it to `"keyring"` and store the secret under `account/<name>/oauth2_client_secret` (a separate key — the account password entry is never reused for it).
+
+```toml
+[[accounts]]
+name                 = "Gmail"
+auth_type            = "oauth2"
+oauth2_client_id     = "xxxx.apps.googleusercontent.com"
+oauth2_client_secret = "keyring"     # resolved at startup
+# ...rest of the account
+```
+
+```sh
+secret-tool store --label "neomd Gmail OAuth2" service neomd username account/Gmail/oauth2_client_secret   # Linux
+security add-generic-password -s neomd -a account/Gmail/oauth2_client_secret -w                              # macOS
+```
+
+If the entry is missing, neomd prints a warning at startup and the literal `"keyring"` is passed to the OAuth2 provider, which rejects it with a clear `invalid_client` error.
+
+OAuth2 tokens are also stored in the keyring under `username = account/<name>/oauth2` with the same `service = neomd`, falling back to `~/.config/neomd/tokens/<account>.json` (mode `0600`) when no keyring is available (headless / SSH systems). On macOS the `security` CLI limits an entry to 4096 bytes, which Google's access tokens can exceed; neomd then stores only the refresh token and fetches a fresh access token at startup, so the token still never touches disk.
 
 ## TLS and STARTTLS Configuration
 

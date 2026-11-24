@@ -403,6 +403,141 @@ func TestValidate_ValidConfig(t *testing.T) {
 	}
 }
 
+// Regression for PR #39: from = "" loaded fine, the pre-send screen showed a
+// blank From: line, and the failure only surfaced after the mail was written
+// ("build message: invalid From address"). An empty from now falls back to
+// user when that is a plain address, so existing configs keep starting.
+func TestValidate_EmptyFromFallsBackToUser(t *testing.T) {
+	cfg := &Config{
+		Accounts: []AccountConfig{{
+			Name: "Main",
+			IMAP: "imap.example.com:993",
+			SMTP: "smtp.example.com:587",
+			User: "me@example.com",
+		}},
+	}
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := cfg.Accounts[0].From; got != "me@example.com" {
+		t.Errorf("From = %q, want fallback to user", got)
+	}
+}
+
+// No fallback possible (user is a login name, not an address; or an OAuth2
+// account without user) → clear load error instead of an unsendable account.
+func TestValidate_EmptyFromWithoutAddressUserFails(t *testing.T) {
+	for _, acc := range []AccountConfig{
+		{Name: "Login", IMAP: "imap.example.com:993", SMTP: "smtp.example.com:587", User: "DOMAIN\\me"},
+		{Name: "OAuth", IMAP: "imap.example.com:993", SMTP: "smtp.example.com:587", AuthType: "oauth2"},
+	} {
+		cfg := &Config{Accounts: []AccountConfig{acc}}
+		err := cfg.validate()
+		if err == nil {
+			t.Errorf("%s: expected error for empty from with non-address user", acc.Name)
+			continue
+		}
+		if !strings.Contains(err.Error(), "from is required") {
+			t.Errorf("%s: error should mention 'from is required', got: %v", acc.Name, err)
+		}
+	}
+}
+
+// A non-empty from that is not a valid address (from = "xx") must fail at
+// load — the send path's extractDomain applies the same RFC 5322 bar when
+// building the Message-ID, so such an account can never send.
+func TestValidate_FromFormat(t *testing.T) {
+	valid := []string{
+		"me@example.com",
+		"Me <me@example.com>",
+		"Simon Späti <me@sub.example.co.uk>",
+		"  me@example.com  ",
+	}
+	invalid := []string{
+		"xx",
+		"Name <xx>",
+		"xx@",
+		"@example.com",
+		"me@example.com, other@example.com", // From is a single address
+	}
+	mk := func(from string) *Config {
+		return &Config{Accounts: []AccountConfig{{
+			Name: "T", IMAP: "imap.example.com:993", SMTP: "smtp.example.com:587",
+			User: "u@example.com", From: from,
+		}}}
+	}
+	for _, from := range valid {
+		cfg := mk(from)
+		if err := cfg.validate(); err != nil {
+			t.Errorf("from %q: unexpected error: %v", from, err)
+		}
+		if cfg.Accounts[0].From != from {
+			t.Errorf("from %q: validate must not rewrite a valid from, got %q", from, cfg.Accounts[0].From)
+		}
+	}
+	for _, from := range invalid {
+		err := mk(from).validate()
+		if err == nil {
+			t.Errorf("from %q: expected validation error, got nil", from)
+			continue
+		}
+		if !strings.Contains(err.Error(), "not a valid email address") {
+			t.Errorf("from %q: error should mention 'not a valid email address', got: %v", from, err)
+		}
+	}
+}
+
+// A [[senders]] alias exists only to send as its From address — an empty one
+// would put an empty entry in the pre-send ctrl+f cycle.
+func TestValidate_SenderRequiresValidFrom(t *testing.T) {
+	base := AccountConfig{Name: "Test", IMAP: "imap.example.com:993", SMTP: "smtp.example.com:587", User: "test@example.com", From: "test@example.com"}
+	for _, tc := range []struct{ from, want string }{
+		{"", "from is required"},
+		{"xx", "not a valid email address"},
+	} {
+		cfg := &Config{Accounts: []AccountConfig{base}, Senders: []SenderConfig{{Name: "alias", Account: "Test", From: tc.from}}}
+		err := cfg.validate()
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("sender from %q: want error containing %q, got %v", tc.from, tc.want, err)
+		}
+	}
+	cfg := &Config{Accounts: []AccountConfig{base}, Senders: []SenderConfig{{Name: "alias", Account: "Test", From: "Alias <alias@example.com>"}}}
+	if err := cfg.validate(); err != nil {
+		t.Errorf("valid sender from: unexpected error: %v", err)
+	}
+}
+
+// Through Load: a config file without from starts (fallback), one with a
+// malformed from is rejected before neomd starts — not after the first mail.
+func TestLoad_FromValidation(t *testing.T) {
+	write := func(t *testing.T, from string) string {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+		body := `
+[[accounts]]
+name     = "Main"
+imap     = "imap.example.com:993"
+smtp     = "smtp.example.com:587"
+user     = "me@example.com"
+password = "x"
+` + from
+		if err := os.WriteFile(cfgPath, []byte(body), 0600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		return cfgPath
+	}
+	cfg, err := Load(write(t, ""))
+	if err != nil {
+		t.Fatalf("Load without from: %v", err)
+	}
+	if got := cfg.Accounts[0].From; got != "me@example.com" {
+		t.Errorf("From = %q, want fallback to user", got)
+	}
+	_, err = Load(write(t, `from = "xx"`))
+	if err == nil || !strings.Contains(err.Error(), "not a valid email address") {
+		t.Errorf("Load with from=xx: want validation error, got %v", err)
+	}
+}
+
 func TestValidate_NegativeUIValues(t *testing.T) {
 	cfg := &Config{
 		Accounts: []AccountConfig{{
@@ -562,6 +697,107 @@ func TestResolveKeyringPassword(t *testing.T) {
 			t.Errorf("got %q, want passthrough for empty account", got)
 		}
 	})
+}
+
+// TestResolveKeyringClientSecret pins oauth2_client_secret = "keyring": resolved
+// from "account/<name>/oauth2_client_secret"; sentinel preserved when the entry
+// is missing so the downstream OAuth2 error is clear.
+func TestResolveKeyringClientSecret(t *testing.T) {
+	zalandokeyring.MockInit()
+
+	t.Run("resolved when entry exists", func(t *testing.T) {
+		const acct = "TestAcctOAuth"
+		if err := keyring.SetClientSecret(acct, "the-client-secret"); err != nil {
+			t.Fatalf("SetClientSecret: %v", err)
+		}
+		defer keyring.DeleteClientSecret(acct)
+		if got := resolveKeyringClientSecret(acct, "keyring"); got != "the-client-secret" {
+			t.Errorf("got %q, want resolved client secret", got)
+		}
+	})
+
+	t.Run("sentinel preserved when entry missing", func(t *testing.T) {
+		if got := resolveKeyringClientSecret("MissingAcct", "keyring"); got != "keyring" {
+			t.Errorf("got %q, want sentinel preserved", got)
+		}
+	})
+
+	t.Run("non-sentinel passthrough", func(t *testing.T) {
+		if got := resolveKeyringClientSecret("any", "literal-secret"); got != "literal-secret" {
+			t.Errorf("got %q, want passthrough", got)
+		}
+	})
+
+	t.Run("empty account name passthrough", func(t *testing.T) {
+		if got := resolveKeyringClientSecret("", "keyring"); got != "keyring" {
+			t.Errorf("got %q, want passthrough for empty account", got)
+		}
+	})
+
+	t.Run("password keyring entry is not reused as client secret", func(t *testing.T) {
+		const acct = "TestAcctPwOnly"
+		if err := keyring.SetPassword(acct, "imap-password"); err != nil {
+			t.Fatalf("SetPassword: %v", err)
+		}
+		defer keyring.DeletePassword(acct)
+		if got := resolveKeyringClientSecret(acct, "keyring"); got != "keyring" {
+			t.Errorf("got %q, want sentinel — separate keyring key per secret", got)
+		}
+	})
+}
+
+// TestLoad_KeyringResolvesClientSecret runs the sentinel through Load so the
+// OAuth2 flow (which reads cfg.Accounts[i].OAuth2ClientSecret) sees the real
+// value. A plain password account in the same file must be untouched.
+func TestLoad_KeyringResolvesClientSecret(t *testing.T) {
+	zalandokeyring.MockInit()
+	const acctName = "GMail"
+	const realSecret = "the-real-client-secret"
+	if err := keyring.SetClientSecret(acctName, realSecret); err != nil {
+		t.Fatalf("SetClientSecret: %v", err)
+	}
+	defer keyring.DeleteClientSecret(acctName)
+
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	cfgBody := `
+[[accounts]]
+name                 = "GMail"
+auth_type            = "oauth2"
+imap                 = "imap.gmail.com:993"
+smtp                 = "smtp.gmail.com:587"
+user                 = "me@gmail.com"
+from                 = "Me <me@gmail.com>"
+oauth2_client_id     = "client-id.apps.googleusercontent.com"
+oauth2_client_secret = "keyring"
+oauth2_issuer_url    = "https://accounts.google.com"
+
+[[accounts]]
+name     = "Plain"
+imap     = "imap.example.com:993"
+smtp     = "smtp.example.com:587"
+user     = "me@example.com"
+from     = "me@example.com"
+password = "literal"
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Accounts) != 2 {
+		t.Fatalf("expected 2 accounts, got %d", len(cfg.Accounts))
+	}
+	if got := cfg.Accounts[0].OAuth2ClientSecret; got != realSecret {
+		t.Errorf("Accounts[0].OAuth2ClientSecret = %q, want resolved %q", got, realSecret)
+	}
+	if got := cfg.Accounts[1].Password; got != "literal" {
+		t.Errorf("Accounts[1].Password = %q, want untouched literal", got)
+	}
+	if got := cfg.Accounts[1].OAuth2ClientSecret; got != "" {
+		t.Errorf("Accounts[1].OAuth2ClientSecret = %q, want empty", got)
+	}
 }
 
 // TestLoad_KeyringResolvesAcrossSenders verifies the senders-gap fix:
