@@ -65,12 +65,21 @@ The html-signature is the placeholder for adding the HTML signature, but yes, it
 
 ## The Drafts and Spam folders seem to show wrong emails
 
-Drafts and Spam are **off-tab folders** (not in the regular tab rotation) and behave slightly differently:
+By default, Drafts and Spam are **virtual folders** (also called off-tab folders): they are not in the regular tab rotation and behave slightly differently:
 
 - **Access**: `gd` for Drafts, `gS` for Spam (or `:go-spam`)
 - **Indication**: When viewing them, the folder name appears highlighted in the tab bar with a `│` separator
 - **Reload**: Pressing `R` reloads the Drafts/Spam folder 
 - **Leave**: Press `tab` or navigate to another folder (`gi`, `ga`, etc.) to return to regular tabs
+
+**Show them as regular tabs**: add `"drafts"` and/or `"spam"` to `tab_order` in the `[folders]` section of your config. They then appear as normal tabs at that position, and `gd` / `gS` jump to the tab:
+
+```toml
+[folders]
+tab_order = ["inbox", "drafts", "to_screen", "feed", "papertrail", "sent", "archive", "spam", "trash"]
+```
+
+**Old bug (fixed 2026-11-24)**: A Drafts tab listed in `tab_order` showed Inbox content instead of your drafts. Rebuild neomd to get the fix.
 
 **Old bug (fixed 2026-04-10)**: In older versions, pressing `R` while viewing Drafts could show Inbox content. If you experience this, rebuild neomd to get the fix.
 
