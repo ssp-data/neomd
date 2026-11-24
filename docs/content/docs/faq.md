@@ -61,7 +61,7 @@ BR Simon
 
 ```
 
-The html-signature is the placeholder for adding the HTML signature, but yes, it will always be added at the end of the email (e.g. in this case the reply).
+The html-signature is the placeholder for adding the HTML signature, but yes, it will always be added at the end of the email (e.g. in this case the reply). The short alias `[sig]` on its own line works the same way and is quicker to type.
 
 ## The Drafts and Spam folders seem to show wrong emails
 

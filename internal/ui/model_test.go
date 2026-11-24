@@ -457,6 +457,51 @@ func TestActiveFolderUsesOffTabFolder(t *testing.T) {
 	}
 }
 
+// TestActiveFolderDraftsTab — a Drafts tab ("drafts" in tab_order) must fetch
+// the Drafts mailbox; the label switch in activeFolder() had no Drafts case,
+// so the tab fell through to default and showed the Inbox instead (PR #37).
+func TestActiveFolderDraftsTab(t *testing.T) {
+	m := Model{
+		cfg: &config.Config{
+			Folders: config.FoldersConfig{
+				Inbox:  "INBOX",
+				Drafts: "Drafts",
+			},
+		},
+		folders:       []string{"Inbox", "Drafts"},
+		activeFolderI: 1,
+	}
+	if got := m.activeFolder(); got != "Drafts" {
+		t.Fatalf("activeFolder() on the Drafts tab = %q, want %q (must not fall back to the Inbox)", got, "Drafts")
+	}
+}
+
+// TestOpenVirtualFolderTabVsOffTab — gd / gS / :go-spam switch to the real
+// Drafts/Spam tab when tab_order lists it, and fall back to the off-tab view
+// otherwise (the default).
+func TestOpenVirtualFolderTabVsOffTab(t *testing.T) {
+	// Default order: no Drafts/Spam tabs → off-tab view.
+	m := instantModel(t, 1)
+	res, _ := m.openVirtualFolder("Drafts")
+	got := res.(Model)
+	if got.offTabFolder != "Drafts" || got.activeFolder() != "Drafts" {
+		t.Fatalf("default: offTabFolder=%q activeFolder=%q, want off-tab Drafts", got.offTabFolder, got.activeFolder())
+	}
+
+	// Listed in tab_order → jump to the tab.
+	m = instantModel(t, 1)
+	m.cfg.Folders.TabOrder = []string{"inbox", "drafts", "feed", "spam"}
+	m.folders = m.cfg.Folders.TabLabels()
+	for label, wantI := range map[string]int{"Drafts": 1, "Spam": 3} {
+		res, _ := m.openVirtualFolder(label)
+		got := res.(Model)
+		if got.offTabFolder != "" || got.activeFolderI != wantI || got.activeFolder() != label {
+			t.Fatalf("tab_order, %s: offTabFolder=%q activeFolderI=%d activeFolder=%q, want tab %d",
+				label, got.offTabFolder, got.activeFolderI, got.activeFolder(), wantI)
+		}
+	}
+}
+
 func TestUpdateInboxEscClearsCommittedFilter(t *testing.T) {
 	m := Model{
 		filterText: "invoice",

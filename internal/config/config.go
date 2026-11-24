@@ -219,13 +219,13 @@ type FoldersConfig struct {
 	Spam        string `toml:"spam"`
 	Work        string `toml:"work"`
 	// TabOrder lists folder keys (e.g. "inbox", "to_screen") in the desired
-	// tab display order. Spam is always excluded from tabs regardless of order.
-	// If empty, the built-in default order is used.
+	// tab display order. If empty, the built-in default order is used.
+	// "drafts" and "spam" are off-tab (gd / gS) unless listed here.
 	TabOrder []string `toml:"tab_order"`
 }
 
 // defaultTabOrder is the built-in tab order when tab_order is not configured.
-var defaultTabOrder = []string{"inbox", "to_screen", "feed", "papertrail", "waiting", "someday", "scheduled", "sent", "archive", "screened_out", "drafts", "trash"}
+var defaultTabOrder = []string{"inbox", "to_screen", "feed", "papertrail", "waiting", "someday", "scheduled", "sent", "archive", "screened_out", "trash"}
 
 // keyToLabel maps config key names to the internal label names used by the UI.
 // These labels are what m.folders stores and what activeFolder() matches against.
@@ -243,6 +243,7 @@ var keyToLabel = map[string]string{
 	"scheduled":    "Scheduled",
 	"someday":      "Someday",
 	"work":         "Work",
+	"spam":         "Spam",
 }
 
 // LabelFor returns the UI label (e.g. "Inbox", "PaperTrail") for a configured
@@ -288,7 +289,7 @@ func (f FoldersConfig) LabelFor(imapName string) string {
 // TabLabels returns the UI label names in tab display order.
 // tab_order keys (e.g. "inbox", "to_screen") are resolved to label names
 // (e.g. "Inbox", "ToScreen") that activeFolder() and keyboard shortcuts match against.
-// Spam is excluded — it is never shown as a tab.
+// Drafts and Spam are tabs only when listed in tab_order (not in the default).
 func (f FoldersConfig) TabLabels() []string {
 	keys := f.TabOrder
 	if len(keys) == 0 {
@@ -1031,7 +1032,7 @@ func defaults() *Config {
 			Spam:        "Spam",
 		},
 		UI: UIConfig{
-			Theme:               "kanagawa", // built-in: kanagawa | kanagawa-paper | kanagawa-light | rose-pine | gruvbox | osaka-jade
+			Theme:               "kanagawa", // built-in: kanagawa | kanagawa-paper | kanagawa-light | catppuccin-latte | rose-pine | gruvbox | osaka-jade
 			InboxCount:          200,
 			BgSyncInterval:      5,
 			MarkAsReadAfterSecs: 7,

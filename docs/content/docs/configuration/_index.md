@@ -101,11 +101,12 @@ someday      = "Someday"
 spam         = "spam" #check capitalization of your pre-existing Spam folder, sometimes might be `Spam` with `S`
 # work = "Work"  # optional custom folder; add "work" to tab_order to show as a tab (gb to go, Mb to move -b for business as w was taken)
 # tab_order controls the left-to-right tab sequence; omit to use the built-in default order. e.g.:
-# tab_order = ["inbox", "to_screen", "feed", "papertrail", "waiting", "someday", "scheduled", "sent", "archive", "screened_out", "drafts", "trash"]
+# tab_order = ["inbox", "to_screen", "feed", "papertrail", "waiting", "someday", "scheduled", "sent", "archive", "screened_out", "trash"]
+# Drafts and Spam are off-tab by default (gd / gS); add "drafts" and/or "spam" to tab_order to show them as tabs.
 # Gmail uses different folder names — see docs/content/gmail.md for the correct mapping.
 
 [ui]
-theme                = "kanagawa"   # kanagawa | kanagawa-paper | kanagawa-light | rose-pine | gruvbox | osaka-jade
+theme                = "kanagawa"   # kanagawa | kanagawa-paper | kanagawa-light | catppuccin-latte | rose-pine | gruvbox | osaka-jade
 inbox_count          = 200      # how many newest emails neomd loads per folder/reload
 auto_screen_on_load  = true     # screen inbox automatically on every load (default true)
 bg_sync_interval     = 5        # background sync interval in minutes; 0 = disabled (default 5)
@@ -395,6 +396,7 @@ For professional HTML signatures (with logos, tables, styled text), use the `[ui
 - **HTML signature** — appends to the `text/html` MIME part only (recipients using HTML email clients see this)
 - **`[html-signature]` placeholder** — include this in your text signature to enable HTML signature for a specific email; visible in the editor and pre-send preview, but stripped before sending
 - **Per-email control** — delete the `[html-signature]` line in the editor to send without the HTML signature for that email
+- **Short alias** — `[sig]` on its own line is equivalent to `[html-signature]`; type it anywhere in the body to add the HTML signature to a mail whose prelude didn't include the placeholder (the HTML signature is always appended at the end of the HTML part)
 
 
 #### This is how it looks
@@ -481,13 +483,14 @@ For a business account where you want a logo, table layout, and CSS that goldmar
 
 ## Theming
 
-Pick from six built-in palettes via `[ui].theme`:
+Pick from seven built-in palettes via `[ui].theme`:
 
 | Name | Mode | Source |
 |---|---|---|
 | `kanagawa` (default) | dark | https://github.com/rebelot/kanagawa.nvim |
 | `kanagawa-paper` | dark | https://github.com/thesimonho/kanagawa-paper.nvim |
 | `kanagawa-light` | **light** | Lotus palette from kanagawa.nvim, paperwhite (#F2EFE9) background |
+| `catppuccin-latte` | **light** | https://github.com/catppuccin/catppuccin — Latte |
 | `rose-pine` | dark | https://github.com/rose-pine/rose-pine-theme |
 | `gruvbox` | dark | https://github.com/morhetz/gruvbox |
 | `osaka-jade` | dark | https://github.com/Justikun/omarchy-osaka-jade-theme |

@@ -1166,6 +1166,8 @@ func (m Model) activeFolder() string {
 		return m.cfg.Folders.Sent
 	case "Trash":
 		return m.cfg.Folders.Trash
+	case "Drafts":
+		return m.cfg.Folders.Drafts
 	case "Archive":
 		return m.cfg.Folders.Archive
 	case "Waiting":
@@ -2035,6 +2037,28 @@ func (m Model) withPendingSeen(account string, emails []imap.Email) []imap.Email
 // the tab underneath.
 func (m Model) inSyntheticView() bool {
 	return m.offTabFolder != "" && m.offTabFolder != "Spam" && m.offTabFolder != "Drafts"
+}
+
+// openVirtualFolder opens Drafts or Spam (gd / gS / :go-spam): switches to its
+// tab when tab_order lists it, otherwise shows it off-tab.
+func (m *Model) openVirtualFolder(label string) (tea.Model, tea.Cmd) {
+	for i, f := range m.folders {
+		if f != label {
+			continue
+		}
+		if i == m.activeFolderI && m.offTabFolder == "" {
+			return *m, nil
+		}
+		m.activeFolderI = i
+		m.leaveSyntheticView()
+		return *m, m.loadActiveFolder()
+	}
+	m.loading = true
+	m.offTabFolder = label
+	m.imapSearchText = ""
+	m.status = label + " folder — press R to reload, tab to leave"
+	m.refreshing = false
+	return *m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(folderLabelToIMAP(label, m.cfg.Folders)))
 }
 
 // leaveSyntheticView drops the off-tab/search state, as esc does, so the
@@ -4894,21 +4918,11 @@ func (m Model) handleChord(prefix, key string) (tea.Model, tea.Cmd) {
 			m.inbox.Select(0)
 			return m, nil
 		}
-		if key == "S" { // gS — go to Spam (not in tab rotation)
-			m.loading = true
-			m.offTabFolder = "Spam"
-			m.imapSearchText = ""
-			m.status = "Spam folder — press R to reload, tab to leave"
-			m.refreshing = false
-			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Spam))
+		if key == "S" { // gS — go to Spam (virtual folder unless it is a tab)
+			return m.openVirtualFolder("Spam")
 		}
-		if key == "d" { // gd — go to Drafts (not in tab rotation)
-			m.loading = true
-			m.offTabFolder = "Drafts"
-			m.imapSearchText = ""
-			m.status = "Drafts folder — press R to reload, tab to leave"
-			m.refreshing = false
-			return m, tea.Batch(m.spinner.Tick, m.fetchFolderCmd(m.cfg.Folders.Drafts))
+		if key == "d" { // gd — go to Drafts (virtual folder unless it is a tab)
+			return m.openVirtualFolder("Drafts")
 		}
 		if key == "e" { // ge — Everything: latest emails across all folders
 			m.loading = true
@@ -7254,15 +7268,15 @@ func extractInlineAttachments(body string) (files []string, clean string) {
 	return files, strings.Join(kept, "\n")
 }
 
-// extractHTMLSignatureMarker scans body for [html-signature] marker.
+// extractHTMLSignatureMarker scans body for the [html-signature] marker or
+// its short alias [sig] (own line, surrounding whitespace ignored).
 // If found, removes it and returns (true, cleanBody).
 // If not found, returns (false, body unchanged).
 func extractHTMLSignatureMarker(body string) (includeHTMLSig bool, clean string) {
-	const marker = "[html-signature]"
 	var kept []string
 	for _, line := range strings.Split(body, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == marker {
+		if trimmed == "[html-signature]" || trimmed == "[sig]" {
 			includeHTMLSig = true
 			continue
 		}

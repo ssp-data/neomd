@@ -119,6 +119,21 @@ func TestTabLabels(t *testing.T) {
 	}
 }
 
+// TestTabLabelsDraftsSpam — "drafts" and "spam" are tabs only when listed in
+// tab_order (at that position); the default order leaves both off-tab.
+func TestTabLabelsDraftsSpam(t *testing.T) {
+	order := []string{"inbox", "drafts", "feed", "spam", "trash"}
+	got := FoldersConfig{TabOrder: order}.TabLabels()
+	if want := []string{"Inbox", "Drafts", "Feed", "Spam", "Trash"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("TabLabels() = %v, want %v", got, want)
+	}
+	for _, l := range (FoldersConfig{}).TabLabels() {
+		if l == "Drafts" || l == "Spam" {
+			t.Errorf("default order must not contain %q", l)
+		}
+	}
+}
+
 func TestAutoScreen(t *testing.T) {
 	boolPtr := func(b bool) *bool { return &b }
 	tests := []struct {
