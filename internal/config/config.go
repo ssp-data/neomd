@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -951,6 +952,30 @@ func (cfg *Config) validate() error {
 		if a.User == "" && !a.IsOAuth2() {
 			return fmt.Errorf("account %q: user is required", label)
 		}
+		// from is what every outgoing mail is sent as; the send path rejects
+		// anything extractDomain cannot parse ("invalid From address"), so
+		// catch it here. An empty from falls back to user when that is a
+		// plain address — the common case — instead of refusing to start.
+		if a.From == "" {
+			if !validFromAddress(a.User) {
+				return fmt.Errorf("account %q: from is required (set from to your address, e.g. \"Name <you@example.com>\")", label)
+			}
+			cfg.Accounts[i].From = a.User
+		} else if !validFromAddress(a.From) {
+			return fmt.Errorf("account %q: from %q is not a valid email address (expected \"you@example.com\" or \"Name <you@example.com>\")", label, a.From)
+		}
+	}
+	for i, s := range cfg.Senders {
+		label := s.Name
+		if label == "" {
+			label = fmt.Sprintf("senders[%d]", i)
+		}
+		if s.From == "" {
+			return fmt.Errorf("sender %q: from is required (a [[senders]] alias exists only to send as that address)", label)
+		}
+		if !validFromAddress(s.From) {
+			return fmt.Errorf("sender %q: from %q is not a valid email address (expected \"you@example.com\" or \"Name <you@example.com>\")", label, s.From)
+		}
 	}
 	// Validate legacy single-account fields if used
 	if cfg.Account.IMAP != "" {
@@ -1126,6 +1151,19 @@ func resolveKeyringClientSecret(accountName, secret string) string {
 		fmt.Fprintf(os.Stderr, "neomd: account %q: keyring unavailable: %v\n", accountName, err)
 	}
 	return secret // leave sentinel for downstream
+}
+
+// validFromAddress reports whether s is usable as a sender address: a single
+// RFC 5322 mailbox (bare address or "Name <addr>") with a non-empty domain.
+// Same bar as extractDomain in internal/smtp, which derives the Message-ID
+// domain from From and fails the send otherwise.
+func validFromAddress(s string) bool {
+	addr, err := mail.ParseAddress(strings.TrimSpace(s))
+	if err != nil {
+		return false
+	}
+	i := strings.LastIndex(addr.Address, "@")
+	return i > 0 && i < len(addr.Address)-1
 }
 
 // expandEnv resolves a value that is entirely a single env var reference

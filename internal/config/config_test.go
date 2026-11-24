@@ -403,6 +403,141 @@ func TestValidate_ValidConfig(t *testing.T) {
 	}
 }
 
+// Regression for PR #39: from = "" loaded fine, the pre-send screen showed a
+// blank From: line, and the failure only surfaced after the mail was written
+// ("build message: invalid From address"). An empty from now falls back to
+// user when that is a plain address, so existing configs keep starting.
+func TestValidate_EmptyFromFallsBackToUser(t *testing.T) {
+	cfg := &Config{
+		Accounts: []AccountConfig{{
+			Name: "Main",
+			IMAP: "imap.example.com:993",
+			SMTP: "smtp.example.com:587",
+			User: "me@example.com",
+		}},
+	}
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := cfg.Accounts[0].From; got != "me@example.com" {
+		t.Errorf("From = %q, want fallback to user", got)
+	}
+}
+
+// No fallback possible (user is a login name, not an address; or an OAuth2
+// account without user) → clear load error instead of an unsendable account.
+func TestValidate_EmptyFromWithoutAddressUserFails(t *testing.T) {
+	for _, acc := range []AccountConfig{
+		{Name: "Login", IMAP: "imap.example.com:993", SMTP: "smtp.example.com:587", User: "DOMAIN\\me"},
+		{Name: "OAuth", IMAP: "imap.example.com:993", SMTP: "smtp.example.com:587", AuthType: "oauth2"},
+	} {
+		cfg := &Config{Accounts: []AccountConfig{acc}}
+		err := cfg.validate()
+		if err == nil {
+			t.Errorf("%s: expected error for empty from with non-address user", acc.Name)
+			continue
+		}
+		if !strings.Contains(err.Error(), "from is required") {
+			t.Errorf("%s: error should mention 'from is required', got: %v", acc.Name, err)
+		}
+	}
+}
+
+// A non-empty from that is not a valid address (from = "xx") must fail at
+// load — the send path's extractDomain applies the same RFC 5322 bar when
+// building the Message-ID, so such an account can never send.
+func TestValidate_FromFormat(t *testing.T) {
+	valid := []string{
+		"me@example.com",
+		"Me <me@example.com>",
+		"Simon Späti <me@sub.example.co.uk>",
+		"  me@example.com  ",
+	}
+	invalid := []string{
+		"xx",
+		"Name <xx>",
+		"xx@",
+		"@example.com",
+		"me@example.com, other@example.com", // From is a single address
+	}
+	mk := func(from string) *Config {
+		return &Config{Accounts: []AccountConfig{{
+			Name: "T", IMAP: "imap.example.com:993", SMTP: "smtp.example.com:587",
+			User: "u@example.com", From: from,
+		}}}
+	}
+	for _, from := range valid {
+		cfg := mk(from)
+		if err := cfg.validate(); err != nil {
+			t.Errorf("from %q: unexpected error: %v", from, err)
+		}
+		if cfg.Accounts[0].From != from {
+			t.Errorf("from %q: validate must not rewrite a valid from, got %q", from, cfg.Accounts[0].From)
+		}
+	}
+	for _, from := range invalid {
+		err := mk(from).validate()
+		if err == nil {
+			t.Errorf("from %q: expected validation error, got nil", from)
+			continue
+		}
+		if !strings.Contains(err.Error(), "not a valid email address") {
+			t.Errorf("from %q: error should mention 'not a valid email address', got: %v", from, err)
+		}
+	}
+}
+
+// A [[senders]] alias exists only to send as its From address — an empty one
+// would put an empty entry in the pre-send ctrl+f cycle.
+func TestValidate_SenderRequiresValidFrom(t *testing.T) {
+	base := AccountConfig{Name: "Test", IMAP: "imap.example.com:993", SMTP: "smtp.example.com:587", User: "test@example.com", From: "test@example.com"}
+	for _, tc := range []struct{ from, want string }{
+		{"", "from is required"},
+		{"xx", "not a valid email address"},
+	} {
+		cfg := &Config{Accounts: []AccountConfig{base}, Senders: []SenderConfig{{Name: "alias", Account: "Test", From: tc.from}}}
+		err := cfg.validate()
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("sender from %q: want error containing %q, got %v", tc.from, tc.want, err)
+		}
+	}
+	cfg := &Config{Accounts: []AccountConfig{base}, Senders: []SenderConfig{{Name: "alias", Account: "Test", From: "Alias <alias@example.com>"}}}
+	if err := cfg.validate(); err != nil {
+		t.Errorf("valid sender from: unexpected error: %v", err)
+	}
+}
+
+// Through Load: a config file without from starts (fallback), one with a
+// malformed from is rejected before neomd starts — not after the first mail.
+func TestLoad_FromValidation(t *testing.T) {
+	write := func(t *testing.T, from string) string {
+		cfgPath := filepath.Join(t.TempDir(), "config.toml")
+		body := `
+[[accounts]]
+name     = "Main"
+imap     = "imap.example.com:993"
+smtp     = "smtp.example.com:587"
+user     = "me@example.com"
+password = "x"
+` + from
+		if err := os.WriteFile(cfgPath, []byte(body), 0600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		return cfgPath
+	}
+	cfg, err := Load(write(t, ""))
+	if err != nil {
+		t.Fatalf("Load without from: %v", err)
+	}
+	if got := cfg.Accounts[0].From; got != "me@example.com" {
+		t.Errorf("From = %q, want fallback to user", got)
+	}
+	_, err = Load(write(t, `from = "xx"`))
+	if err == nil || !strings.Contains(err.Error(), "not a valid email address") {
+		t.Errorf("Load with from=xx: want validation error, got %v", err)
+	}
+}
+
 func TestValidate_NegativeUIValues(t *testing.T) {
 	cfg := &Config{
 		Accounts: []AccountConfig{{

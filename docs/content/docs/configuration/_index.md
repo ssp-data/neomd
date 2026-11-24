@@ -17,7 +17,8 @@ imap     = "imap.example.com:993"   # :993 = TLS, :143 = STARTTLS
 smtp     = "smtp.example.com:587"   # :587 = STARTTLS, :465 = TLS
 user     = "me@example.com"
 password = "app-password"
-from     = "Me <me@example.com>"
+from     = "Me <me@example.com>"    # what you send as; defaults to `user` when omitted,
+                                    # must be a valid address — checked at startup
 starttls = false                    # optional: force STARTTLS (see TLS/STARTTLS section below)
 tls_cert_file = ""                  # optional PEM cert/CA for self-signed local bridges
 imap_disabled = false               # set true for send-only accounts (no IMAP connection)
