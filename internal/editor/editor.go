@@ -163,7 +163,24 @@ func ReactionBody(emoji, fromName, originalFrom string, originalDate time.Time, 
 func ParseHeaders(raw string) (to, cc, bcc, from, subject, body string) {
 	lines := splitLines(raw)
 	var kept []string
+	inFence := false
+	var fenceChar byte
+	var fenceLen int
 	for _, line := range lines {
+		if inFence {
+			kept = append(kept, line)
+			if closesMarkdownFence(line, fenceChar, fenceLen) {
+				inFence = false
+			}
+			continue
+		}
+		if c, n, ok := markdownFenceStart(line); ok {
+			inFence = true
+			fenceChar = c
+			fenceLen = n
+			kept = append(kept, line)
+			continue
+		}
 		if m := neomdHeaderRe.FindStringSubmatch(strings.TrimRight(line, "\r")); m != nil {
 			switch strings.ToLower(m[1]) {
 			case "to":
@@ -183,6 +200,42 @@ func ParseHeaders(raw string) (to, cc, bcc, from, subject, body string) {
 	}
 	body = strings.Join(kept, "\n")
 	return
+}
+
+// markdownFenceStart recognizes a CommonMark fenced code block opening: up to
+// three leading spaces, then at least three backticks or tildes.
+func markdownFenceStart(line string) (byte, int, bool) {
+	i := 0
+	for i < len(line) && line[i] == ' ' {
+		i++
+	}
+	if i > 3 || i == len(line) || (line[i] != '`' && line[i] != '~') {
+		return 0, 0, false
+	}
+	c := line[i]
+	j := i
+	for j < len(line) && line[j] == c {
+		j++
+	}
+	return c, j - i, j-i >= 3
+}
+
+// closesMarkdownFence reports whether line is a closing fence for an open
+// fence: the same character, at least as long as the opening fence, and no
+// trailing content other than whitespace.
+func closesMarkdownFence(line string, c byte, minLen int) bool {
+	i := 0
+	for i < len(line) && line[i] == ' ' {
+		i++
+	}
+	if i > 3 || i == len(line) || line[i] != c {
+		return false
+	}
+	j := i
+	for j < len(line) && line[j] == c {
+		j++
+	}
+	return j-i >= minLen && strings.TrimSpace(line[j:]) == ""
 }
 
 func quoteLines(body string) string {
