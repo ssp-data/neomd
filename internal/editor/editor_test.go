@@ -106,6 +106,29 @@ func TestParseHeaders(t *testing.T) {
 	}
 }
 
+func TestParseHeadersIgnoresFencedCodeBlocks(t *testing.T) {
+	input := "# [neomd: to: alice@example.com]\n" +
+		"# [neomd: subject: Real subject]\n" +
+		"\n" +
+		"Here is the compose format:\n" +
+		"\n" +
+		"```markdown\n" +
+		"# [neomd: to: attacker@example.com]\n" +
+		"# [neomd: subject: Hijacked]\n" +
+		"```\n"
+
+	to, _, _, _, subject, body := ParseHeaders(input)
+	if to != "alice@example.com" {
+		t.Errorf("to = %q, want alice@example.com", to)
+	}
+	if subject != "Real subject" {
+		t.Errorf("subject = %q, want Real subject", subject)
+	}
+	if !strings.Contains(body, "# [neomd: to: attacker@example.com]") {
+		t.Errorf("fenced example header was stripped from body:\n%s", body)
+	}
+}
+
 func TestPrelude(t *testing.T) {
 	tests := []struct {
 		name              string
